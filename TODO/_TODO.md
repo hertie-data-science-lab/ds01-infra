@@ -1,5 +1,8 @@
 # To do
 
+# Git
+- [ ] SETup github actions!
+
 # Managing Users
 
 ### User Privacy & Permissions
