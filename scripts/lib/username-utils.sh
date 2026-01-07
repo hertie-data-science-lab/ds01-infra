@@ -74,6 +74,23 @@ get_user_slice_name() {
     echo "ds01-${group}-${sanitized}.slice"
 }
 
+# Get canonical username from passwd via UID resolution
+# Resolves domain variants (e.g., user@students.hertie-school.org → user@hertie-school.lan)
+# Args: input_username (any format that id can resolve)
+# Returns: canonical username from passwd, or empty string on error
+get_canonical_username() {
+    local input_user="$1"
+    [[ -z "$input_user" ]] && return 1
+
+    # Get UID for input user
+    local uid
+    uid=$(id -u "$input_user" 2>/dev/null) || return 1
+
+    # Resolve UID back to canonical username from passwd
+    getent passwd "$uid" 2>/dev/null | cut -d: -f1
+}
+
 # Export functions for use in subshells
 export -f sanitize_username_for_slice
 export -f get_user_slice_name
+export -f get_canonical_username

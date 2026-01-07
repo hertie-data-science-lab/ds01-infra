@@ -1,6 +1,9 @@
 #!/bin/bash
 # Add user to docker group for Docker access
 # Run with: sudo bash /opt/ds01-infra/scripts/system/add-user-to-docker.sh <username>
+#
+# IMPORTANT: Resolves input username to canonical form via UID to handle
+# domain variants (e.g., user@students.hertie-school.org vs user@hertie-school.lan)
 
 set -e
 
@@ -18,9 +21,18 @@ if [ -z "$USERNAME" ]; then
     exit 1
 fi
 
-# Check if user exists
+# Check if user exists (any domain variant)
 if ! id "$USERNAME" &>/dev/null; then
     echo "Error: User '$USERNAME' does not exist"
+    exit 1
+fi
+
+# Resolve to canonical username via UID
+USER_UID=$(id -u "$USERNAME")
+CANONICAL_USER=$(getent passwd "$USER_UID" 2>/dev/null | cut -d: -f1)
+
+if [ -z "$CANONICAL_USER" ]; then
+    echo "Error: Could not resolve canonical username for '$USERNAME'"
     exit 1
 fi
 
@@ -30,12 +42,17 @@ if ! getent group docker &>/dev/null; then
     exit 1
 fi
 
-# Add user to docker group
-echo "Adding $USERNAME to docker group..."
-usermod -aG docker "$USERNAME"
+# Display resolution if mismatch detected
+if [ "$USERNAME" != "$CANONICAL_USER" ]; then
+    echo "Note: Resolved '$USERNAME' to canonical username '$CANONICAL_USER'"
+fi
+
+# Add canonical user to docker group
+echo "Adding $CANONICAL_USER to docker group..."
+usermod -aG docker "$CANONICAL_USER"
 
 echo ""
-echo "✓ $USERNAME has been added to the docker group"
+echo "$CANONICAL_USER has been added to the docker group"
 echo ""
 echo "IMPORTANT: The user must log out and log back in for this to take effect."
 echo ""
