@@ -238,8 +238,10 @@ show_post_exit_menu() {
                 echo -e "${YELLOW}Retiring container...${NC}"
                 echo ""
                 docker exec "$tag" pkill -f "\[ds01-keep-alive\]" 2>/dev/null || true
-                if [[ -f "$SCRIPT_DIR/user/container-retire" ]]; then
-                    bash "$SCRIPT_DIR/user/container-retire" "$name" --skip-initial-confirm
+                if command -v container-retire &>/dev/null; then
+                    container-retire "$name" --skip-initial-confirm
+                elif [[ -f "$SCRIPT_DIR/user/orchestrators/container-retire" ]]; then
+                    bash "$SCRIPT_DIR/user/orchestrators/container-retire" "$name" --skip-initial-confirm
                 else
                     echo -e "${RED}✗${NC} container-retire not found"
                     echo -e "Manual cleanup: ${GREEN}container-retire $name${NC}"
@@ -257,8 +259,10 @@ show_post_exit_menu() {
         echo ""
         echo -e "${BOLD}Retiring to avoid ambiguous stopped state...${NC}"
         echo ""
-        if [[ -f "$SCRIPT_DIR/user/container-retire" ]]; then
-            bash "$SCRIPT_DIR/user/container-retire" "$name" --skip-initial-confirm
+        if command -v container-retire &>/dev/null; then
+            container-retire "$name" --skip-initial-confirm
+        elif [[ -f "$SCRIPT_DIR/user/orchestrators/container-retire" ]]; then
+            bash "$SCRIPT_DIR/user/orchestrators/container-retire" "$name" --skip-initial-confirm
         fi
     fi
 }
