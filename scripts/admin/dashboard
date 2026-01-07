@@ -43,6 +43,8 @@ from typing import Dict, List, Optional, Tuple
 INFRA_ROOT = Path('/opt/ds01-infra')
 # Use real docker binary directly (bypass wrapper filtering for dashboard)
 DOCKER_BIN = '/usr/bin/docker'
+# Container ownership tracking file (from container-owner-tracker daemon)
+OWNERSHIP_FILE = Path('/var/lib/ds01/opa/container-owners.json')
 sys.path.insert(0, str(INFRA_ROOT / "scripts" / "docker"))
 sys.path.insert(0, str(INFRA_ROOT / "scripts" / "monitoring"))
 
@@ -289,8 +291,35 @@ class DashboardData:
 
         return list(reversed(allocations))[:limit]
 
+    # Cache for ownership file data
+    _ownership_cache: Optional[Dict] = None
+    _ownership_cache_time: float = 0
+
+    @classmethod
+    def _load_ownership_file(cls) -> Dict:
+        """
+        Load container ownership data from tracker daemon's JSON file.
+
+        Caches for 5 seconds to avoid repeated file reads during a single dashboard render.
+        """
+        now = time.time()
+        if cls._ownership_cache is not None and now - cls._ownership_cache_time < 5:
+            return cls._ownership_cache
+
+        try:
+            if OWNERSHIP_FILE.exists():
+                with open(OWNERSHIP_FILE) as f:
+                    cls._ownership_cache = json.load(f)
+                    cls._ownership_cache_time = now
+                    return cls._ownership_cache
+        except (json.JSONDecodeError, IOError):
+            pass
+
+        return {"containers": {}}
+
     @staticmethod
-    def extract_owner(ds01_user: str, aime_user_upper: str, aime_username: str, devcontainer_path: str) -> str:
+    def extract_owner(ds01_user: str, aime_user_upper: str, aime_username: str,
+                      devcontainer_path: str, container_name: str = "") -> str:
         """Extract container owner from labels, prioritized.
 
         Checks multiple label sources for robust ownership detection:
@@ -298,6 +327,7 @@ class DashboardData:
         2. aime.mlc.USER - AIME uppercase label
         3. aime.mlc.username - AIME lowercase label
         4. devcontainer.local_folder - VS Code path extraction
+        5. Ownership tracking file (for docker-compose, docker run, etc.)
         """
         if ds01_user:
             return ds01_user
@@ -309,6 +339,15 @@ class DashboardData:
             parts = devcontainer_path.split('/')
             if len(parts) >= 3:
                 return parts[2]  # /home/<username>/...
+
+        # Fallback: check ownership tracking file (for unlabeled containers)
+        if container_name:
+            ownership_data = DashboardData._load_ownership_file()
+            containers = ownership_data.get("containers", {})
+            entry = containers.get(container_name, {})
+            if entry.get("owner"):
+                return entry["owner"]
+
         return "(other)"
 
     def get_user_summary(self) -> Dict:
@@ -337,7 +376,8 @@ class DashboardData:
                     aime_user_upper = parts[3] if len(parts) > 3 else ''
                     aime_username = parts[4] if len(parts) > 4 else ''
                     devcontainer_path = parts[5] if len(parts) > 5 else ''
-                    user = self.extract_owner(ds01_user, aime_user_upper, aime_username, devcontainer_path)
+                    # Pass container name for ownership file fallback lookup
+                    user = self.extract_owner(ds01_user, aime_user_upper, aime_username, devcontainer_path, name)
 
                     if user not in users:
                         users[user] = {'containers': 0, 'running': 0, 'gpus': []}
@@ -400,7 +440,8 @@ class DashboardData:
                     aime_user = parts[2] if len(parts) > 2 else ''
                     aime_username = parts[3] if len(parts) > 3 else ''
                     devcontainer_path = parts[4] if len(parts) > 4 else ''
-                    user = self.extract_owner(ds01_user, aime_user, aime_username, devcontainer_path)
+                    # Pass container name for ownership file fallback lookup
+                    user = self.extract_owner(ds01_user, aime_user, aime_username, devcontainer_path, name)
 
                     if user not in user_cpu:
                         user_cpu[user] = {'cpu_percent': 0.0, 'containers': 0, 'cpu_count': cpu_count}
@@ -869,7 +910,8 @@ class DashboardRenderer:
                     aime_user_upper = parts[3] if len(parts) > 3 else ''
                     aime_username = parts[4] if len(parts) > 4 else ''
                     devcontainer_path = parts[5] if len(parts) > 5 else ''
-                    user = self.data.extract_owner(ds01_user, aime_user_upper, aime_username, devcontainer_path)[:13]
+                    # Pass full container name for ownership file fallback lookup
+                    user = self.data.extract_owner(ds01_user, aime_user_upper, aime_username, devcontainer_path, parts[0])[:13]
 
                     # Get stats if running
                     if 'Up' in status:
