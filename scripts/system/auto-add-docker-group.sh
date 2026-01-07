@@ -5,6 +5,9 @@
 # This script is designed to be run via sudo by users in the docker group
 # or by root directly. It safely adds users to the docker group.
 #
+# IMPORTANT: Resolves usernames to canonical form via UID to handle
+# domain variants (e.g., user@students.hertie-school.org vs user@hertie-school.lan)
+#
 # Usage:
 #   sudo auto-add-docker-group.sh <username>     # Add specific user
 #   sudo auto-add-docker-group.sh --scan         # Scan for new users and add them
@@ -32,27 +35,49 @@ if ! getent group docker &>/dev/null; then
     exit 1
 fi
 
+# Resolve username to canonical form via UID
+# Returns canonical username or empty string on error
+get_canonical_username() {
+    local input_user="$1"
+    local uid
+    uid=$(id -u "$input_user" 2>/dev/null) || return 1
+    getent passwd "$uid" 2>/dev/null | cut -d: -f1
+}
+
 add_user_to_docker() {
-    local username="$1"
+    local input_username="$1"
 
     # Validate username exists
-    if ! id "$username" &>/dev/null; then
-        log_msg "ERROR: User '$username' does not exist"
+    if ! id "$input_username" &>/dev/null; then
+        log_msg "ERROR: User '$input_username' does not exist"
         return 1
     fi
 
-    # Check if already in docker group
-    if groups "$username" 2>/dev/null | grep -q '\bdocker\b'; then
-        log_msg "INFO: User '$username' already in docker group"
+    # Resolve to canonical username
+    local canonical_user
+    canonical_user=$(get_canonical_username "$input_username")
+    if [ -z "$canonical_user" ]; then
+        log_msg "ERROR: Could not resolve canonical username for '$input_username'"
+        return 1
+    fi
+
+    # Log domain variant if detected
+    if [ "$input_username" != "$canonical_user" ]; then
+        log_msg "INFO: Resolved '$input_username' to canonical '$canonical_user'"
+    fi
+
+    # Check if canonical user already in docker group
+    if groups "$canonical_user" 2>/dev/null | grep -q '\bdocker\b'; then
+        log_msg "INFO: User '$canonical_user' already in docker group"
         return 0
     fi
 
-    # Add to docker group
-    if usermod -aG docker "$username"; then
-        log_msg "SUCCESS: Added '$username' to docker group"
+    # Add canonical user to docker group
+    if usermod -aG docker "$canonical_user"; then
+        log_msg "SUCCESS: Added '$canonical_user' to docker group"
         return 0
     else
-        log_msg "ERROR: Failed to add '$username' to docker group"
+        log_msg "ERROR: Failed to add '$canonical_user' to docker group"
         return 1
     fi
 }
@@ -79,13 +104,18 @@ scan_and_add_new_users() {
             continue
         fi
 
-        # Skip if already in docker group
-        if groups "$username" 2>/dev/null | grep -q '\bdocker\b'; then
+        # Resolve to canonical username
+        local canonical_user
+        canonical_user=$(get_canonical_username "$username")
+        [ -z "$canonical_user" ] && continue
+
+        # Skip if canonical user already in docker group
+        if groups "$canonical_user" 2>/dev/null | grep -q '\bdocker\b'; then
             ((skipped++))
             continue
         fi
 
-        # Add to docker group
+        # Add canonical user to docker group
         if add_user_to_docker "$username"; then
             ((added++))
         fi
