@@ -1,0 +1,27 @@
+[Unit]
+Description=DS01 Container Ownership Tracker
+Documentation=file:///opt/ds01-infra/docs-admin/architecture.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/ds01-infra/scripts/docker/container-owner-tracker.py
+Restart=always
+RestartSec=5
+User=root
+Group=docker
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ds01-container-owner-tracker
+
+# Hardening
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ds01/opa
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
