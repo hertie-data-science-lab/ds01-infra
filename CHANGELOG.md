@@ -5,14 +5,6 @@ All notable changes to DS01 Infrastructure will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Added
-- Semantic versioning with commitizen
-- Pre-commit hooks for commit message validation
-- GitHub Actions workflow for automated releases
-
-## [1.0.0] - 2025-12-02
 
 Initial versioned release of DS01 Infrastructure.
 
@@ -35,3 +27,20 @@ Initial versioned release of DS01 Infrastructure.
 - OPA authorization plugin
 - Docker wrapper for per-user slice injection
 - Cron-based cleanup automation
+
+## v1.1.0 (2026-01-07)
+
+### Features
+
+- add semantic versioning with commitizen
+
+## v1.0.0 (2025-12-02)
+
+### Features
+
+- Unify workflows into project-init with --guided flag + rollback docker socket
+- Make all host commands available inside containers
+- Clarify container vs host commands and add VS Code container setup guide
+- Improve container workflow and fix name clash issues
+- Add persistent container alias system and fix username display
+- Improve user onboarding workflows and rename commands
