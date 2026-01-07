@@ -11,8 +11,18 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# Get DS01 version from git
+# Get DS01 version
 INFRA_DIR="/opt/ds01-infra"
+VERSION_FILE="$INFRA_DIR/VERSION"
+
+# Read version from VERSION file (source of truth)
+if [ -f "$VERSION_FILE" ]; then
+    DS01_VERSION="v$(cat "$VERSION_FILE")"
+else
+    DS01_VERSION="unknown"
+fi
+
+# Get git info for commit hash
 if [ -d "$INFRA_DIR/.git" ]; then
     cd "$INFRA_DIR"
     GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
@@ -31,7 +41,7 @@ echo ""
 
 # DS01 Version
 echo -e "${BOLD}DS01 Infrastructure:${NC}"
-echo -e "  Version:      ${GREEN}${GIT_BRANCH}@${GIT_COMMIT}${NC}"
+echo -e "  Version:      ${GREEN}${DS01_VERSION}${NC} (${GIT_BRANCH}@${GIT_COMMIT})"
 echo -e "  Last update:  ${GIT_DATE}"
 echo -e "  Location:     ${INFRA_DIR}"
 echo ""

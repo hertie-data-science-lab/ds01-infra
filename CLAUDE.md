@@ -10,6 +10,22 @@ Instructions for AI assistants working with this repository.
 - Update CLAUDE.md if necessary, but don't create extra documentation unless requested
 - Store tests in relevant `/testing` directory for reuse
 
+## Contributing
+
+**Commit format:** Use [Conventional Commits](https://www.conventionalcommits.org/) - commits without type prefixes will be rejected.
+```bash
+feat: add feature     # → MINOR bump
+fix: resolve bug      # → PATCH bump
+feat!: breaking       # → MAJOR bump
+docs/chore/etc: ...   # → no version bump
+```
+
+**Setup:** `pip install pre-commit commitizen && pre-commit install --hook-type commit-msg`
+
+**Releases:** Manual via GitHub Actions (Actions → Release → Run workflow)
+
+See `CONTRIBUTING.md` and `docs-admin/versioning.md` for details.
+
 ## System Overview
 
 DS01 Infrastructure: GPU-enabled container management for multi-user data science workloads.

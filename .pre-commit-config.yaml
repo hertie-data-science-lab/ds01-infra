@@ -1,0 +1,52 @@
+# Pre-commit hooks for DS01 Infrastructure
+#
+# Install:
+#   pip install pre-commit
+#   pre-commit install --hook-type commit-msg
+#
+# Run manually:
+#   pre-commit run --all-files
+#
+# See: https://pre-commit.com
+
+repos:
+  # Commit message validation (conventional commits + no AI attribution)
+  - repo: local
+    hooks:
+      - id: validate-commit-message
+        name: Validate commit message
+        entry: python3 scripts/lib/validate-commit-msg.py
+        language: system
+        stages: [commit-msg]
+        always_run: true
+
+  # Basic file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]  # Allow custom YAML tags
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  # Shell script linting
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: [-x]  # Follow source statements
+        exclude: ^aime-ml-containers/
+
+  # Python formatting and linting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      - id: ruff-format
