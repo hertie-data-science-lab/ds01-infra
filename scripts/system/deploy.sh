@@ -196,6 +196,8 @@ deploy_cmd "$INFRA_ROOT/scripts/docker/gpu-queue-manager.py" "gpu-queue" "Helper
 $VERBOSE && echo -e "${DIM}Help:${NC}"
 deploy_cmd "$INFRA_ROOT/scripts/admin/alias-list" "help" "Help"
 deploy_cmd "$INFRA_ROOT/scripts/admin/alias-list" "commands" "Help"
+deploy_cmd "$INFRA_ROOT/scripts/admin/alias-list" "aliases" "Help"
+deploy_cmd "$INFRA_ROOT/scripts/admin/alias-list" "alias-list" "Help"
 deploy_cmd "$INFRA_ROOT/scripts/admin/version" "version" "Help"
 deploy_cmd "$INFRA_ROOT/scripts/admin/dashboard" "dashboard" "Help"
 
