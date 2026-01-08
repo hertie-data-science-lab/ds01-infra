@@ -417,6 +417,9 @@ fi
 # Confirmation
 if [ "$SKIP_CONFIRM" = false ] && [ "$DRY_RUN" = false ]; then
     read -r -p "Apply these changes? (yes/no): " confirm
+    # Normalize input (y/Y/yes/YES -> yes)
+    confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
+    [[ "$confirm" == "y" ]] && confirm="yes"
     if [ "$confirm" != "yes" ]; then
         echo "Aborted."
         exit 0
@@ -557,6 +560,9 @@ if [ ${#PENDING_GPUS[@]} -gt 0 ]; then
         do_reset="yes"
     else
         read -r -p "Reset GPU(s) ${PENDING_GPUS[*]} now to complete changes? (yes/no): " do_reset
+        # Normalize input (y/Y/yes/YES -> yes)
+        do_reset=$(echo "$do_reset" | tr '[:upper:]' '[:lower:]')
+        [[ "$do_reset" == "y" ]] && do_reset="yes"
     fi
 
     if [ "$do_reset" = "yes" ]; then
@@ -565,25 +571,109 @@ if [ ${#PENDING_GPUS[@]} -gt 0 ]; then
             echo -e "Resetting GPU $gpu..."
 
             # Try GPU reset
-            if nvidia-smi -i "$gpu" --gpu-reset 2>/dev/null; then
+            if nvidia-smi -i "$gpu" --gpu-reset 2>&1 | grep -q "successfully"; then
                 echo -e "  ${GREEN}✓${NC} GPU $gpu reset successfully"
-            else
-                # Fallback: cycle persistence mode
-                echo -e "  ${DIM}GPU reset not available, cycling persistence mode...${NC}"
-                nvidia-smi -i "$gpu" -pm 0 2>/dev/null || true
-                sleep 1
-                nvidia-smi -i "$gpu" -pm 1 2>/dev/null || true
+                continue
+            fi
 
-                # Check if it worked
-                new_current=$(get_mig_mode "$gpu")
-                new_pending=$(get_mig_mode_pending "$gpu")
+            # Reset failed - check what's blocking
+            echo -e "  ${YELLOW}Reset blocked - checking for processes...${NC}"
 
-                if [ "$new_current" = "$new_pending" ]; then
-                    echo -e "  ${GREEN}✓${NC} GPU $gpu changes applied"
-                else
-                    echo -e "  ${YELLOW}⚠${NC} GPU $gpu still pending - system reboot may be required"
-                    REBOOT_REQUIRED=true
+            # Get processes using this GPU
+            gpu_pids=$(nvidia-smi -i "$gpu" --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -v "^$" || true)
+
+            # Get containers using this GPU
+            gpu_containers=""
+            for container in $(docker ps -q 2>/dev/null); do
+                container_gpus=$(docker inspect "$container" 2>/dev/null | \
+                    python3 -c "import sys,json; d=json.load(sys.stdin)[0]; reqs=d.get('HostConfig',{}).get('DeviceRequests') or []; ids=sum((r.get('DeviceIDs') or [] for r in reqs), []); print(' '.join(ids))" 2>/dev/null || echo "")
+                if [[ "$container_gpus" == *"$gpu"* ]] || [[ "$container_gpus" == *"MIG-"* && "$container_gpus" != "" ]]; then
+                    name=$(docker inspect --format '{{.Name}}' "$container" 2>/dev/null | sed 's/^\///')
+                    gpu_containers="$gpu_containers $name"
                 fi
+            done
+            gpu_containers=$(echo "$gpu_containers" | xargs)
+
+            # Show what's blocking
+            blockers_found=false
+            if [ -n "$gpu_pids" ]; then
+                echo -e "  ${RED}Processes using GPU $gpu:${NC}"
+                for pid in $gpu_pids; do
+                    proc_name=$(ps -p "$pid" -o comm= 2>/dev/null || echo "unknown")
+                    proc_user=$(ps -p "$pid" -o user= 2>/dev/null || echo "unknown")
+                    echo -e "    PID $pid: $proc_name (user: $proc_user)"
+                done
+                blockers_found=true
+            fi
+
+            if [ -n "$gpu_containers" ]; then
+                echo -e "  ${RED}Containers using GPU $gpu:${NC}"
+                for container in $gpu_containers; do
+                    echo -e "    $container"
+                done
+                blockers_found=true
+            fi
+
+            if [ "$blockers_found" = false ]; then
+                # Something else is blocking (maybe fabric manager, X server, etc.)
+                echo -e "  ${YELLOW}No user processes found - may be system service (fabric manager, X, etc.)${NC}"
+            fi
+
+            # Ask to force
+            echo ""
+            if [ "$SKIP_CONFIRM" = true ]; then
+                force_reset="yes"
+            else
+                echo -e "  ${YELLOW}WARNING: Forcing reset will kill processes and stop containers!${NC}"
+                read -r -p "  Force reset GPU $gpu? (yes/no): " force_reset
+                # Normalize input
+                force_reset=$(echo "$force_reset" | tr '[:upper:]' '[:lower:]')
+                [[ "$force_reset" == "y" ]] && force_reset="yes"
+            fi
+
+            if [ "$force_reset" = "yes" ]; then
+                # Stop containers first
+                if [ -n "$gpu_containers" ]; then
+                    echo -e "  Stopping containers..."
+                    for container in $gpu_containers; do
+                        docker stop "$container" 2>/dev/null && echo -e "    ${GREEN}✓${NC} Stopped $container" || echo -e "    ${RED}✗${NC} Failed to stop $container"
+                    done
+                fi
+
+                # Kill processes
+                if [ -n "$gpu_pids" ]; then
+                    echo -e "  Killing processes..."
+                    for pid in $gpu_pids; do
+                        kill -9 "$pid" 2>/dev/null && echo -e "    ${GREEN}✓${NC} Killed PID $pid" || echo -e "    ${RED}✗${NC} Failed to kill PID $pid"
+                    done
+                    sleep 1
+                fi
+
+                # Retry GPU reset
+                echo -e "  Retrying GPU reset..."
+                if nvidia-smi -i "$gpu" --gpu-reset 2>&1 | grep -q "successfully"; then
+                    echo -e "  ${GREEN}✓${NC} GPU $gpu reset successfully"
+                else
+                    # Last resort: cycle persistence mode
+                    echo -e "  ${DIM}GPU reset still failing, cycling persistence mode...${NC}"
+                    nvidia-smi -i "$gpu" -pm 0 2>/dev/null || true
+                    sleep 2
+                    nvidia-smi -i "$gpu" -pm 1 2>/dev/null || true
+
+                    # Check if it worked
+                    new_current=$(get_mig_mode "$gpu")
+                    new_pending=$(get_mig_mode_pending "$gpu")
+
+                    if [ "$new_current" = "$new_pending" ]; then
+                        echo -e "  ${GREEN}✓${NC} GPU $gpu changes applied"
+                    else
+                        echo -e "  ${YELLOW}⚠${NC} GPU $gpu still pending - system reboot may be required"
+                        REBOOT_REQUIRED=true
+                    fi
+                fi
+            else
+                echo -e "  ${YELLOW}Skipped GPU $gpu reset${NC}"
+                REBOOT_REQUIRED=true
             fi
         done
         echo ""
