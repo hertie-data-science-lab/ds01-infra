@@ -1,0 +1,522 @@
+#!/bin/bash
+# DS01 Interactive MIG Configuration
+# Dynamically configure MIG partitions per GPU without reboot (when possible)
+
+set -e
+
+# Source DS01 library
+source /opt/ds01-infra/scripts/lib/init.sh
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+# MIG profiles available on A100-40GB (profile_name -> max_instances)
+declare -A PROFILE_MAX_INSTANCES=(
+    ["1g.5gb"]=7
+    ["1g.10gb"]=4
+    ["2g.10gb"]=3
+    ["3g.20gb"]=2
+    ["4g.20gb"]=1
+    ["7g.40gb"]=1
+)
+
+# Default profile
+DEFAULT_PROFILE="1g.10gb"
+
+# ============================================================================
+# Help
+# ============================================================================
+
+show_help() {
+    cat << 'EOF'
+DS01 MIG Configuration
+
+Interactively configure MIG partitions for each GPU.
+
+Usage: sudo mig-configure [OPTIONS]
+
+Options:
+  -p, --profile PROFILE   MIG profile to use (default: 1g.10gb)
+  -y, --yes               Skip confirmations
+  --dry-run               Show what would be done without changes
+  -h, --help              Show this help
+
+Profiles (A100-40GB):
+  1g.5gb   - Up to 7 instances (5GB each)
+  1g.10gb  - Up to 4 instances (10GB each) [default]
+  2g.10gb  - Up to 3 instances (10GB each, 2 SMs)
+  3g.20gb  - Up to 2 instances (20GB each)
+  4g.20gb  - 1 instance (20GB)
+  7g.40gb  - 1 instance (full GPU in MIG mode)
+
+Interactive prompts:
+  0      = Full GPU (disable MIG)
+  1-N    = Number of MIG partitions
+  Enter  = Skip (no change)
+
+Examples:
+  sudo mig-configure                    # Interactive configuration
+  sudo mig-configure --profile 2g.10gb  # Use larger partitions
+  sudo mig-configure --dry-run          # Preview changes
+EOF
+}
+
+# ============================================================================
+# Arguments
+# ============================================================================
+
+PROFILE="$DEFAULT_PROFILE"
+SKIP_CONFIRM=false
+DRY_RUN=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -p|--profile)
+            PROFILE="$2"
+            shift 2
+            ;;
+        -y|--yes)
+            SKIP_CONFIRM=true
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Unknown option: $1${NC}"
+            exit 1
+            ;;
+    esac
+done
+
+# ============================================================================
+# Validation
+# ============================================================================
+
+# Check root
+if [ "$EUID" -ne 0 ]; then
+    echo -e "${RED}Error:${NC} This command requires root privileges"
+    echo "Run with: sudo mig-configure"
+    exit 1
+fi
+
+# Validate profile
+MAX_INSTANCES="${PROFILE_MAX_INSTANCES[$PROFILE]}"
+if [ -z "$MAX_INSTANCES" ]; then
+    echo -e "${RED}Error:${NC} Unknown profile: $PROFILE"
+    echo "Valid profiles: ${!PROFILE_MAX_INSTANCES[*]}"
+    exit 1
+fi
+
+# Check nvidia-smi
+if ! command -v nvidia-smi &>/dev/null; then
+    echo -e "${RED}Error:${NC} nvidia-smi not found"
+    exit 1
+fi
+
+# ============================================================================
+# Functions
+# ============================================================================
+
+# Get GPU count
+get_gpu_count() {
+    nvidia-smi --query-gpu=count --format=csv,noheader | head -1
+}
+
+# Get current MIG mode for a GPU (Enabled/Disabled)
+get_mig_mode() {
+    local gpu_id=$1
+    nvidia-smi --query-gpu=mig.mode.current --format=csv,noheader -i "$gpu_id" 2>/dev/null || echo "Unknown"
+}
+
+# Get current MIG instance count for a GPU
+get_mig_instance_count() {
+    local gpu_id=$1
+    nvidia-smi mig -lgi -i "$gpu_id" 2>/dev/null | grep -c "MIG" || echo "0"
+}
+
+# Get current MIG profile for a GPU (from first instance)
+get_current_profile() {
+    local gpu_id=$1
+    nvidia-smi mig -lgi -i "$gpu_id" 2>/dev/null | grep -oP '\d+g\.\d+gb' | head -1 || echo ""
+}
+
+# Check if GPU has processes running
+gpu_has_processes() {
+    local gpu_id=$1
+    local pids
+    pids=$(nvidia-smi -i "$gpu_id" --query-compute-apps=pid --format=csv,noheader 2>/dev/null | grep -v "^$" | wc -l)
+    [ "$pids" -gt 0 ]
+}
+
+# Check if any containers are using a GPU
+get_containers_using_gpu() {
+    local gpu_id=$1
+    local containers=""
+
+    for container in $(docker ps -q 2>/dev/null); do
+        local gpu_devices
+        gpu_devices=$(docker inspect "$container" 2>/dev/null | \
+            python3 -c "import sys,json; d=json.load(sys.stdin)[0]; reqs=d.get('HostConfig',{}).get('DeviceRequests') or []; print(' '.join(r.get('DeviceIDs') or [] for r in reqs))" 2>/dev/null || echo "")
+
+        if [[ "$gpu_devices" == *"$gpu_id"* ]] || [[ "$gpu_devices" == *"GPU-"* ]]; then
+            local name
+            name=$(docker inspect --format '{{.Name}}' "$container" | sed 's/^\///')
+            containers="$containers $name"
+        fi
+    done
+
+    echo "$containers" | xargs
+}
+
+# Get profile ID dynamically from nvidia-smi
+get_profile_id() {
+    local profile_name=$1
+    local gpu_id=${2:-0}
+
+    # Query available profiles and find the ID
+    nvidia-smi mig -lgip -i "$gpu_id" 2>/dev/null | \
+        grep -E "MIG\s+${profile_name}" | \
+        awk '{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+$/ && $(i-1) ~ /gb/) print $i}' | head -1
+}
+
+# Destroy all MIG instances on a GPU
+destroy_mig_instances() {
+    local gpu_id=$1
+
+    echo -e "  ${DIM}Destroying compute instances...${NC}"
+    nvidia-smi mig -dci -i "$gpu_id" 2>/dev/null || true
+
+    echo -e "  ${DIM}Destroying GPU instances...${NC}"
+    nvidia-smi mig -dgi -i "$gpu_id" 2>/dev/null || true
+}
+
+# Create MIG instances on a GPU
+create_mig_instances() {
+    local gpu_id=$1
+    local count=$2
+    local profile=$3
+
+    # Get profile ID
+    local profile_id
+    profile_id=$(get_profile_id "$profile" "$gpu_id")
+
+    if [ -z "$profile_id" ]; then
+        echo -e "  ${RED}Error:${NC} Could not find profile ID for $profile"
+        return 1
+    fi
+
+    # Build comma-separated profile list
+    local profile_list=""
+    for ((i=0; i<count; i++)); do
+        [ -n "$profile_list" ] && profile_list="$profile_list,"
+        profile_list="$profile_list$profile_id"
+    done
+
+    echo -e "  ${DIM}Creating $count GPU instances (profile $profile, ID $profile_id)...${NC}"
+    nvidia-smi mig -cgi "$profile_list" -i "$gpu_id"
+
+    echo -e "  ${DIM}Creating compute instances...${NC}"
+    nvidia-smi mig -cci -i "$gpu_id"
+}
+
+# Enable MIG mode on a GPU
+enable_mig() {
+    local gpu_id=$1
+    nvidia-smi -i "$gpu_id" -mig 1
+}
+
+# Disable MIG mode on a GPU
+disable_mig() {
+    local gpu_id=$1
+    nvidia-smi -i "$gpu_id" -mig 0
+}
+
+# Reset a GPU (for MIG changes to take effect)
+reset_gpu() {
+    local gpu_id=$1
+
+    echo -e "  ${DIM}Resetting GPU $gpu_id...${NC}"
+
+    # Try GPU reset first
+    if nvidia-smi -i "$gpu_id" --gpu-reset 2>/dev/null; then
+        return 0
+    fi
+
+    # Fallback: cycle persistence mode
+    echo -e "  ${DIM}GPU reset failed, cycling persistence mode...${NC}"
+    nvidia-smi -i "$gpu_id" -pm 0 2>/dev/null || true
+    sleep 1
+    nvidia-smi -i "$gpu_id" -pm 1 2>/dev/null || true
+
+    return 0
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+echo ""
+ds01_draw_header "  MIG CONFIGURATION"
+echo ""
+
+if [ "$DRY_RUN" = true ]; then
+    echo -e "${YELLOW}DRY RUN MODE - No changes will be made${NC}"
+    echo ""
+fi
+
+echo -e "${BOLD}Profile:${NC} $PROFILE (max $MAX_INSTANCES partitions per GPU)"
+echo ""
+
+# Get GPU info
+GPU_COUNT=$(get_gpu_count)
+echo -e "${BOLD}Detected $GPU_COUNT GPU(s)${NC}"
+echo ""
+
+# Collect current state and desired changes
+declare -A CURRENT_MODE
+declare -A CURRENT_COUNT
+declare -A CURRENT_PROFILE
+declare -A DESIRED_COUNT
+declare -A GPU_BLOCKED
+
+# Show current state and collect input
+echo -e "${BOLD}Current State & Configuration:${NC}"
+echo ""
+
+for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
+    CURRENT_MODE[$gpu]=$(get_mig_mode "$gpu")
+    CURRENT_COUNT[$gpu]=$(get_mig_instance_count "$gpu")
+    CURRENT_PROFILE[$gpu]=$(get_current_profile "$gpu")
+    GPU_BLOCKED[$gpu]=false
+
+    # Build status string
+    status_str=""
+    if [ "${CURRENT_MODE[$gpu]}" = "Enabled" ]; then
+        if [ "${CURRENT_COUNT[$gpu]}" -gt 0 ]; then
+            status_str="${GREEN}MIG${NC}: ${CURRENT_COUNT[$gpu]}x ${CURRENT_PROFILE[$gpu]:-$PROFILE}"
+        else
+            status_str="${YELLOW}MIG enabled, no instances${NC}"
+        fi
+    else
+        status_str="${CYAN}Full GPU${NC}"
+    fi
+
+    # Check for blockers
+    blockers=""
+    if gpu_has_processes "$gpu"; then
+        blockers="${RED}processes running${NC}"
+        GPU_BLOCKED[$gpu]=true
+    fi
+
+    containers=$(get_containers_using_gpu "$gpu")
+    if [ -n "$containers" ]; then
+        [ -n "$blockers" ] && blockers="$blockers, "
+        blockers="${blockers}${RED}containers: $containers${NC}"
+        GPU_BLOCKED[$gpu]=true
+    fi
+
+    # Display
+    echo -e "${BOLD}GPU $gpu:${NC} $status_str"
+    if [ -n "$blockers" ]; then
+        echo -e "       ${DIM}Blocked:${NC} $blockers"
+    fi
+
+    # Prompt for desired state
+    if [ "${GPU_BLOCKED[$gpu]}" = true ]; then
+        echo -e "       ${DIM}(skipping - stop processes/containers first)${NC}"
+        DESIRED_COUNT[$gpu]="skip"
+    else
+        prompt="       Partitions [0=full, 1-$MAX_INSTANCES, Enter=skip]: "
+        read -r -p "$(echo -e "$prompt")" input
+
+        if [ -z "$input" ]; then
+            DESIRED_COUNT[$gpu]="skip"
+        elif [[ "$input" =~ ^[0-9]+$ ]] && [ "$input" -ge 0 ] && [ "$input" -le "$MAX_INSTANCES" ]; then
+            DESIRED_COUNT[$gpu]="$input"
+        else
+            echo -e "       ${YELLOW}Invalid input, skipping${NC}"
+            DESIRED_COUNT[$gpu]="skip"
+        fi
+    fi
+    echo ""
+done
+
+# Check if any changes requested
+CHANGES_REQUESTED=false
+for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
+    if [ "${DESIRED_COUNT[$gpu]}" != "skip" ]; then
+        CHANGES_REQUESTED=true
+        break
+    fi
+done
+
+if [ "$CHANGES_REQUESTED" = false ]; then
+    echo -e "${YELLOW}No changes requested.${NC}"
+    exit 0
+fi
+
+# Summary of changes
+echo ""
+ds01_draw_separator
+echo -e "${BOLD}Planned Changes:${NC}"
+echo ""
+
+REBOOT_REQUIRED=false
+
+for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
+    if [ "${DESIRED_COUNT[$gpu]}" = "skip" ]; then
+        continue
+    fi
+
+    desired="${DESIRED_COUNT[$gpu]}"
+    current_mode="${CURRENT_MODE[$gpu]}"
+
+    if [ "$desired" -eq 0 ]; then
+        # Want full GPU
+        if [ "$current_mode" = "Enabled" ]; then
+            echo -e "  GPU $gpu: ${CYAN}MIG → Full GPU${NC} (disable MIG)"
+        else
+            echo -e "  GPU $gpu: ${DIM}Already full GPU${NC}"
+            DESIRED_COUNT[$gpu]="skip"
+        fi
+    else
+        # Want MIG partitions
+        if [ "$current_mode" = "Enabled" ]; then
+            echo -e "  GPU $gpu: ${GREEN}Reconfigure to ${desired}x $PROFILE${NC}"
+        else
+            echo -e "  GPU $gpu: ${GREEN}Enable MIG with ${desired}x $PROFILE${NC}"
+            REBOOT_REQUIRED=true
+        fi
+    fi
+done
+
+echo ""
+
+# Warn about reboot if needed
+if [ "$REBOOT_REQUIRED" = true ]; then
+    echo -e "${YELLOW}Note: Enabling MIG on a non-MIG GPU may require a reboot.${NC}"
+    echo -e "${YELLOW}      The script will attempt dynamic reconfiguration first.${NC}"
+    echo ""
+fi
+
+# Confirmation
+if [ "$SKIP_CONFIRM" = false ] && [ "$DRY_RUN" = false ]; then
+    read -r -p "Apply these changes? (yes/no): " confirm
+    if [ "$confirm" != "yes" ]; then
+        echo "Aborted."
+        exit 0
+    fi
+    echo ""
+fi
+
+if [ "$DRY_RUN" = true ]; then
+    echo -e "${YELLOW}DRY RUN - No changes made${NC}"
+    exit 0
+fi
+
+# Apply changes
+ds01_draw_separator
+echo -e "${BOLD}Applying Changes:${NC}"
+echo ""
+
+ERRORS=0
+
+for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
+    if [ "${DESIRED_COUNT[$gpu]}" = "skip" ]; then
+        continue
+    fi
+
+    desired="${DESIRED_COUNT[$gpu]}"
+    current_mode="${CURRENT_MODE[$gpu]}"
+
+    echo -e "${CYAN}━━━ GPU $gpu ━━━${NC}"
+
+    if [ "$desired" -eq 0 ]; then
+        # Disable MIG - want full GPU
+        echo -e "  Target: Full GPU (disable MIG)"
+
+        # Destroy existing instances
+        destroy_mig_instances "$gpu"
+
+        # Disable MIG mode
+        echo -e "  ${DIM}Disabling MIG mode...${NC}"
+        if disable_mig "$gpu"; then
+            # Reset GPU to apply
+            if reset_gpu "$gpu"; then
+                echo -e "  ${GREEN}✓${NC} MIG disabled successfully"
+            else
+                echo -e "  ${YELLOW}⚠${NC} MIG disabled but reset failed - reboot may be needed"
+                REBOOT_REQUIRED=true
+            fi
+        else
+            echo -e "  ${RED}✗${NC} Failed to disable MIG"
+            ((ERRORS++))
+        fi
+
+    else
+        # Enable/reconfigure MIG
+        echo -e "  Target: ${desired}x $PROFILE"
+
+        if [ "$current_mode" = "Enabled" ]; then
+            # Already MIG - just reconfigure instances
+            destroy_mig_instances "$gpu"
+
+            if create_mig_instances "$gpu" "$desired" "$PROFILE"; then
+                echo -e "  ${GREEN}✓${NC} Created $desired MIG instances"
+            else
+                echo -e "  ${RED}✗${NC} Failed to create MIG instances"
+                ((ERRORS++))
+            fi
+        else
+            # Need to enable MIG first
+            echo -e "  ${DIM}Enabling MIG mode...${NC}"
+
+            if enable_mig "$gpu"; then
+                # Try to reset and create instances
+                if reset_gpu "$gpu"; then
+                    sleep 2  # Give driver time to settle
+
+                    if create_mig_instances "$gpu" "$desired" "$PROFILE"; then
+                        echo -e "  ${GREEN}✓${NC} MIG enabled with $desired instances"
+                    else
+                        echo -e "  ${YELLOW}⚠${NC} MIG enabled but instance creation failed"
+                        echo -e "  ${DIM}Run this command again after reboot${NC}"
+                        REBOOT_REQUIRED=true
+                    fi
+                else
+                    echo -e "  ${YELLOW}⚠${NC} MIG enabled (pending) - reboot required"
+                    REBOOT_REQUIRED=true
+                fi
+            else
+                echo -e "  ${RED}✗${NC} Failed to enable MIG"
+                ((ERRORS++))
+            fi
+        fi
+    fi
+
+    echo ""
+done
+
+# Final status
+ds01_draw_separator
+
+if [ "$ERRORS" -gt 0 ]; then
+    echo -e "${RED}Completed with $ERRORS error(s)${NC}"
+elif [ "$REBOOT_REQUIRED" = true ]; then
+    echo -e "${YELLOW}Changes applied - reboot required for full effect${NC}"
+    echo ""
+    echo "After reboot, run: sudo mig-configure"
+else
+    echo -e "${GREEN}✓ MIG configuration applied successfully${NC}"
+fi
+
+echo ""
+echo "Verify with: nvidia-smi -L"
+echo ""

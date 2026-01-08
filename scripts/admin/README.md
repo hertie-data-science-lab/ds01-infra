@@ -154,6 +154,36 @@ ds01-mig-partition validate          # Validate current configuration
 
 **Warning:** Changing MIG configuration requires stopping all containers using affected GPUs.
 
+### mig-configure
+
+**Interactive MIG configuration CLI.**
+
+**Purpose:** Dynamically configure MIG partitions per GPU without requiring a reboot (when possible).
+
+**Features:**
+- Interactive prompts: choose partition count per GPU (0=full, 1-N=MIG)
+- Safety checks: blocks changes if processes/containers are using the GPU
+- Dynamic reconfiguration: attempts changes without reboot on modern drivers
+- Supports all A100-40GB profiles (1g.5gb through 7g.40gb)
+
+**Usage:**
+```bash
+sudo mig-configure                    # Interactive configuration
+sudo mig-configure --dry-run          # Preview changes without applying
+sudo mig-configure --profile 2g.10gb  # Use larger MIG partitions
+sudo mig-configure --yes              # Skip confirmations
+```
+
+**Interactive prompts:**
+- `0` = Full GPU (disable MIG)
+- `1-N` = Number of MIG partitions
+- `Enter` = Skip (no change)
+
+**Requirements:**
+- Root privileges (sudo)
+- NVIDIA driver 535+ recommended for dynamic reconfiguration
+- No processes running on GPUs being reconfigured
+
 ---
 
 ## Command Management
