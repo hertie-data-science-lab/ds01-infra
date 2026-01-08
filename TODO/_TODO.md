@@ -53,8 +53,29 @@
 - [ ] add to documentation that docker images routinely prunced -> dockerfiles will be single source of truth / never be deleted
 - [ ] pune back existing & make more modular
 
+# Monitoring Improvements (Jan 2026)
+
+### GPU/Container Lifecycle Issues Found
+
+- [ ] **Dormant GPU allocations from non-DS01 containers**: VS Code Dev Containers and other tools launch containers with `--gpus all` (count=-1), giving them passive access to ALL GPUs even when not using them. These block MIG reconfiguration and GPU resets.
+  - Current: DS01 expects containers to have dedicated GPU allocation that's released on retire
+  - Problem: Dev Containers get "dormant" access to all GPUs, blocking other users
+  - Options to consider:
+    1. Intercept devcontainer launches via docker wrapper to enforce GPU limits
+    2. Periodic cleanup of containers with unused GPU allocations
+    3. OPA policy to block `--gpus all` for non-admin users
+    4. Education: document that users should specify GPU in devcontainer.json
+
+- [ ] **CPU idle threshold too strict**: Containers with 0.3-0.4% CPU (effectively idle) aren't being cleaned up because current idle detection requires < 1% CPU
+  - Consider: Set threshold to < 2% or < 5% for "idle" classification
+  - Also: Add GPU utilization check (0% GPU + low CPU = truly idle)
+  - Location: `scripts/maintenance/check-idle-containers.sh`
+
+- [ ] **Missing ds01.managed label**: Some containers (e.g., `reverent_burnell`) created via Dev Containers don't get the `ds01.managed=true` label, escaping all DS01 cleanup automation
+  - Need: Ensure docker wrapper adds label to ALL containers, not just DS01-launched ones
+
 # Logging
-- [ ] add Grafana & Prometheus for logging
+- [x] add Grafana & Prometheus for logging
 
 # Save Copy of Configs in Git Repo
 - [ ] make sure all config mirrors are up to date in the repo -> being tracked
