@@ -135,6 +135,12 @@ get_mig_mode() {
     nvidia-smi --query-gpu=mig.mode.current --format=csv,noheader -i "$gpu_id" 2>/dev/null || echo "Unknown"
 }
 
+# Get pending MIG mode for a GPU (Enabled/Disabled)
+get_mig_mode_pending() {
+    local gpu_id=$1
+    nvidia-smi --query-gpu=mig.mode.pending --format=csv,noheader -i "$gpu_id" 2>/dev/null || echo "Unknown"
+}
+
 # Get current MIG instance count for a GPU
 get_mig_instance_count() {
     local gpu_id=$1
@@ -504,17 +510,99 @@ for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
     echo ""
 done
 
-# Final status
+# Final status - check all GPUs for pending changes
+ds01_draw_separator
+echo -e "${BOLD}GPU Status:${NC}"
+echo ""
+
+PENDING_GPUS=()
+
+printf "  %-6s %-12s %-12s %s\n" "GPU" "Current" "Pending" "Status"
+printf "  %-6s %-12s %-12s %s\n" "---" "-------" "-------" "------"
+
+for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
+    current=$(get_mig_mode "$gpu")
+    pending=$(get_mig_mode_pending "$gpu")
+    instances=$(get_mig_instance_count "$gpu")
+
+    if [ "$current" = "$pending" ]; then
+        if [ "$current" = "Enabled" ]; then
+            status="${GREEN}OK${NC} (${instances} instances)"
+        else
+            status="${GREEN}OK${NC} (full GPU)"
+        fi
+    else
+        status="${YELLOW}PENDING${NC}"
+        PENDING_GPUS+=("$gpu")
+    fi
+
+    printf "  %-6s %-12s %-12s " "$gpu" "$current" "$pending"
+    echo -e "$status"
+done
+
+echo ""
+
+# Handle pending changes
+if [ ${#PENDING_GPUS[@]} -gt 0 ]; then
+    ds01_draw_separator
+    echo -e "${YELLOW}Pending Changes Detected${NC}"
+    echo ""
+    echo "The following GPU(s) have pending MIG mode changes: ${PENDING_GPUS[*]}"
+    echo "A GPU reset is required to apply these changes."
+    echo ""
+
+    if [ "$SKIP_CONFIRM" = true ]; then
+        do_reset="yes"
+    else
+        read -r -p "Reset GPU(s) ${PENDING_GPUS[*]} now to complete changes? (yes/no): " do_reset
+    fi
+
+    if [ "$do_reset" = "yes" ]; then
+        echo ""
+        for gpu in "${PENDING_GPUS[@]}"; do
+            echo -e "Resetting GPU $gpu..."
+
+            # Try GPU reset
+            if nvidia-smi -i "$gpu" --gpu-reset 2>/dev/null; then
+                echo -e "  ${GREEN}✓${NC} GPU $gpu reset successfully"
+            else
+                # Fallback: cycle persistence mode
+                echo -e "  ${DIM}GPU reset not available, cycling persistence mode...${NC}"
+                nvidia-smi -i "$gpu" -pm 0 2>/dev/null || true
+                sleep 1
+                nvidia-smi -i "$gpu" -pm 1 2>/dev/null || true
+
+                # Check if it worked
+                new_current=$(get_mig_mode "$gpu")
+                new_pending=$(get_mig_mode_pending "$gpu")
+
+                if [ "$new_current" = "$new_pending" ]; then
+                    echo -e "  ${GREEN}✓${NC} GPU $gpu changes applied"
+                else
+                    echo -e "  ${YELLOW}⚠${NC} GPU $gpu still pending - system reboot may be required"
+                    REBOOT_REQUIRED=true
+                fi
+            fi
+        done
+        echo ""
+    else
+        echo ""
+        echo -e "${YELLOW}Changes are pending. To apply later:${NC}"
+        echo "  sudo nvidia-smi -i <gpu_id> --gpu-reset"
+        echo "  or reboot the system"
+        echo ""
+    fi
+fi
+
+# Final summary
 ds01_draw_separator
 
 if [ "$ERRORS" -gt 0 ]; then
     echo -e "${RED}Completed with $ERRORS error(s)${NC}"
 elif [ "$REBOOT_REQUIRED" = true ]; then
-    echo -e "${YELLOW}Changes applied - reboot required for full effect${NC}"
-    echo ""
-    echo "After reboot, run: sudo mig-configure"
+    echo -e "${YELLOW}Some changes require a system reboot${NC}"
 else
-    echo -e "${GREEN}✓ MIG configuration applied successfully${NC}"
+    echo -e "${GREEN}✓ MIG configuration complete${NC}"
 fi
 
 echo ""
