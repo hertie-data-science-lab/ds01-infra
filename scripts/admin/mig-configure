@@ -124,6 +124,12 @@ fi
 # Functions
 # ============================================================================
 
+# Flush stdin buffer to prevent input bleed between prompts
+flush_input() {
+    # Read and discard any pending input (non-blocking)
+    while read -r -t 0.01 -n 1000 discard 2>/dev/null; do :; done
+}
+
 # Get GPU count
 get_gpu_count() {
     nvidia-smi --query-gpu=count --format=csv,noheader | head -1
@@ -342,6 +348,7 @@ for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
         DESIRED_COUNT[$gpu]="skip"
     else
         prompt="       Partitions [0=full, 1-$MAX_INSTANCES, Enter=skip]: "
+        flush_input
         read -r -p "$(echo -e "$prompt")" input
 
         if [ -z "$input" ]; then
@@ -416,6 +423,7 @@ fi
 
 # Confirmation
 if [ "$SKIP_CONFIRM" = false ] && [ "$DRY_RUN" = false ]; then
+    flush_input
     read -r -p "Apply these changes? (yes/no): " confirm
     # Normalize input (y/Y/yes/YES -> yes)
     confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
@@ -559,6 +567,7 @@ if [ ${#PENDING_GPUS[@]} -gt 0 ]; then
     if [ "$SKIP_CONFIRM" = true ]; then
         do_reset="yes"
     else
+        flush_input
         read -r -p "Reset GPU(s) ${PENDING_GPUS[*]} now to complete changes? (yes/no): " do_reset
         # Normalize input (y/Y/yes/YES -> yes)
         do_reset=$(echo "$do_reset" | tr '[:upper:]' '[:lower:]')
@@ -625,6 +634,7 @@ if [ ${#PENDING_GPUS[@]} -gt 0 ]; then
                 force_reset="yes"
             else
                 echo -e "  ${YELLOW}WARNING: Forcing reset will kill processes and stop containers!${NC}"
+                flush_input
                 read -r -p "  Force reset GPU $gpu? (yes/no): " force_reset
                 # Normalize input
                 force_reset=$(echo "$force_reset" | tr '[:upper:]' '[:lower:]')
