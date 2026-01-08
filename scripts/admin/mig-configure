@@ -144,7 +144,9 @@ get_mig_mode_pending() {
 # Get current MIG instance count for a GPU
 get_mig_instance_count() {
     local gpu_id=$1
-    nvidia-smi mig -lgi -i "$gpu_id" 2>/dev/null | grep -c "MIG" || echo "0"
+    local count
+    count=$(nvidia-smi mig -lgi -i "$gpu_id" 2>/dev/null | grep -c "MIG" 2>/dev/null) || count=0
+    echo "$count"
 }
 
 # Get current MIG profile for a GPU (from first instance)
