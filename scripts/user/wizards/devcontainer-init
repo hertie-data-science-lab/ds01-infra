@@ -708,8 +708,11 @@ cat >> "$OUTPUT_PATH" << 'JSONEOF'
 JSONEOF
 
 # Add container environment
+# HOME must be set to user's mounted home so VS Code writes to correct location
+# (container runs as non-root user but default HOME may still be /root)
 cat >> "$OUTPUT_PATH" << 'JSONEOF'
   "containerEnv": {
+    "HOME": "/home/${localEnv:USER}",
     "HF_HOME": "/home/${localEnv:USER}/.cache/huggingface"
   },
 

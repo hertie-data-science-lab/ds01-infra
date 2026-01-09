@@ -19,6 +19,7 @@ DS01 brings container-based GPU allocation, per-user resource limits, and automa
 **Built on proven foundations:**
 - [AIME ML Containers](https://github.com/aime-team/aime-ml-containers) for container management
 - Docker + NVIDIA Container Toolkit for GPU passthrough
+- VS Code Dev Containers for IDE integration
 - systemd cgroups for resource isolation
 - Prometheus + Grafana for monitoring and metrics
 
@@ -252,13 +253,6 @@ See [TODO.md](TODO.md) for current priorities:
 - **HIGH:** Dev Container GPU integration, monitoring fixes
 - **MEDIUM:** OPA authorization, bare metal restriction
 - **LOW:** SLURM integration, dynamic MIG partitioning
-
-## Acknowledgements
-
-DS01 builds on excellent open-source projects:
-- [AIME ML Containers](https://github.com/aime-team/aime-ml-containers) - Core container management
-- [NVIDIA Container Toolkit](https://github.com/NVIDIA/nvidia-container-toolkit) - GPU passthrough
-- [systemd](https://systemd.io/) - Resource isolation via cgroups
 
 ## License
 

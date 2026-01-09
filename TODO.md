@@ -19,6 +19,12 @@
 - [x] **Integrate with project-init** - Step 7 offers CLI vs VS Code workflow choice
 - [x] **Add devcontainer check validator** - validates devcontainer.json for DS01 compatibility
 - [x] **Update user documentation** - docs-user/core-guides/devcontainers.md
+- [ ] **TOP PRIORITY: Verify dashboard/DS01 tools handle dev containers** - Next to implement!
+  - Check: `dashboard` shows dev containers correctly
+  - Check: `container ls` displays dev containers (already updated)
+  - Check: `gpu-status` reflects dev container GPU usage
+  - Check: cleanup scripts handle dev containers appropriately
+  - Check: dev containers appear in monitoring/metrics
 - [ ] **CRITICAL: Test full dev container workflow end-to-end** - This may be the ideal workflow!
   - Test: Open folder in VS Code, "Reopen in Container", verify GPU allocation
   - Verify: docker-wrapper.sh intercepts and allocates GPU dynamically
