@@ -64,18 +64,18 @@ sudo /opt/ds01-infra/scripts/system/deploy-commands.sh
 
 Deploys all 50+ commands organized by tier:
 
-**Tier 4 (Wizards):**
+**Layer 4 (Wizards):**
 - `user-setup` → `scripts/user/wizards/user-setup`
 - `project-init` → `scripts/user/wizards/project-init`
 - `project-launch` → `scripts/user/wizards/project-launch`
 - Legacy aliases: `new-user` → `user-setup`, `new-project` → `project-init`
 
-**Tier 3 (Orchestrators):**
+**Layer 3 (Orchestrators):**
 - `container-deploy` → `scripts/user/orchestrators/container-deploy`
 - `container-retire` → `scripts/user/orchestrators/container-retire`
 - Dispatchers: `user`, `project`, `container`, `image` → `scripts/user/dispatchers/`
 
-**Tier 2 (Atomic):**
+**Layer 2 (Atomic):**
 - Container: `container-{create|run|start|stop|list|stats|remove|exit}` → `scripts/user/atomic/`
 - Image: `image-{create|list|update|delete}` → `scripts/user/atomic/`
 
