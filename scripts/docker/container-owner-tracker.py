@@ -281,6 +281,65 @@ class ContainerOwnerTracker:
 
         return None, None, "unknown"
 
+    def _container_has_gpu(self, container_data: dict[str, Any]) -> bool:
+        """
+        Check if container has GPU access.
+
+        Examines DeviceRequests in HostConfig to detect NVIDIA GPU allocation.
+        """
+        host_config = container_data.get("HostConfig", {})
+        device_requests = host_config.get("DeviceRequests", []) or []
+
+        for req in device_requests:
+            if not isinstance(req, dict):
+                continue
+            # Check for nvidia driver
+            if req.get("Driver") == "nvidia":
+                return True
+            # Check for GPU capability
+            capabilities = req.get("Capabilities", []) or []
+            for cap_list in capabilities:
+                if isinstance(cap_list, list) and "gpu" in cap_list:
+                    return True
+
+        return False
+
+    def _flag_unmanaged_gpu_container(
+        self,
+        container_id: str,
+        container_name: str,
+        username: str | None,
+        interface: str,
+    ) -> None:
+        """
+        Flag an unmanaged GPU container for special handling.
+
+        These containers bypassed the docker wrapper (API-created) but have GPU.
+        They get flagged for stricter lifecycle enforcement.
+        """
+        log(
+            f"WARNING: Unmanaged GPU container detected: {container_name or container_id[:12]} "
+            f"owner={username or 'unknown'} interface={interface}"
+        )
+
+        # Ensure flagged_gpu_containers list exists
+        if "flagged_gpu_containers" not in self.owners:
+            self.owners["flagged_gpu_containers"] = []
+
+        # Avoid duplicates
+        existing_ids = [c.get("container_id") for c in self.owners["flagged_gpu_containers"]]
+        if container_id in existing_ids or container_id[:12] in existing_ids:
+            return
+
+        self.owners["flagged_gpu_containers"].append({
+            "container_id": container_id,
+            "container_name": container_name,
+            "owner": username,
+            "interface": interface,
+            "detected_at": datetime.now(timezone.utc).isoformat(),
+            "reason": "GPU access without ds01 allocation",
+        })
+
     def _detect_interface(self, container_data: dict[str, Any]) -> str:
         """Detect which interface/tool created the container."""
         labels = container_data.get("Config", {}).get("Labels", {}) or {}
@@ -332,12 +391,20 @@ class ContainerOwnerTracker:
             or labels.get("aime.mlc.DS01_MANAGED") == "true"
         )
 
+        # Check if container has GPU access
+        has_gpu = self._container_has_gpu(container_data)
+
+        # Flag unmanaged GPU containers (bypassed wrapper, has GPU but not ds01 managed)
+        if has_gpu and not ds01_managed:
+            self._flag_unmanaged_gpu_container(full_id, name, username, interface)
+
         entry = {
             "owner": username,
             "owner_uid": uid,
             "name": name,
             "ds01_managed": ds01_managed,
             "interface": interface,
+            "has_gpu": has_gpu,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "detection_method": method,
         }
@@ -351,7 +418,9 @@ class ContainerOwnerTracker:
         self._save()
 
         owner_str = username if username else "(unknown)"
-        log(f"Tracked: {name} owner={owner_str} interface={interface} method={method}")
+        gpu_str = " [GPU]" if has_gpu else ""
+        managed_str = "" if ds01_managed else " [unmanaged]" if has_gpu else ""
+        log(f"Tracked: {name} owner={owner_str} interface={interface}{gpu_str}{managed_str} method={method}")
 
     def handle_destroy(self, container_id: str, container_name: str = "") -> None:
         """Handle container destroy event."""
@@ -371,6 +440,16 @@ class ContainerOwnerTracker:
         for key in set(keys_to_remove):  # dedupe
             if containers.pop(key, None) is not None:
                 removed_any = True
+
+        # Also remove from flagged_gpu_containers if present
+        if "flagged_gpu_containers" in self.owners:
+            short_id = container_id[:12]
+            self.owners["flagged_gpu_containers"] = [
+                c for c in self.owners["flagged_gpu_containers"]
+                if c.get("container_id") != container_id
+                and c.get("container_id", "")[:12] != short_id
+                and c.get("container_name") != container_name
+            ]
 
         if removed_any:
             self._save()

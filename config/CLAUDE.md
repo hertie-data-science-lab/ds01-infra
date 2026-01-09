@@ -79,6 +79,33 @@ user_overrides:
     reason: "Thesis work - approved 2025-11-15"
 ```
 
+## Container Types (Universal Management)
+
+**Core principle**: GPU access = ephemeral enforcement, No GPU = permanent OK.
+
+The `container_types` section defines lifecycle limits for external containers (devcontainer, compose, docker):
+
+```yaml
+container_types:
+  devcontainer:
+    idle_timeout: 30m
+    max_runtime: 168h      # 7 days
+    default_mig_count:     # Group-based MIG limits
+      student: 1
+      researcher: 2
+      faculty: 2
+      admin: null          # unlimited
+  compose:
+    idle_timeout: 30m
+    max_runtime: 72h       # 3 days
+  docker:
+    idle_timeout: 30m
+    max_runtime: 48h       # 2 days
+  unknown:                 # API-created, strictest limits
+    idle_timeout: 15m
+    max_runtime: 24h
+```
+
 ## MIG Configuration
 
 In `gpu_allocation` section:

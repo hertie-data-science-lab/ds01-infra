@@ -1,27 +1,32 @@
 #!/bin/bash
 # /opt/ds01-infra/scripts/docker/docker-wrapper.sh
-# DS01 Docker Wrapper - Universal Resource Enforcement & Ownership Tracking
+# DS01 Docker Wrapper - Universal Container Management
 #
-# Phase A+B: Cgroup injection + Owner labels + Visibility filtering (Dec 2025)
+# Phase A+B+C: Cgroup injection + Owner labels + GPU allocation (Jan 2026)
 #
 # This wrapper intercepts Docker commands and:
 # - Injects per-user cgroup-parent for resource limits
-# - Injects owner labels (ds01.user, ds01.managed) for ownership tracking
-# - Filters 'docker ps' to show only user's containers (non-admins)
+# - Injects owner labels (ds01.user, ds01.managed, ds01.container_type)
+# - Intercepts GPU requests and routes through ds01 allocation
+# - Rewrites --gpus all to specific allocated device
+# - Enforces user GPU quotas
 #
 # Installation: Copy to /usr/local/bin/docker (takes precedence over /usr/bin/docker)
 #
+# GPU ACCESS RULES:
+# - GPU containers are EPHEMERAL (idle timeout + max runtime enforced)
+# - Non-GPU containers can be PERMANENT (no restrictions)
+# - All containers are tracked regardless of launch method
+#
 # How it works:
 # 1. Intercepts 'docker run' and 'docker create' commands
-# 2. Extracts user's group from resource-limits.yaml
-# 3. Ensures user's slice exists (ds01-{group}-{user}.slice)
-# 4. Injects --cgroup-parent if not already specified
-# 5. Injects --label ds01.user=<username> for ownership tracking
-# 6. Filters 'docker ps' for non-admin users (ds01-admin group bypasses)
-# 7. Passes through to real Docker binary
-#
-# Admin users (in ds01-admin group) see all containers.
-# Non-admin users see only containers with their ds01.user label.
+# 2. Detects if container requests GPU access (--gpus flag)
+# 3. If GPU requested: allocates from pool, rewrites --gpus to specific device
+# 4. Extracts user's group from resource-limits.yaml
+# 5. Ensures user's slice exists (ds01-{group}-{user}.slice)
+# 6. Injects --cgroup-parent if not already specified
+# 7. Injects ownership and type labels
+# 8. Passes through to real Docker binary
 
 # Real Docker binary
 REAL_DOCKER="/usr/bin/docker"
@@ -30,9 +35,14 @@ REAL_DOCKER="/usr/bin/docker"
 INFRA_ROOT="/opt/ds01-infra"
 CONFIG_FILE="$INFRA_ROOT/config/resource-limits.yaml"
 RESOURCE_PARSER="$INFRA_ROOT/scripts/docker/get_resource_limits.py"
+GPU_ALLOCATOR="$INFRA_ROOT/scripts/docker/gpu_allocator_v2.py"
 CREATE_SLICE="$INFRA_ROOT/scripts/system/create-user-slice.sh"
 USERNAME_UTILS="$INFRA_ROOT/scripts/lib/username-utils.sh"
 LOG_FILE="/var/log/ds01/docker-wrapper.log"
+
+# GPU allocation settings
+GPU_ALLOCATION_TIMEOUT=180  # 3 minutes
+GPU_ALLOCATION_RETRY_INTERVAL=10  # seconds
 
 # Source username sanitization library (fail silently if not available)
 if [ -f "$USERNAME_UTILS" ]; then
@@ -114,6 +124,323 @@ get_devcontainer_owner() {
         prev_arg="$arg"
     done
     return 1
+}
+
+# ============================================================================
+# PHASE 1: GPU AND CONTAINER TYPE DETECTION
+# ============================================================================
+
+# Check if container requests GPU access
+has_gpu_request() {
+    for arg in "$@"; do
+        case "$arg" in
+            --gpus|--gpus=*|--runtime=nvidia|--device=*nvidia*)
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
+# Check for a specific label pattern in args
+has_label_pattern() {
+    local pattern="$1"
+    shift
+    local prev_arg=""
+    for arg in "$@"; do
+        # Check for --label=pattern
+        if [[ "$arg" == "--label=$pattern"* ]] || [[ "$arg" == "--label="*"$pattern"* ]]; then
+            return 0
+        fi
+        # Check for --label pattern (two separate args)
+        if [[ "$prev_arg" == "--label" ]] && [[ "$arg" == "$pattern"* || "$arg" == *"$pattern"* ]]; then
+            return 0
+        fi
+        prev_arg="$arg"
+    done
+    return 1
+}
+
+# Detect container type from docker args
+# Returns: orchestration, atomic, devcontainer, compose, docker
+detect_container_type() {
+    # Check for explicit ds01.interface label (highest priority)
+    local prev_arg=""
+    for arg in "$@"; do
+        if [[ "$arg" == "--label=ds01.interface="* ]]; then
+            echo "${arg#--label=ds01.interface=}"
+            return
+        fi
+        if [[ "$prev_arg" == "--label" ]] && [[ "$arg" == "ds01.interface="* ]]; then
+            echo "${arg#ds01.interface=}"
+            return
+        fi
+        prev_arg="$arg"
+    done
+
+    # Check for devcontainer labels
+    if has_label_pattern "devcontainer." "$@"; then
+        echo "devcontainer"
+        return
+    fi
+
+    # Check for compose labels
+    if has_label_pattern "com.docker.compose" "$@"; then
+        echo "compose"
+        return
+    fi
+
+    # Check for ds01.managed label (atomic interface)
+    if has_label_pattern "ds01.managed" "$@"; then
+        echo "atomic"
+        return
+    fi
+
+    # Default: direct docker command
+    echo "docker"
+}
+
+# Extract the GPU request value (e.g., "all", "1", "device=GPU-xxx")
+get_gpu_request_value() {
+    local prev_arg=""
+    for arg in "$@"; do
+        case "$arg" in
+            --gpus=*)
+                echo "${arg#--gpus=}"
+                return 0
+                ;;
+            --gpus)
+                # Next arg is the value
+                prev_arg="--gpus"
+                continue
+                ;;
+        esac
+        if [[ "$prev_arg" == "--gpus" ]]; then
+            echo "$arg"
+            return 0
+        fi
+        prev_arg="$arg"
+    done
+    echo ""
+    return 1
+}
+
+# ============================================================================
+# PHASE 2: GPU ALLOCATION AND ARGUMENT REWRITING
+# ============================================================================
+
+# Display GPU container notice to user
+show_gpu_notice() {
+    local gpu_device="$1"
+    local container_type="$2"
+    local idle_timeout="$3"
+    local max_runtime="$4"
+
+    # Only show in interactive mode (TTY attached)
+    if [ -t 1 ]; then
+        echo "" >&2
+        echo "┌─────────────────────────────────────────────────────────────────┐" >&2
+        echo "│  DS01 GPU Container Notice                                       │" >&2
+        echo "├─────────────────────────────────────────────────────────────────┤" >&2
+        echo "│                                                                  │" >&2
+        printf "│  Allocated GPU: %-46s │\n" "$gpu_device" >&2
+        echo "│                                                                  │" >&2
+        echo "│  IMPORTANT: GPU containers are ephemeral:                        │" >&2
+        printf "│  • Idle timeout: %-44s │\n" "$idle_timeout of GPU inactivity → auto-stop" >&2
+        printf "│  • Max runtime: %-45s │\n" "$max_runtime → auto-stop" >&2
+        echo "│                                                                  │" >&2
+        echo "│  Save work to mounted volumes (/home/\$USER/).                   │" >&2
+        echo "│                                                                  │" >&2
+        echo "└─────────────────────────────────────────────────────────────────┘" >&2
+        echo "" >&2
+    fi
+}
+
+# Show GPU allocation error
+show_gpu_error() {
+    local error_type="$1"
+    local details="$2"
+
+    echo "" >&2
+    echo "┌─────────────────────────────────────────────────────────────────┐" >&2
+    echo "│  DS01 GPU Allocation Failed                                      │" >&2
+    echo "├─────────────────────────────────────────────────────────────────┤" >&2
+
+    case "$error_type" in
+        QUOTA_EXCEEDED)
+            echo "│                                                                  │" >&2
+            echo "│  You have reached your GPU quota limit.                          │" >&2
+            echo "│                                                                  │" >&2
+            printf "│  %-64s │\n" "$details" >&2
+            echo "│                                                                  │" >&2
+            echo "│  To free up quota:                                               │" >&2
+            echo "│    • Stop an existing container: docker stop <name>              │" >&2
+            echo "│    • Check your containers: docker ps                            │" >&2
+            ;;
+        TIMEOUT)
+            echo "│                                                                  │" >&2
+            echo "│  No GPU available after waiting 3 minutes.                       │" >&2
+            echo "│                                                                  │" >&2
+            echo "│  All GPUs are currently allocated to other users.                │" >&2
+            echo "│                                                                  │" >&2
+            echo "│  Suggestions:                                                    │" >&2
+            echo "│    • Try again later                                             │" >&2
+            echo "│    • Check GPU status: gpu-status                                │" >&2
+            echo "│    • System cleanup runs every 30 minutes                        │" >&2
+            ;;
+        *)
+            printf "│  Error: %-56s │\n" "$error_type" >&2
+            if [ -n "$details" ]; then
+                printf "│  %-64s │\n" "$details" >&2
+            fi
+            ;;
+    esac
+
+    echo "│                                                                  │" >&2
+    echo "└─────────────────────────────────────────────────────────────────┘" >&2
+    echo "" >&2
+}
+
+# Attempt GPU allocation with blocking retry
+# Returns: GPU device UUID on success, empty on failure
+# Sets: GPU_ALLOC_ERROR with error type if failed
+allocate_gpu_for_container() {
+    local user="$1"
+    local container_type="$2"
+
+    local start_time=$(date +%s)
+    local attempt=0
+    local max_attempts=$((GPU_ALLOCATION_TIMEOUT / GPU_ALLOCATION_RETRY_INTERVAL))
+
+    log_debug "Starting GPU allocation for user=$user type=$container_type"
+
+    while true; do
+        attempt=$((attempt + 1))
+        local elapsed=$(($(date +%s) - start_time))
+
+        # Check timeout
+        if [ $elapsed -ge $GPU_ALLOCATION_TIMEOUT ]; then
+            GPU_ALLOC_ERROR="TIMEOUT"
+            log_debug "GPU allocation timeout after ${elapsed}s"
+            return 1
+        fi
+
+        # Call the allocator
+        local result
+        result=$(python3 "$GPU_ALLOCATOR" allocate-external "$user" "$container_type" 2>&1)
+        local exit_code=$?
+
+        log_debug "Allocation attempt $attempt: exit=$exit_code result=$result"
+
+        # Parse result
+        if [ $exit_code -eq 0 ]; then
+            # Success - extract GPU UUID
+            local gpu_uuid
+            gpu_uuid=$(echo "$result" | grep -oP 'DOCKER_ID=\K[^\s]+' || echo "$result" | grep -oP 'GPU-[a-f0-9-]+|MIG-[a-f0-9-]+')
+            if [ -n "$gpu_uuid" ]; then
+                log_debug "GPU allocated: $gpu_uuid"
+                echo "$gpu_uuid"
+                return 0
+            fi
+        fi
+
+        # Check for quota exceeded (immediate fail, no retry)
+        if echo "$result" | grep -q "QUOTA_EXCEEDED\|USER_AT_LIMIT"; then
+            GPU_ALLOC_ERROR="QUOTA_EXCEEDED"
+            GPU_ALLOC_DETAILS=$(echo "$result" | grep -oP '\(\K[^)]+' | head -1)
+            log_debug "Quota exceeded: $GPU_ALLOC_DETAILS"
+            return 1
+        fi
+
+        # Show waiting message (only first time and every 30 seconds)
+        if [ $attempt -eq 1 ] || [ $((elapsed % 30)) -lt $GPU_ALLOCATION_RETRY_INTERVAL ]; then
+            local remaining=$((GPU_ALLOCATION_TIMEOUT - elapsed))
+            echo "Waiting for GPU availability... (${remaining}s remaining, attempt $attempt)" >&2
+        fi
+
+        # Wait before retry
+        sleep $GPU_ALLOCATION_RETRY_INTERVAL
+    done
+}
+
+# Rewrite docker args to replace --gpus with allocated device
+rewrite_gpu_args() {
+    local gpu_uuid="$1"
+    shift
+
+    local args=()
+    local skip_next=false
+
+    for arg in "$@"; do
+        if $skip_next; then
+            skip_next=false
+            continue
+        fi
+
+        case "$arg" in
+            --gpus=*)
+                # Replace with specific device
+                args+=("--gpus" "\"device=$gpu_uuid\"")
+                ;;
+            --gpus)
+                # Skip this and the next arg (the value)
+                skip_next=true
+                args+=("--gpus" "\"device=$gpu_uuid\"")
+                ;;
+            *)
+                args+=("$arg")
+                ;;
+        esac
+    done
+
+    echo "${args[@]}"
+}
+
+# Get idle timeout for container type
+get_container_type_timeout() {
+    local container_type="$1"
+
+    case "$container_type" in
+        orchestration|atomic)
+            # Use user's configured timeout
+            echo "30m"
+            ;;
+        devcontainer)
+            echo "30m"
+            ;;
+        compose)
+            echo "30m"
+            ;;
+        docker)
+            echo "30m"
+            ;;
+        *)
+            echo "15m"
+            ;;
+    esac
+}
+
+# Get max runtime for container type
+get_container_type_max_runtime() {
+    local container_type="$1"
+
+    case "$container_type" in
+        orchestration|atomic)
+            echo "24h"
+            ;;
+        devcontainer)
+            echo "168h"
+            ;;
+        compose)
+            echo "72h"
+            ;;
+        docker)
+            echo "48h"
+            ;;
+        *)
+            echo "24h"
+            ;;
+    esac
 }
 
 # Get user's group from resource-limits.yaml
@@ -202,6 +529,57 @@ main() {
         ensure_user_slice "$USER_GROUP" "$CURRENT_USER"
         log_debug "Ensured slice: $SLICE_NAME"
 
+        # Detect container type
+        local CONTAINER_TYPE
+        CONTAINER_TYPE=$(detect_container_type "$@")
+        log_debug "Container type: $CONTAINER_TYPE"
+
+        # Check for GPU request
+        local GPU_REQUESTED=false
+        local GPU_UUID=""
+        local GPU_SLOT=""
+
+        if has_gpu_request "$@"; then
+            GPU_REQUESTED=true
+            log_debug "GPU request detected"
+
+            # Check if this is already a ds01 container with explicit GPU allocation
+            # (ds01 containers handle their own allocation via mlc-wrapper)
+            if [[ "$CONTAINER_TYPE" == "orchestration" ]] || [[ "$CONTAINER_TYPE" == "atomic" ]]; then
+                log_debug "DS01 native container - GPU allocation handled by ds01 layer"
+            else
+                # External container requesting GPU - allocate through ds01
+                log_debug "External container requesting GPU - initiating allocation"
+
+                # Determine the effective owner
+                local effective_owner="$CURRENT_USER"
+                local devcontainer_owner
+                devcontainer_owner=$(get_devcontainer_owner "$@")
+                if [ -n "$devcontainer_owner" ]; then
+                    effective_owner="$devcontainer_owner"
+                fi
+
+                # Allocate GPU
+                GPU_UUID=$(allocate_gpu_for_container "$effective_owner" "$CONTAINER_TYPE")
+
+                if [ -z "$GPU_UUID" ]; then
+                    # Allocation failed
+                    show_gpu_error "$GPU_ALLOC_ERROR" "$GPU_ALLOC_DETAILS"
+                    exit 1
+                fi
+
+                # Show notice about ephemeral nature
+                local idle_timeout
+                local max_runtime
+                idle_timeout=$(get_container_type_timeout "$CONTAINER_TYPE")
+                max_runtime=$(get_container_type_max_runtime "$CONTAINER_TYPE")
+                show_gpu_notice "$GPU_UUID" "$CONTAINER_TYPE" "$idle_timeout" "$max_runtime"
+
+                GPU_SLOT="$GPU_UUID"
+                log_debug "GPU allocated: $GPU_UUID"
+            fi
+        fi
+
         # Build injection arguments
         local INJECT_ARGS=()
 
@@ -219,22 +597,61 @@ main() {
             if [ -n "$devcontainer_owner" ]; then
                 # VS Code container - extract owner from devcontainer.local_folder path
                 INJECT_ARGS+=("--label" "ds01.user=$devcontainer_owner")
-                INJECT_ARGS+=("--label" "ds01.managed=devcontainer")
                 log_debug "Injecting owner label from devcontainer: ds01.user=$devcontainer_owner"
             else
                 # Regular container - use current user
                 INJECT_ARGS+=("--label" "ds01.user=$CURRENT_USER")
-                INJECT_ARGS+=("--label" "ds01.managed=true")
                 log_debug "Injecting owner label: ds01.user=$CURRENT_USER"
             fi
+        fi
+
+        # Inject ds01.managed and container type labels
+        INJECT_ARGS+=("--label" "ds01.managed=true")
+        INJECT_ARGS+=("--label" "ds01.container_type=$CONTAINER_TYPE")
+        INJECT_ARGS+=("--label" "ds01.created_at=$(date -Iseconds)")
+
+        # Inject GPU-specific labels if GPU was allocated
+        if [ -n "$GPU_SLOT" ]; then
+            INJECT_ARGS+=("--label" "ds01.gpu_slot=$GPU_SLOT")
+            INJECT_ARGS+=("--label" "ds01.gpu_ephemeral=true")
         fi
 
         # Remove subcommand from args
         shift
 
+        # Rewrite GPU args if we allocated a specific GPU
+        local FINAL_ARGS=("$@")
+        if [ -n "$GPU_UUID" ] && [ "$CONTAINER_TYPE" != "orchestration" ] && [ "$CONTAINER_TYPE" != "atomic" ]; then
+            # Rebuild args with rewritten GPU specification
+            FINAL_ARGS=()
+            local skip_next=false
+            for arg in "$@"; do
+                if $skip_next; then
+                    skip_next=false
+                    continue
+                fi
+
+                case "$arg" in
+                    --gpus=*)
+                        # Replace with specific device
+                        FINAL_ARGS+=("--gpus" "device=$GPU_UUID")
+                        ;;
+                    --gpus)
+                        # Skip this and the next arg (the value), replace with our allocation
+                        skip_next=true
+                        FINAL_ARGS+=("--gpus" "device=$GPU_UUID")
+                        ;;
+                    *)
+                        FINAL_ARGS+=("$arg")
+                        ;;
+                esac
+            done
+            log_debug "Rewrote GPU args to device=$GPU_UUID"
+        fi
+
         # Execute with injected args
-        log_debug "Executing: $REAL_DOCKER $subcommand ${INJECT_ARGS[*]} $*"
-        exec "$REAL_DOCKER" "$subcommand" "${INJECT_ARGS[@]}" "$@"
+        log_debug "Executing: $REAL_DOCKER $subcommand ${INJECT_ARGS[*]} ${FINAL_ARGS[*]}"
+        exec "$REAL_DOCKER" "$subcommand" "${INJECT_ARGS[@]}" "${FINAL_ARGS[@]}"
     else
         # Pass through unchanged
         log_debug "Pass-through: $REAL_DOCKER $*"
