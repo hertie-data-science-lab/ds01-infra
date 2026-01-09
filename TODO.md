@@ -40,6 +40,13 @@
 - [ ] **Add label injection for Docker API containers** - VS Code Dev Containers lack `ds01.user` label
 - [ ] **Update cleanup scripts** - use `container-owners.json` for Dev Container detection (Option C from migration doc)
 - [ ] **Verify docker-wrapper.sh handles devcontainer launches** - should rewrite `--gpus all` to specific device
+- [ ] **Document dev containers workflow comprehensively** - Major documentation effort needed:
+  - Update ds01-infra README.md with dev containers section
+  - Update ds01-infra CLAUDE.md with dev containers architecture
+  - **PRIORITY: ds01-hub documentation** - this is a major user-facing feature addition
+    - New guide: VS Code dev containers workflow
+    - Update getting started guides
+    - Add to feature overview
 
 ### Container System Bugs
 - [ ] **Fix container-stats --filter bug** - "unknown flag: --filter" error
