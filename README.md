@@ -1,451 +1,271 @@
 # DS01 Infrastructure
 
-Multi-user GPU-enabled container management system for data science workloads with resource quotas, automated lifecycle management, and user-friendly workflows.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/) [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff) [![Docs](https://img.shields.io/badge/docs-end%20user%20docs-blue)](https://github.com/hertie-data-science-lab/ds01-hub/tree/main/docs)
 
-## Overview
+**Multi-user GPU management for research labs** - without the complexity of Kubernetes or SLURM.
 
-DS01 Infrastructure provides a **layered, modular architecture** that wraps and enhances [AIME ML Containers](https://github.com/aime-team/aime-ml-containers) with:
+DS01 brings container-based GPU allocation, per-user resource limits, and automated lifecycle management to small-to-medium research organisations running shared GPU servers.
 
-- **GPU resource management**: MIG-aware allocation with priority scheduling
-- **Per-user resource limits**: Configurable via YAML + systemd cgroups
-- **Automated lifecycle management**: Idle detection, auto-cleanup, runtime enforcement
-- **User-friendly workflows**: Educational onboarding wizards and modular commands
-- **Monitoring and metrics**: Comprehensive logging and dashboards
+## Why DS01?
+
+| Challenge | DS01 Solution |
+|-----------|---------------|
+| **GPU contention** | MIG-aware allocation with priority scheduling |
+| **Resource hogging** | Per-user/group limits via YAML + systemd cgroups |
+| **Stale containers** | Automated idle detection and cleanup |
+| **Complex onboarding** | Educational wizards guide new users |
+| **Container sprawl** | Ephemeral model - GPUs freed on retire |
+
+**Built on proven foundations:**
+- [AIME ML Containers](https://github.com/aime-team/aime-ml-containers) for container management
+- Docker + NVIDIA Container Toolkit for GPU passthrough
+- systemd cgroups for resource isolation
+- Prometheus + Grafana for monitoring and metrics
 
 ## Quick Start
 
-**For new users:**
-```bash
-user-setup          # Complete onboarding: SSH + project + VS Code setup
-```
+### For Administrators
 
-**For administrators:**
 ```bash
-# Add user to docker group (required)
-sudo scripts/system/add-user-to-docker.sh <username>
+# Clone to standard location
+sudo git clone https://github.com/hertie-data-science-lab/ds01-infra /opt/ds01-infra
+cd /opt/ds01-infra
 
-# Deploy commands to PATH
+# Deploy commands and configure slices
 sudo scripts/system/deploy-commands.sh
+sudo scripts/system/setup-resource-slices.sh
 
-# View system status
-ds01-dashboard
+# Add a user
+sudo scripts/system/add-user-to-docker.sh alice
 ```
+
+### For End Users
+
+See the [End User Quickstart Guide](https://github.com/hertie-data-science-lab/ds01-hub/blob/main/docs/quickstart.md) for getting started with DS01.
+
+```bash
+user-setup              # Guided onboarding
+project init my-thesis  # Create project with Dockerfile
+container deploy        # Launch container with GPU
+```
+
+## Features
+
+### GPU Resource Management
+- **MIG-aware allocation** - Track and assign MIG instances or full GPUs
+- **Priority scheduling** - Admins/researchers get priority over students
+- **Access control** - Students get MIG only, researchers get full GPUs
+- **Automatic release** - GPUs freed when containers stop
+
+### Per-User Resource Limits
+```yaml
+# config/resource-limits.yaml
+defaults:
+  max_mig_instances: 1
+  max_cpus: 8
+  memory: "32g"
+  idle_timeout: "48h"
+
+groups:
+  researchers:
+    max_mig_instances: 2
+    memory: "64g"
+    allow_full_gpu: true
+```
+
+### Container Lifecycle Automation
+- **Idle detection** - Auto-stop containers below CPU threshold
+- **Runtime limits** - Enforce maximum container runtime
+- **GPU cleanup** - Release allocations from stopped containers
+- **Container removal** - Auto-remove stale stopped containers
+
+### User-Friendly Workflows
+- **4-tier help system** - `--help`, `--info`, `--concepts`, `--guided`
+- **Interactive wizards** - Guide users through complex operations
+- **Project-centric model** - Dockerfiles persist, containers are ephemeral
 
 ## Architecture
 
-### Layered Hierarchical Design
-
-DS01 uses a **5-layer modular architecture** that wraps AIME MLC strategically rather than replacing it:
+DS01 uses a **5-layer modular architecture**:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ L4: Workflow Wizards (user-setup, project-init, project-launch) │
+│ L4: Wizards      user-setup, project-init, project-launch       │
 ├─────────────────────────────────────────────────────────────────┤
-│ L3: Orchestrators (container deploy/retire)                     │
+│ L3: Orchestrators   container deploy, container retire          │
 ├─────────────────────────────────────────────────────────────────┤
-│ L2: Atomic Commands (container-*, image-*)                      │
+│ L2: Atomic          container-*, image-*                        │
 ├─────────────────────────────────────────────────────────────────┤
-│ L1: MLC Layer (mlc-patched.py) - HIDDEN from users              │
+│ L1: MLC             mlc-patched.py (AIME + custom images)       │
 ├─────────────────────────────────────────────────────────────────┤
-│ L0: Docker (foundational runtime)                               │
-└─────────────────────────────────────────────────────────────────┘
-        ↓ Enhanced with ↓
-┌─────────────────────────────────────────────────────────────────┐
-│ DS01 Enhancement Layer                                          │
-│ • Resource limits (YAML + systemd cgroups)                      │
-│ • GPU allocation (MIG-aware, priority scheduling)               │
-│ • Lifecycle automation (idle detection, auto-cleanup)           │
-│ • Monitoring & metrics                                          │
+│ L0: Docker          Foundation runtime                          │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 **Design principles:**
-- **Wrap, don't replace**: Use AIME's proven container management
-- **Modular and reusable**: Single-purpose commands compose into workflows
-- **4-tier help system**: `--help`, `--info`, `--concepts`, `--guided` for all commands
-- **Single source of truth**: No code duplication between layers
-- **Consistent CLI/UX**: Follow [ds01-UI_UX_GUIDE.md](ds01-UI_UX_GUIDE.md) for all commands
+- Wrap AIME, don't replace it (2.5% patch for custom image support)
+- Single-purpose commands compose into workflows
+- Universal enforcement via Docker wrapper + systemd cgroups
 
-**Help system:**
-| Flag | Purpose |
-|------|---------|
-| `--help` | Quick reference (usage, main options) |
-| `--info` | Full reference (all options, examples) |
-| `--concepts` | Pre-run education (what is X?) |
-| `--guided` | Interactive learning during execution |
+## Requirements
 
-**See detailed architecture docs:**
-- [scripts/user/README.md](scripts/user/README.md) - Command layers and user workflows
-- [scripts/docker/README.md](scripts/docker/README.md) - Container creation and GPU allocation
-- [scripts/admin/README.md](scripts/admin/README.md) - Admin tools and dashboards
-- [scripts/lib/README.md](scripts/lib/README.md) - Shared libraries and utilities
-- [config/README.md](config/README.md) - Resource limits and configuration
+- **OS:** Ubuntu 20.04+ / Debian 11+
+- **GPU:** NVIDIA GPU with MIG support (A100, H100) or any CUDA GPU
+- **Docker:** 20.10+ with NVIDIA Container Toolkit
+- **Python:** 3.8+ with PyYAML
+- **AIME:** [aime-ml-containers](https://github.com/aime-team/aime-ml-containers) v2
 
-### AIME Integration
+## Installation
 
-**Base system** (`aime-ml-containers` v2):
-- 11 core `mlc` commands for container lifecycle
-- 150+ pre-built framework images (PyTorch, TensorFlow, JAX, etc.)
-- Container naming: `{container-name}._.{user-id}`
+### 1. Prerequisites
 
-**DS01 enhancements:**
-- `mlc-patched.py` adds `--image` flag for custom images (2.5% code change)
-- Wrappers add resource limits, GPU allocation, interactive UX
-- Direct usage of most mlc commands (mlc-open, mlc-list, mlc-stop, etc.)
+```bash
+# Install NVIDIA Container Toolkit
+distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
+curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
+  sudo tee /etc/apt/sources.list.d/nvidia-docker.list
+sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
 
-**Image workflow:**
-1. `image-create` builds custom image (4 phases: Framework → Jupyter → Data Science → Use Case)
-2. `container-create` calls `mlc-patched.py` with `--image` flag
-3. Resource limits applied via systemd cgroups
-4. GPU allocated via priority scheduling
-5. Container launched with AIME isolation + DS01 management
+# Install AIME ML Containers
+sudo git clone https://github.com/aime-team/aime-ml-containers /opt/aime-ml-containers
+```
+
+### 2. Install DS01
+
+```bash
+# Clone repository
+sudo git clone https://github.com/hertie-data-science-lab/ds01-infra /opt/ds01-infra
+cd /opt/ds01-infra
+
+# Make scripts executable
+find scripts -type f \( -name "*.sh" -o -name "*.py" \) -exec chmod +x {} \;
+
+# Deploy commands to PATH
+sudo scripts/system/deploy-commands.sh
+
+# Configure systemd slices
+sudo scripts/system/setup-resource-slices.sh
+sudo systemctl daemon-reload
+```
+
+### 3. Configure Resource Limits
+
+```bash
+sudo vim config/resource-limits.yaml
+```
+
+Define your groups and limits. See [config/README.md](config/README.md) for full reference.
+
+### 4. Add Users
+
+```bash
+# Add user to docker group with DS01 slice
+sudo scripts/system/add-user-to-docker.sh username
+
+# User must log out and back in
+```
+
+## Usage
+
+### For Users
+
+```bash
+# First-time setup
+user-setup                              # Guided onboarding wizard
+
+# Project workflow
+project init my-thesis --type=cv        # Create project structure
+project launch my-thesis                # Build image + deploy container
+
+# Container management
+container deploy my-project             # Launch container
+container retire my-project             # Stop + remove + free GPU
+
+# Check your limits
+check-limits                            # View resource usage and limits
+```
+
+### For Administrators
+
+```bash
+# System status
+dashboard                               # GPU, containers, system overview
+dashboard users                         # Per-user breakdown
+
+# User management
+sudo scripts/system/add-user-to-docker.sh newuser
+
+# GPU status
+python3 scripts/docker/gpu_allocator.py status
+
+# Logs
+tail -f /var/log/ds01/gpu-allocations.log
+```
 
 ## Directory Structure
 
 ```
 ds01-infra/
-├── README.md                    # This file (overview + quick start)
-├── CLAUDE.md                    # AI assistant instructions
-├── ds01-UI_UX_GUIDE.md          # UI/UX design guide (philosophy, colors, layout)
-│
-├── config/                      # Configuration
-│   ├── README.md                # Configuration guide
-│   ├── resource-limits.yaml     # Central resource config
-│   ├── etc-mirrors/             # System config templates
-│   └── usr-mirrors/             # User config templates
-│
+├── config/
+│   ├── resource-limits.yaml    # Central resource configuration
+│   └── groups/                 # Group membership files
 ├── scripts/
-│   ├── docker/                  # Resource management, GPU allocation
-│   │   ├── README.md            # Detailed implementation docs
-│   │   ├── mlc-patched.py       # AIME patch for custom images
-│   │   ├── mlc-create-wrapper.sh
-│   │   ├── docker-wrapper.sh    # Universal enforcement wrapper
-│   │   ├── get_resource_limits.py
-│   │   └── gpu_allocator_v2.py
-│   │
-│   ├── user/                    # User-facing commands (L2/L3/L4)
-│   │   ├── README.md            # User command reference
-│   │   ├── user-setup           # L4: Complete onboarding wizard
-│   │   ├── project-init         # L4: Project setup wizard
-│   │   ├── container-deploy     # L3: Deploy orchestrator
-│   │   ├── container-*          # L2: Container management
-│   │   ├── image-*              # L2: Image management
-│   │   └── {dir|git|...}-*      # L2: Setup modules
-│   │
-│   ├── admin/                   # Admin tools and dashboards
-│   │   ├── README.md            # Admin tools reference
-│   │   ├── dashboard            # Main system dashboard
-│   │   ├── ds01-logs            # Log viewer
-│   │   └── ds01-users           # User management
-│   │
-│   ├── lib/                     # Shared libraries
-│   │   ├── README.md            # Library reference
-│   │   ├── init.sh              # Bash initialization
-│   │   ├── ds01_core.py         # Python core utilities
-│   │   └── username-utils.sh    # Username sanitization
-│   │
-│   ├── system/                  # System administration
-│   │   ├── README.md            # Admin operations guide
-│   │   ├── setup-resource-slices.sh
-│   │   ├── add-user-to-docker.sh
-│   │   └── deploy.sh
-│   │
-│   ├── monitoring/              # Monitoring & metrics
-│   │   ├── README.md            # Monitoring guide
-│   │   ├── gpu-utilization-monitor.py
-│   │   └── mig-utilization-monitor.py
-│   │
-│   └── maintenance/             # Cleanup automation
-│       ├── README.md            # Maintenance automation guide
-│       ├── check-idle-containers.sh
-│       ├── enforce-max-runtime.sh
-│       └── cleanup-*.sh
-│
-└── testing/                     # Test suites
-    ├── README.md                # Testing overview
-    ├── cleanup-automation/      # Cleanup system tests
-    └── validation/              # Integration tests
+│   ├── docker/                 # GPU allocation, container creation
+│   ├── user/                   # User-facing commands (L2-L4)
+│   ├── admin/                  # Admin tools and dashboards
+│   ├── lib/                    # Shared libraries
+│   ├── system/                 # System administration
+│   ├── monitoring/             # Metrics and health checks
+│   └── maintenance/            # Cleanup automation
+├── testing/                    # Test suites
+└── docs-user/                  # User documentation
 ```
 
-## Installation
-
-### Prerequisites
-
-- Ubuntu/Debian Linux
-- Docker with NVIDIA Container Toolkit
-- Python 3.8+ with PyYAML
-- AIME ML Containers v2 at `/opt/aime-ml-containers`
-
-### Initial Setup
-
-1. **Clone repository:**
-```bash
-sudo git clone <repo-url> /opt/ds01-infra
-cd /opt/ds01-infra
-```
-
-2. **Make scripts executable:**
-```bash
-find scripts -type f \( -name "*.sh" -o -name "*.py" \) -exec chmod +x {} \;
-```
-
-3. **Configure resource limits:**
-```bash
-sudo vim config/resource-limits.yaml
-# Add your users and groups
-```
-
-4. **Setup systemd slices:**
-```bash
-sudo scripts/system/setup-resource-slices.sh
-sudo systemctl daemon-reload
-```
-
-5. **Create command symlinks:**
-```bash
-sudo scripts/system/deploy-commands.sh
-```
-
-6. **Add users to docker group:**
-```bash
-sudo scripts/system/add-user-to-docker.sh <username>
-# User must log out and back in
-```
-
-**See detailed installation guide:** [scripts/system/README.md](scripts/system/README.md)
-
-## Configuration
-
-### Resource Limits
-
-Central configuration: `config/resource-limits.yaml`
-
-**Priority order** (highest to lowest):
-1. `user_overrides.<username>` - Per-user exceptions (priority 100)
-2. `groups.<group>` - Group-based limits (priority varies)
-3. `defaults` - Fallback values
-
-**Example:**
-```yaml
-defaults:
-  max_mig_instances: 1           # Max GPUs per user
-  max_cpus: 8
-  memory: "32g"
-  max_containers_per_user: 3
-  idle_timeout: "48h"            # Auto-stop after idle
-  priority: 10
-
-groups:
-  researchers:
-    members: [alice, bob]
-    max_mig_instances: 2
-    memory: "64g"
-    priority: 50
-
-user_overrides:
-  charlie:                       # Special exception
-    max_mig_instances: 3
-    priority: 100
-    reason: "Thesis work - approved 2025-11-15"
-```
-
-**Testing changes:**
-```bash
-# Test configuration for specific user
-python3 scripts/docker/get_resource_limits.py <username>
-
-# Changes take effect immediately (no restart needed)
-```
-
-**See full configuration guide:** [config/README.md](config/README.md)
-
-## User Management
-
-### Adding New Users
-
-```bash
-# 1. Create Linux user
-sudo adduser newstudent
-sudo usermod -aG video newstudent
-
-# 2. Add to docker group
-sudo scripts/system/add-user-to-docker.sh newstudent
-
-# 3. Add to resource config
-sudo vim config/resource-limits.yaml
-# Add to appropriate group
-
-# 4. User logs out and back in
-
-# 5. User runs onboarding
-user-setup  # As the new user
-```
-
-### Granting Additional Resources
-
-Edit `config/resource-limits.yaml`:
-```yaml
-user_overrides:
-  thesis_student:
-    max_mig_instances: 2
-    memory: "64g"
-    idle_timeout: "168h"  # 1 week
-    priority: 100
-    reason: "Thesis work - approved by Prof. Smith"
-```
-
-## Monitoring
-
-### Real-time Status
-
-```bash
-# Admin dashboard
-ds01-dashboard
-
-# GPU allocation status
-python3 scripts/docker/gpu_allocator.py status
-
-# Container resource usage
-systemd-cgtop | grep ds01
-
-# NVIDIA GPU monitoring
-nvidia-smi
-nvitop
-```
-
-### Logs
-
-```bash
-# GPU allocations
-tail -f /var/log/ds01/gpu-allocations.log
-
-# Automated cleanup (cron jobs)
-tail -f /var/log/ds01/idle-cleanup.log
-tail -f /var/log/ds01/runtime-enforcement.log
-tail -f /var/log/ds01/gpu-stale-cleanup.log
-tail -f /var/log/ds01/container-stale-cleanup.log
-
-# State files
-cat /var/lib/ds01/gpu-state.json
-ls /var/lib/ds01/container-metadata/
-```
-
-**See monitoring guide:** [scripts/monitoring/README.md](scripts/monitoring/README.md)
-
-## Common Commands
-
-### User Commands
-
-| Command | Description |
-|---------|-------------|
-| `user-setup` | Complete first-time onboarding wizard |
-| `project-init` | Create new project (directory, git, image, container) |
-| `container-create` | Create container with resource limits |
-| `container-run` | Start and enter container |
-| `container-list` | List your containers |
-| `container-stop` | Stop running container |
-| `image-create` | Build custom Docker image |
-
-**See user command reference:** [scripts/user/README.md](scripts/user/README.md)
-
-### Admin Commands
-
-| Command | Description |
-|---------|-------------|
-| `ds01-dashboard` | System resource usage dashboard |
-| `alias-list` | List all available commands |
-| `scripts/system/add-user-to-docker.sh` | Add user to docker group |
-| `scripts/system/deploy-commands.sh` | Deploy commands to PATH |
-| `scripts/system/setup-resource-slices.sh` | Configure systemd slices |
-
-**See admin guide:** [scripts/system/README.md](scripts/system/README.md)
-
-## Troubleshooting
-
-### Docker Permission Errors
-
-**Symptom:** "Permission denied" when running docker commands
-
-**Solution:**
-```bash
-# Admin adds user to docker group
-sudo scripts/system/add-user-to-docker.sh <username>
-
-# User must log out and back in
-exit
-# SSH back in
-
-# Verify
-groups | grep docker
-docker info
-```
-
-### Commands Not Found
-
-**Symptoms:** `bash: container-create: command not found` or similar DS01 command errors
-
-**Quick Fix:**
-```bash
-# Option 1: Re-login (applies system-wide config)
-exit  # then log back in
-
-# Option 2: Reload shell config
-source ~/.bashrc
-
-# Option 3: Run shell-setup
-/opt/ds01-infra/scripts/user/helpers/shell-setup
-```
-
-**Verify PATH:**
-```bash
-echo $PATH | grep /usr/local/bin
-# Should show /usr/local/bin
-```
-
-**If commands still not found after PATH is correct:**
-```bash
-# Deploy commands (admin only)
-sudo scripts/system/deploy-commands.sh
-```
-
-### Container Won't Start
-
-**Symptom:** Container fails to start or GPU not accessible
-
-**Check:**
-1. User in docker group: `groups | grep docker`
-2. GPU allocation state: `python3 scripts/docker/gpu_allocator.py status`
-3. Container logs: `docker logs <container-name>`
-4. Resource limits: `python3 scripts/docker/get_resource_limits.py <username>`
-
-## Module Documentation
-
-**Detailed documentation for each subsystem:**
-
-- **[scripts/docker/README.md](scripts/docker/README.md)** - Resource management, GPU allocation, container creation internals
-- **[scripts/user/README.md](scripts/user/README.md)** - User commands, layer system, workflow details
-- **[scripts/admin/README.md](scripts/admin/README.md)** - Admin tools, dashboards, user management utilities
-- **[scripts/lib/README.md](scripts/lib/README.md)** - Shared libraries, bash/Python utilities
-- **[scripts/system/README.md](scripts/system/README.md)** - System administration, deployment, user management
-- **[scripts/monitoring/README.md](scripts/monitoring/README.md)** - Monitoring tools, dashboards, metrics collection
-- **[scripts/maintenance/README.md](scripts/maintenance/README.md)** - Cleanup automation, cron jobs, lifecycle management
-- **[config/README.md](config/README.md)** - Configuration reference, YAML syntax, policy details
-- **[testing/README.md](testing/README.md)** - Testing procedures, test suites, validation
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [CLAUDE.md](CLAUDE.md) | AI assistant instructions (index to detailed docs) |
+| [ds01-UI_UX_GUIDE.md](ds01-UI_UX_GUIDE.md) | CLI design standards |
+| [config/README.md](config/README.md) | Resource configuration reference |
+| [scripts/user/README.md](scripts/user/README.md) | User command reference |
+| [scripts/admin/README.md](scripts/admin/README.md) | Admin tools reference |
+| [scripts/docker/README.md](scripts/docker/README.md) | GPU allocation internals |
+| [scripts/monitoring/README.md](scripts/monitoring/README.md) | Monitoring setup |
+| [scripts/maintenance/README.md](scripts/maintenance/README.md) | Cleanup automation |
 
 ## Contributing
 
-When making changes:
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-1. Read relevant module README for implementation details
-2. Update module README if changing implementation
-3. Test with multiple user types
-4. Deploy commands if adding commands: `sudo scripts/system/deploy-commands.sh`
+**Commit format:** [Conventional Commits](https://www.conventionalcommits.org/)
+```bash
+feat: add feature     # MINOR bump
+fix: resolve bug      # PATCH bump
+feat!: breaking       # MAJOR bump
+```
+
+## Roadmap
+
+See [TODO.md](TODO.md) for current priorities:
+- **HIGH:** Dev Container GPU integration, monitoring fixes
+- **MEDIUM:** OPA authorization, bare metal restriction
+- **LOW:** SLURM integration, dynamic MIG partitioning
+
+## Acknowledgements
+
+DS01 builds on excellent open-source projects:
+- [AIME ML Containers](https://github.com/aime-team/aime-ml-containers) - Core container management
+- [NVIDIA Container Toolkit](https://github.com/NVIDIA/nvidia-container-toolkit) - GPU passthrough
+- [systemd](https://systemd.io/) - Resource isolation via cgroups
 
 ## License
 
-Internal use for Data Science Lab infrastructure.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Last Updated:** December 2025
-**Documentation:** See module-specific READMEs for detailed information
+**Developed by [Henry Baker](https://henrycgbaker.github.io/) for the [Hertie School Data Science Lab](https://www.hertie-school.org/en/datasciencelab)**
+
+📖 [User Documentation](https://github.com/hertie-data-science-lab/ds01-hub/tree/main/docs) · 🐛 [Report Issues](https://github.com/hertie-data-science-lab/ds01-hub/issues)
