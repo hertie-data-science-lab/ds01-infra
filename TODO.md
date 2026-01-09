@@ -1,7 +1,7 @@
 # DS01 Infrastructure TODO
 
 **Last Updated:** 2026-01-09
-**Status:** Core system production-ready, monitoring deployed, polish and expansion in progress
+**Status:** Core system production-ready, monitoring deployed, dev container integration complete (experimental)
 
 ---
 
@@ -15,10 +15,25 @@
 - [ ] **Update documentation** - ensure docs reflect hybrid architecture (DS01 Exporter = systemd, Prometheus/Grafana = Docker)
 
 ### Dev Container Integration
-- [ ] **Implement GPU assignment for Dev Containers** - currently get `--gpus all`, blocking MIG
+- [x] **Implement devcontainer-init wizard** - creates devcontainer.json with DS01 settings
+- [x] **Integrate with project-init** - Step 7 offers CLI vs VS Code workflow choice
+- [x] **Add devcontainer check validator** - validates devcontainer.json for DS01 compatibility
+- [x] **Update user documentation** - docs-user/core-guides/devcontainers.md
+- [ ] **CRITICAL: Test full dev container workflow end-to-end** - This may be the ideal workflow!
+  - Test: Open folder in VS Code, "Reopen in Container", verify GPU allocation
+  - Verify: docker-wrapper.sh intercepts and allocates GPU dynamically
+  - Verify: Container appears in `container ls`
+  - Verify: Closing VS Code releases GPU (shutdownAction works)
+  - Check: Multiple opens get different GPUs based on availability
+- [ ] **Add full image-create functionality to devcontainer-init** - Parity with CLI workflow
+  - Read requirements.txt automatically (like image-create does)
+  - Support use-case presets (ml, cv, nlp, llm, etc.) with pre-configured packages
+  - Mirror --packages and --system options from image-* commands
+  - Consider postCreateCommand vs custom Dockerfile approach
+  - Goal: devcontainer workflow should be as capable as image-create + container-deploy
 - [ ] **Add label injection for Docker API containers** - VS Code Dev Containers lack `ds01.user` label
 - [ ] **Update cleanup scripts** - use `container-owners.json` for Dev Container detection (Option C from migration doc)
-- [ ] **Handle dormant GPU allocations** - Dev Containers get passive access to ALL GPUs, blocking other users
+- [ ] **Verify docker-wrapper.sh handles devcontainer launches** - should rewrite `--gpus all` to specific device
 
 ### Container System Bugs
 - [ ] **Fix container-stats --filter bug** - "unknown flag: --filter" error

@@ -1,0 +1,350 @@
+#!/bin/bash
+# /opt/ds01-infra/scripts/user/helpers/devcontainer-check
+# DS01 Dev Container Validator
+#
+# Validates existing devcontainer.json files for DS01 compatibility.
+# Checks base image, GPU config, shutdownAction, and mounts.
+#
+# Usage:
+#   devcontainer check                    # Check .devcontainer/devcontainer.json
+#   devcontainer check path/to/folder     # Check specific folder
+#   devcontainer check --fix              # Auto-fix issues
+#   devcontainer check --help             # Show help
+
+set -e
+
+# Source shared library
+DS01_ROOT="${DS01_ROOT:-/opt/ds01-infra}"
+source "$DS01_ROOT/scripts/lib/init.sh"
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+AIME_REPO="$DS01_ROOT/aime-ml-containers/ml_images.repo"
+
+# ============================================================================
+# Help Functions
+# ============================================================================
+
+show_help() {
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}DS01 Dev Container Check${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "${BOLD}Usage:${NC}"
+    echo "  devcontainer check [path] [options]"
+    echo ""
+    echo -e "${BOLD}Arguments:${NC}"
+    echo "  path              Folder containing .devcontainer/ (default: current)"
+    echo ""
+    echo -e "${BOLD}Options:${NC}"
+    echo "  --fix             Auto-fix issues where possible"
+    echo "  --json            Output results as JSON"
+    echo "  -h, --help        Show this help"
+    echo ""
+    echo -e "${BOLD}Examples:${NC}"
+    echo -e "  ${CYAN}devcontainer check${NC}                  # Check current directory"
+    echo -e "  ${CYAN}devcontainer check${NC} ~/workspace/proj # Check specific project"
+    echo -e "  ${CYAN}devcontainer check${NC} --fix            # Auto-fix issues"
+    echo ""
+    echo -e "${BOLD}Checks performed:${NC}"
+    echo -e "  ${GREEN}✓${NC} Base image - Is it from AIME catalog?"
+    echo -e "  ${GREEN}✓${NC} GPU access - Does it request GPUs?"
+    echo -e "  ${GREEN}✓${NC} shutdownAction - Auto-stop when VS Code closes?"
+    echo -e "  ${GREEN}✓${NC} Home mount - Persistent workspace access?"
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+}
+
+# ============================================================================
+# Check Functions
+# ============================================================================
+
+# Check if image is from AIME catalog
+check_aime_image() {
+    local image="$1"
+
+    # If AIME repo doesn't exist, can't validate
+    if [ ! -f "$AIME_REPO" ]; then
+        echo "unknown"
+        return
+    fi
+
+    # Check if image appears in AIME repo
+    if grep -qF "$image" "$AIME_REPO" 2>/dev/null; then
+        echo "aime"
+    elif [[ "$image" == *"pytorch"* ]] || [[ "$image" == *"tensorflow"* ]] || [[ "$image" == *"nvcr.io"* ]]; then
+        echo "ml"
+    else
+        echo "other"
+    fi
+}
+
+# Parse JSON field (simple parser using Python)
+json_get() {
+    local json_file="$1"
+    local field="$2"
+    python3 -c "
+import json
+import sys
+try:
+    with open('$json_file') as f:
+        data = json.load(f)
+    result = data.get('$field')
+    if result is None:
+        sys.exit(1)
+    if isinstance(result, list):
+        print('\\n'.join(str(x) for x in result))
+    else:
+        print(result)
+except:
+    sys.exit(1)
+" 2>/dev/null
+}
+
+# Check if runArgs contains --gpus
+has_gpu_request() {
+    local json_file="$1"
+    python3 -c "
+import json
+with open('$json_file') as f:
+    data = json.load(f)
+run_args = data.get('runArgs', [])
+has_gpus = any('--gpus' in str(arg) or '--device' in str(arg) for arg in run_args)
+print('true' if has_gpus else 'false')
+" 2>/dev/null || echo "false"
+}
+
+# Check if mounts include home directory
+has_home_mount() {
+    local json_file="$1"
+    python3 -c "
+import json
+with open('$json_file') as f:
+    data = json.load(f)
+mounts = data.get('mounts', [])
+has_home = any('HOME' in str(m) or '/home/' in str(m) for m in mounts)
+print('true' if has_home else 'false')
+" 2>/dev/null || echo "false"
+}
+
+# Add shutdownAction to JSON
+add_shutdown_action() {
+    local json_file="$1"
+    python3 -c "
+import json
+with open('$json_file', 'r') as f:
+    data = json.load(f)
+data['shutdownAction'] = 'stopContainer'
+with open('$json_file', 'w') as f:
+    json.dump(data, f, indent=2)
+print('done')
+" 2>/dev/null || echo "failed"
+}
+
+# ============================================================================
+# Main Check Logic
+# ============================================================================
+
+run_checks() {
+    local json_file="$1"
+    local auto_fix="$2"
+
+    local warnings=0
+    local errors=0
+    local fixes_applied=0
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}DS01 Dev Container Check${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo -e "Checking: ${BOLD}$json_file${NC}"
+    echo ""
+
+    # Check 1: Base Image
+    local image
+    image=$(json_get "$json_file" "image")
+    if [ -n "$image" ]; then
+        local image_type
+        image_type=$(check_aime_image "$image")
+        case "$image_type" in
+            aime)
+                echo -e "${GREEN}✓${NC} Base image: ${BOLD}$image${NC}"
+                echo -e "  ${DIM}From AIME ML catalog (optimised for DS01)${NC}"
+                ;;
+            ml)
+                echo -e "${GREEN}✓${NC} Base image: ${BOLD}$image${NC}"
+                echo -e "  ${DIM}ML framework image (compatible)${NC}"
+                ;;
+            *)
+                echo -e "${YELLOW}⚠${NC} Base image: ${BOLD}$image${NC}"
+                echo -e "  ${DIM}Not from AIME catalog - may lack DS01 optimisations${NC}"
+                echo -e "  ${DIM}Consider using: devcontainer init --framework=pytorch${NC}"
+                ((warnings++))
+                ;;
+        esac
+    else
+        echo -e "${RED}✗${NC} Base image: Not specified"
+        echo -e "  ${DIM}Add \"image\": \"<image-name>\" to devcontainer.json${NC}"
+        ((errors++))
+    fi
+    echo ""
+
+    # Check 2: GPU Access
+    local has_gpu
+    has_gpu=$(has_gpu_request "$json_file")
+    if [ "$has_gpu" = "true" ]; then
+        echo -e "${GREEN}✓${NC} GPU access: ${BOLD}Enabled${NC}"
+        echo -e "  ${DIM}Container will use MIG allocation via docker-wrapper${NC}"
+    else
+        echo -e "${YELLOW}ℹ${NC} GPU access: ${BOLD}Not requested${NC}"
+        echo -e "  ${DIM}Add runArgs: [\"--gpus\", \"all\"] if GPU needed${NC}"
+    fi
+    echo ""
+
+    # Check 3: shutdownAction
+    local shutdown_action
+    shutdown_action=$(json_get "$json_file" "shutdownAction" 2>/dev/null)
+    if [ "$shutdown_action" = "stopContainer" ]; then
+        echo -e "${GREEN}✓${NC} shutdownAction: ${BOLD}stopContainer${NC}"
+        echo -e "  ${DIM}GPU auto-released when VS Code closes${NC}"
+    elif [ -z "$shutdown_action" ]; then
+        echo -e "${YELLOW}⚠${NC} shutdownAction: ${BOLD}Not set${NC}"
+        echo -e "  ${DIM}Container may persist after VS Code closes${NC}"
+        echo -e "  ${DIM}This can waste GPU allocation${NC}"
+        ((warnings++))
+
+        # Auto-fix option
+        if [ "$auto_fix" = "true" ]; then
+            echo ""
+            local result
+            result=$(add_shutdown_action "$json_file")
+            if [ "$result" = "done" ]; then
+                echo -e "  ${GREEN}✓${NC} Added shutdownAction: \"stopContainer\""
+                ((fixes_applied++))
+            else
+                echo -e "  ${RED}✗${NC} Failed to add shutdownAction"
+            fi
+        fi
+    else
+        echo -e "${YELLOW}⚠${NC} shutdownAction: ${BOLD}$shutdown_action${NC}"
+        echo -e "  ${DIM}Recommend: \"stopContainer\" to auto-release GPU${NC}"
+        ((warnings++))
+    fi
+    echo ""
+
+    # Check 4: Home Directory Mount
+    local has_home
+    has_home=$(has_home_mount "$json_file")
+    if [ "$has_home" = "true" ]; then
+        echo -e "${GREEN}✓${NC} Home directory mount: ${BOLD}Configured${NC}"
+        echo -e "  ${DIM}Workspace files persist between sessions${NC}"
+    else
+        echo -e "${YELLOW}⚠${NC} Home directory mount: ${BOLD}Not configured${NC}"
+        echo -e "  ${DIM}Add to mounts: \"source=\${localEnv:HOME},target=/home/\${localEnv:USER},type=bind\"${NC}"
+        echo -e "  ${DIM}Without this, changes outside /workspaces won't persist${NC}"
+        ((warnings++))
+    fi
+    echo ""
+
+    # Summary
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    if [ $errors -eq 0 ] && [ $warnings -eq 0 ]; then
+        echo -e "${GREEN}✓${NC} All checks passed - ready for VS Code"
+    elif [ $errors -gt 0 ]; then
+        echo -e "${RED}✗${NC} $errors error(s), $warnings warning(s)"
+        if [ $fixes_applied -gt 0 ]; then
+            echo -e "${GREEN}✓${NC} $fixes_applied fix(es) applied"
+        fi
+    else
+        echo -e "${YELLOW}⚠${NC} $warnings warning(s)"
+        if [ $fixes_applied -gt 0 ]; then
+            echo -e "${GREEN}✓${NC} $fixes_applied fix(es) applied"
+        elif [ "$auto_fix" != "true" ]; then
+            echo -e "${DIM}Run with --fix to auto-fix issues${NC}"
+        fi
+    fi
+
+    echo ""
+
+    return $((errors > 0 ? 1 : 0))
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+main() {
+    local target_path="."
+    local auto_fix="false"
+    local output_json="false"
+
+    # Parse arguments
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            --fix)
+                auto_fix="true"
+                shift
+                ;;
+            --json)
+                output_json="true"
+                shift
+                ;;
+            -*)
+                echo -e "${RED}Error:${NC} Unknown option: $1"
+                echo "Run 'devcontainer check --help' for usage"
+                exit 1
+                ;;
+            *)
+                target_path="$1"
+                shift
+                ;;
+        esac
+    done
+
+    # Resolve devcontainer.json path
+    local json_file=""
+    if [ -f "$target_path" ]; then
+        # Direct path to JSON file
+        json_file="$target_path"
+    elif [ -f "$target_path/.devcontainer/devcontainer.json" ]; then
+        json_file="$target_path/.devcontainer/devcontainer.json"
+    elif [ -f "$target_path/devcontainer.json" ]; then
+        json_file="$target_path/devcontainer.json"
+    else
+        echo ""
+        echo -e "${RED}Error:${NC} No devcontainer.json found"
+        echo ""
+        echo "Searched:"
+        echo "  - $target_path/.devcontainer/devcontainer.json"
+        echo "  - $target_path/devcontainer.json"
+        echo ""
+        echo -e "Create one with: ${CYAN}devcontainer init${NC}"
+        echo ""
+        exit 1
+    fi
+
+    # Validate JSON
+    if ! python3 -m json.tool "$json_file" >/dev/null 2>&1; then
+        echo ""
+        echo -e "${RED}Error:${NC} Invalid JSON in $json_file"
+        echo ""
+        echo "Validate with: python3 -m json.tool $json_file"
+        echo ""
+        exit 1
+    fi
+
+    # Run checks
+    run_checks "$json_file" "$auto_fix"
+}
+
+main "$@"
