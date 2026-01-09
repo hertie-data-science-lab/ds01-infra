@@ -15,13 +15,15 @@ user/
 ├── wizards/         # L4: Complete guided workflows
 │   ├── user-setup
 │   ├── project-init
-│   └── project-launch
+│   ├── project-launch
+│   └── devcontainer-init
 ├── helpers/         # Supporting commands
 │   ├── shell-setup, ssh-setup, vscode-setup
 │   ├── check-limits, dir-create, git-init
-│   └── readme-create, jupyter-setup
+│   ├── readme-create, jupyter-setup
+│   └── devcontainer-check
 └── dispatchers/     # Command routers
-    └── *-dispatcher.sh
+    └── *-dispatcher.sh (container, image, project, user, devcontainer)
 ```
 
 ## Layer Hierarchy
@@ -77,9 +79,14 @@ Commands detect context via `DS01_CONTEXT` environment variable:
 user-setup                           # Full onboarding
 project init my-thesis               # Create project structure
 project init my-thesis --type=cv     # With use-case preset
+project init my-thesis --guided      # Step 7 offers CLI vs VS Code choice
 project launch my-project            # Build image + deploy
 project launch my-project --rebuild  # Force rebuild
+devcontainer init                    # Create devcontainer.json for VS Code (experimental)
+devcontainer init --framework=pytorch --quick  # Non-interactive
 ```
+
+**Note:** `project init` Step 7 offers choice between CLI workflow and VS Code Dev Containers (experimental).
 
 ### L3 Orchestrators
 ```bash
@@ -98,6 +105,13 @@ container-stop my-project            # Stop only
 container-remove my-project          # Remove only
 container-list                       # List containers
 container-stats                      # Resource usage
+```
+
+### Helpers
+```bash
+devcontainer check                   # Validate devcontainer.json
+devcontainer check --fix             # Auto-fix issues
+check-limits                         # Show GPU/container quotas
 ```
 
 ## Ephemeral Container Philosophy

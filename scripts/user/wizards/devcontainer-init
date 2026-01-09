@@ -1,0 +1,843 @@
+#!/bin/bash
+# DS01 Dev Container Init - L4 Wizard
+# Creates devcontainer.json for VS Code dev containers optimised for DS01
+# Usage: devcontainer-init [project-name] [--framework=NAME] [--guided]
+
+set -e
+
+# Source DS01 standard library (colors, paths, utilities)
+source "${DS01_ROOT:-/opt/ds01-infra}/scripts/lib/init.sh"
+
+# Source DS01 context library
+if [[ -f "${DS01_LIB}/ds01-context.sh" ]]; then
+    source "${DS01_LIB}/ds01-context.sh"
+fi
+
+# Source AIME images library for base image resolution
+if [[ -f "${DS01_LIB}/aime-images.sh" ]]; then
+    source "${DS01_LIB}/aime-images.sh"
+fi
+
+# Set orchestration context
+export DS01_CONTEXT="orchestration"
+export DS01_INTERFACE="orchestration"
+
+USERNAME=$(whoami)
+USER_ID=$(id -u)
+
+# Script paths
+INFRA_ROOT="/opt/ds01-infra"
+GPU_ALLOCATOR="$INFRA_ROOT/scripts/docker/gpu_allocator_v2.py"
+RESOURCE_PARSER="$INFRA_ROOT/scripts/docker/get_resource_limits.py"
+
+# =============================================================================
+# HELP FUNCTIONS (4-tier system)
+# =============================================================================
+
+show_help() {
+    echo -e ""
+    echo -e "${BOLD}DS01 Dev Container Init${NC}"
+    echo -e "${DIM}Create devcontainer.json for VS Code development${NC}"
+    echo -e ""
+    echo -e "${CYAN}Usage:${NC}"
+    echo -e "  devcontainer init [project-name] [options]"
+    echo -e ""
+    echo -e "${CYAN}Options:${NC}"
+    echo -e "  --framework=NAME    ML framework: pytorch, tensorflow, jax (default: pytorch)"
+    echo -e "  --no-gpu            No GPU access (permanent container)"
+    echo -e "  --full-gpu          Request full GPU (if quota allows)"
+    echo -e "  --extensions=LIST   VS Code extensions (comma-separated)"
+    echo -e "  --requirements=FILE Path to requirements.txt"
+    echo -e "  -p, --packages=LIST Additional pip packages (space-separated)"
+    echo -e "  -s, --system=LIST   System apt packages (space-separated)"
+    echo -e "  --output=PATH       Output path (default: .devcontainer/devcontainer.json)"
+    echo -e "  --guided            Include detailed explanations"
+    echo -e "  --quick             Skip prompts, use defaults"
+    echo -e "  -h, --help          Quick reference (this message)"
+    echo -e "  --info              Full reference with all options"
+    echo -e "  --concepts          Learn about dev containers first"
+    echo -e ""
+    echo -e "${CYAN}Examples:${NC}"
+    echo -e "  devcontainer init                          # Interactive setup"
+    echo -e "  devcontainer init my-project               # Create for 'my-project'"
+    echo -e "  devcontainer init --framework=tensorflow   # TensorFlow setup"
+    echo -e "  devcontainer init --no-gpu                 # CPU-only (permanent)"
+    echo -e "  devcontainer init --guided                 # With explanations"
+    echo -e ""
+}
+
+show_info() {
+    echo -e ""
+    echo -e "${BOLD}DS01 Dev Container Init - Full Reference${NC}"
+    echo -e "${DIM}L4 Wizard: Generate devcontainer.json for VS Code${NC}"
+    echo -e ""
+    echo -e "${CYAN}Usage:${NC}"
+    echo -e "  devcontainer init [project-name] [options]"
+    echo -e ""
+    echo -e "${CYAN}Arguments:${NC}"
+    echo -e "  project-name    Name for your dev container (default: directory name)"
+    echo -e ""
+    echo -e "${CYAN}Options:${NC}"
+    echo -e "  --framework=NAME    ML framework to use:"
+    echo -e "                        pytorch    - PyTorch + CUDA (default)"
+    echo -e "                        tensorflow - TensorFlow + CUDA"
+    echo -e "                        jax        - JAX + CUDA"
+    echo -e "                        minimal    - Python + CUDA only"
+    echo -e ""
+    echo -e "  --no-gpu            Create without GPU access"
+    echo -e "                      Container can run indefinitely (no idle timeout)"
+    echo -e ""
+    echo -e "  --full-gpu          Request full GPU instead of MIG instance"
+    echo -e "                      Only available if your group quota allows"
+    echo -e ""
+    echo -e "  --extensions=LIST   VS Code extensions to install (comma-separated)"
+    echo -e "                      Example: --extensions=ms-python.python,ms-toolsai.jupyter"
+    echo -e ""
+    echo -e "  --requirements=FILE Path to requirements.txt for auto-install"
+    echo -e "                      Adds postCreateCommand to pip install"
+    echo -e ""
+    echo -e "  -p, --packages=LIST Additional pip packages (space-separated)"
+    echo -e "                      Example: --packages=\"wandb optuna tensorboard\""
+    echo -e ""
+    echo -e "  -s, --system=LIST   System apt packages (space-separated)"
+    echo -e "                      Example: --system=\"ffmpeg htop\""
+    echo -e ""
+    echo -e "  --output=PATH       Custom output path for devcontainer.json"
+    echo -e "                      Default: .devcontainer/devcontainer.json"
+    echo -e ""
+    echo -e "  --quick             Skip interactive prompts, use all defaults"
+    echo -e "  --guided            Step-by-step with explanations"
+    echo -e ""
+    echo -e "${CYAN}Generated File:${NC}"
+    echo -e "  .devcontainer/devcontainer.json"
+    echo -e "    - Uses AIME base images (same as container deploy)"
+    echo -e "    - Configures GPU access via DS01 allocation system"
+    echo -e "    - Mounts home directory for data persistence"
+    echo -e "    - Auto-stops when VS Code closes (shutdownAction)"
+    echo -e ""
+    echo -e "${CYAN}Workflow:${NC}"
+    echo -e "  1. devcontainer init my-project    # Generate config"
+    echo -e "  2. Open folder in VS Code"
+    echo -e "  3. Click \"Reopen in Container\" when prompted"
+    echo -e "  4. VS Code builds and opens dev container"
+    echo -e "  5. Close VS Code when done (GPU auto-released)"
+    echo -e ""
+    echo -e "${CYAN}Integration:${NC}"
+    echo -e "  - Dev containers appear in ${GREEN}container ls${NC}"
+    echo -e "  - GPU allocation same as ${GREEN}container deploy${NC}"
+    echo -e "  - Subject to same quotas and lifecycle rules"
+    echo -e ""
+}
+
+show_concepts() {
+    echo -e ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BOLD}Understanding Dev Containers${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e ""
+    echo -e "${BOLD}What is a Dev Container?${NC}"
+    echo -e ""
+    echo -e "A dev container is a containerised development environment"
+    echo -e "managed by VS Code. Instead of installing dependencies on"
+    echo -e "your machine, you work inside a pre-configured container."
+    echo -e ""
+    echo -e "${BOLD}How it Works:${NC}"
+    echo -e ""
+    echo -e "  Your Machine          DS01 Server"
+    echo -e "  ────────────          ───────────"
+    echo -e "  VS Code    ──SSH──>   Dev Container"
+    echo -e "  (local)               (with GPU)"
+    echo -e ""
+    echo -e "VS Code connects via SSH, detects devcontainer.json,"
+    echo -e "and automatically creates/manages the container."
+    echo -e ""
+    echo -e "${CYAN}────────────────────────────────────────────────${NC}"
+    echo -e ""
+    echo -e "${BOLD}Dev Container vs Container Deploy${NC}"
+    echo -e ""
+    echo -e "Both give you GPU containers, but differ in how you launch:"
+    echo -e ""
+    echo -e "  ${GREEN}container deploy${NC}     ${GREEN}devcontainer init${NC}"
+    echo -e "  ─────────────────     ─────────────────"
+    echo -e "  CLI wizard            VS Code wizard"
+    echo -e "  Terminal-focused      IDE-focused"
+    echo -e "  Manual lifecycle      Auto-closes with VS Code"
+    echo -e ""
+    echo -e "Both use the same:"
+    echo -e "  - AIME base images"
+    echo -e "  - GPU allocation system"
+    echo -e "  - Quotas and limits"
+    echo -e ""
+    echo -e "${CYAN}────────────────────────────────────────────────${NC}"
+    echo -e ""
+    echo -e "${BOLD}GPU Access = Ephemeral Container${NC}"
+    echo -e ""
+    echo -e "  ${YELLOW}With GPU:${NC}    Container stops when VS Code closes"
+    echo -e "             Subject to idle timeout if left open"
+    echo -e ""
+    echo -e "  ${GREEN}Without GPU:${NC} Container runs indefinitely"
+    echo -e "             Good for editing, git, non-GPU work"
+    echo -e ""
+    echo -e "${CYAN}────────────────────────────────────────────────${NC}"
+    echo -e ""
+    echo -e "${BOLD}The shutdownAction Setting${NC}"
+    echo -e ""
+    echo -e "We set ${CYAN}\"shutdownAction\": \"stopContainer\"${NC} in devcontainer.json."
+    echo -e "This means when you close VS Code, the container stops and"
+    echo -e "releases its GPU. Your files (in home directory) are safe."
+    echo -e ""
+    echo -e "${DIM}Ready to create a dev container? Run: devcontainer init${NC}"
+    echo -e ""
+}
+
+# =============================================================================
+# PARSE ARGUMENTS
+# =============================================================================
+
+PROJECT_NAME=""
+FRAMEWORK_ARG=""
+GPU_MODE="mig"  # none, mig, full
+EXTENSIONS_ARG=""
+REQUIREMENTS_ARG=""
+PACKAGES_ARG=""        # Additional pip packages
+SYSTEM_PACKAGES_ARG="" # Additional apt packages
+OUTPUT_PATH=""
+GUIDED=false
+QUICK_MODE=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --guided)
+            GUIDED=true
+            shift
+            ;;
+        --quick)
+            QUICK_MODE=true
+            shift
+            ;;
+        --framework=*)
+            FRAMEWORK_ARG="${1#*=}"
+            shift
+            ;;
+        --no-gpu)
+            GPU_MODE="none"
+            shift
+            ;;
+        --full-gpu)
+            GPU_MODE="full"
+            shift
+            ;;
+        --extensions=*)
+            EXTENSIONS_ARG="${1#*=}"
+            shift
+            ;;
+        --requirements=*)
+            REQUIREMENTS_ARG="${1#*=}"
+            shift
+            ;;
+        --packages=*)
+            PACKAGES_ARG="${1#*=}"
+            shift
+            ;;
+        -p)
+            shift
+            PACKAGES_ARG="$1"
+            shift
+            ;;
+        --system=*)
+            SYSTEM_PACKAGES_ARG="${1#*=}"
+            shift
+            ;;
+        -s)
+            shift
+            SYSTEM_PACKAGES_ARG="$1"
+            shift
+            ;;
+        --output=*)
+            OUTPUT_PATH="${1#*=}"
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        --info)
+            show_info
+            exit 0
+            ;;
+        --concepts)
+            show_concepts
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Unknown option: $1${NC}"
+            show_help
+            exit 1
+            ;;
+        *)
+            if [ -z "$PROJECT_NAME" ]; then
+                PROJECT_NAME="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# =============================================================================
+# HEADER
+# =============================================================================
+
+echo -e ""
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+if [ "$GUIDED" = true ]; then
+    echo -e "${BOLD}DS01 Dev Container Setup (Guided Mode)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e ""
+    echo -e "This wizard creates a ${CYAN}devcontainer.json${NC} file for your project."
+    echo -e "VS Code uses this file to build and run your dev container."
+    echo -e ""
+    echo -e "${DIM}For quick setup: run without --guided flag${NC}"
+else
+    echo -e "${BOLD}DS01 Dev Container Setup${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+fi
+
+if [ "$QUICK_MODE" = false ] && [ "$GUIDED" = false ]; then
+    echo -e ""
+    echo -e "${DIM}Tip: Add --guided for explanations, --concepts to learn first${NC}"
+fi
+
+# =============================================================================
+# STEP 1: PROJECT NAME & OUTPUT PATH
+# =============================================================================
+
+echo -e ""
+echo -e "${BOLD}Step 1: Project Information${NC}"
+
+if [ "$GUIDED" = true ]; then
+    echo -e ""
+    echo -e "The project name identifies your dev container. It will appear"
+    echo -e "in ${GREEN}container ls${NC} and helps you track which container is which."
+    echo -e ""
+    echo -e "The devcontainer.json file tells VS Code how to build your"
+    echo -e "development environment."
+fi
+echo -e ""
+
+# Determine output path
+if [ -z "$OUTPUT_PATH" ]; then
+    OUTPUT_PATH=".devcontainer/devcontainer.json"
+fi
+
+# Expand ~ in output path
+OUTPUT_PATH="${OUTPUT_PATH/#\~/$HOME}"
+
+# Check if we're in a workspace project
+WORKSPACE_DIR="$HOME/workspace"
+CURRENT_DIR="$(pwd)"
+IN_WORKSPACE_PROJECT=false
+PROJECT_SELECTED_FROM_DROPDOWN=false
+
+if [[ "$CURRENT_DIR" == "$WORKSPACE_DIR/"* ]]; then
+    IN_WORKSPACE_PROJECT=true
+fi
+
+# Show project dropdown if:
+# 1. No project name provided
+# 2. No output path override (not called from project-init)
+# 3. Not in quick mode
+# 4. Not already in a workspace project
+# 5. Workspace directory exists with projects
+
+if [ -z "$PROJECT_NAME" ] && [ "$OUTPUT_PATH" = ".devcontainer/devcontainer.json" ] && [ "$QUICK_MODE" = false ] && [ "$IN_WORKSPACE_PROJECT" = false ]; then
+    if [ -d "$WORKSPACE_DIR" ]; then
+        # Get list of workspace projects
+        mapfile -t WORKSPACE_PROJECTS < <(find "$WORKSPACE_DIR" -maxdepth 1 -mindepth 1 -type d -printf '%f\n' 2>/dev/null | sort)
+
+        if [ ${#WORKSPACE_PROJECTS[@]} -gt 0 ]; then
+            echo -e "Where should the dev container be created?"
+            echo -e ""
+            echo -e "  ${BOLD}Workspace Projects:${NC}"
+
+            idx=1
+            for proj in "${WORKSPACE_PROJECTS[@]}"; do
+                # Check if already has devcontainer
+                if [ -f "$WORKSPACE_DIR/$proj/.devcontainer/devcontainer.json" ]; then
+                    echo -e "  ${BOLD}$idx)${NC} $proj ${DIM}(has devcontainer.json)${NC}"
+                else
+                    echo -e "  ${BOLD}$idx)${NC} $proj"
+                fi
+                ((idx++))
+            done
+
+            echo -e ""
+            CURRENT_DIR_IDX=$idx
+            echo -e "  ${BOLD}$idx)${NC} Current directory ${DIM}($(basename "$CURRENT_DIR"))${NC} ${GREEN}(default)${NC}"
+            ((idx++))
+            CUSTOM_PATH_IDX=$idx
+            echo -e "  ${BOLD}$idx)${NC} Custom path"
+            echo -e ""
+
+            read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+            read -p "Choice [default: $CURRENT_DIR_IDX]: " PROJECT_CHOICE </dev/tty
+
+            # Parse choice
+            if [ -z "$PROJECT_CHOICE" ] || [ "$PROJECT_CHOICE" = "$CURRENT_DIR_IDX" ]; then
+                # Current directory (default) - continue with normal flow
+                :
+            elif [ "$PROJECT_CHOICE" = "$CUSTOM_PATH_IDX" ]; then
+                # Custom path
+                read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+                read -p "Enter path: " CUSTOM_PATH </dev/tty
+                CUSTOM_PATH="${CUSTOM_PATH/#\~/$HOME}"
+                OUTPUT_PATH="$CUSTOM_PATH/.devcontainer/devcontainer.json"
+                PROJECT_NAME=$(basename "$CUSTOM_PATH")
+                PROJECT_SELECTED_FROM_DROPDOWN=true
+                echo -e ""
+                echo -e "Selected: ${CYAN}$CUSTOM_PATH${NC}"
+            elif [ "$PROJECT_CHOICE" -ge 1 ] 2>/dev/null && [ "$PROJECT_CHOICE" -le ${#WORKSPACE_PROJECTS[@]} ] 2>/dev/null; then
+                # Workspace project
+                SELECTED_PROJECT="${WORKSPACE_PROJECTS[$((PROJECT_CHOICE - 1))]}"
+                PROJECT_NAME="$SELECTED_PROJECT"
+                OUTPUT_PATH="$WORKSPACE_DIR/$SELECTED_PROJECT/.devcontainer/devcontainer.json"
+                PROJECT_SELECTED_FROM_DROPDOWN=true
+                echo -e ""
+                echo -e "Selected: ${CYAN}$WORKSPACE_DIR/$SELECTED_PROJECT${NC}"
+            else
+                echo -e "${RED}Invalid choice${NC}"
+                exit 1
+            fi
+            echo -e ""
+        fi
+    fi
+fi
+
+# Default project name from directory
+if [ -z "$PROJECT_NAME" ]; then
+    if [ "$QUICK_MODE" = true ]; then
+        PROJECT_NAME=$(basename "$(pwd)")
+        echo -e "Project name: ${CYAN}$PROJECT_NAME${NC} (from directory)"
+    else
+        DEFAULT_NAME=$(basename "$(pwd)")
+        read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+        read -p "Project name [$DEFAULT_NAME]: " PROJECT_NAME </dev/tty
+        PROJECT_NAME=${PROJECT_NAME:-$DEFAULT_NAME}
+    fi
+elif [ "$PROJECT_SELECTED_FROM_DROPDOWN" = false ]; then
+    echo -e "Project name: ${CYAN}$PROJECT_NAME${NC}"
+fi
+
+# Sanitize project name
+PROJECT_NAME=$(echo "$PROJECT_NAME" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')
+
+echo -e "Output path: ${CYAN}$OUTPUT_PATH${NC}"
+
+# Check if file exists
+if [ -f "$OUTPUT_PATH" ]; then
+    echo -e ""
+    echo -e "${YELLOW}⚠${NC} devcontainer.json already exists at: $OUTPUT_PATH"
+    echo -e ""
+
+    if [ "$QUICK_MODE" = true ]; then
+        echo -e "Overwriting (--quick mode)..."
+    else
+        echo -e "  ${BOLD}1)${NC} Overwrite ${DIM}(replace with new configuration)${NC}"
+        echo -e "  ${BOLD}2)${NC} Backup and replace ${DIM}(save as devcontainer.json.bak)${NC}"
+        echo -e "  ${BOLD}3)${NC} Cancel"
+        echo -e ""
+        read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+        read -p "Choice [1-3, default: 2]: " OVERWRITE_CHOICE </dev/tty
+        OVERWRITE_CHOICE=${OVERWRITE_CHOICE:-2}
+
+        case $OVERWRITE_CHOICE in
+            1)
+                echo -e "Overwriting..."
+                ;;
+            2)
+                BACKUP_PATH="${OUTPUT_PATH}.bak"
+                cp "$OUTPUT_PATH" "$BACKUP_PATH"
+                echo -e "${GREEN}✓${NC} Backed up to: $BACKUP_PATH"
+                ;;
+            3|*)
+                echo -e "Cancelled."
+                exit 0
+                ;;
+        esac
+    fi
+fi
+
+# =============================================================================
+# STEP 2: FRAMEWORK SELECTION
+# =============================================================================
+
+echo -e ""
+echo -e "${BOLD}Step 2: Base Image${NC}"
+
+if [ "$GUIDED" = true ]; then
+    echo -e ""
+    echo -e "The base image determines which ML framework and CUDA version"
+    echo -e "are pre-installed. These are the same AIME images used by"
+    echo -e "${GREEN}container deploy${NC}."
+    echo -e ""
+    read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+    read -p "Press Enter to continue..." </dev/tty
+fi
+echo -e ""
+
+if [ -n "$FRAMEWORK_ARG" ]; then
+    FRAMEWORK="$FRAMEWORK_ARG"
+    echo -e "Framework: ${CYAN}$FRAMEWORK${NC}"
+elif [ "$QUICK_MODE" = true ]; then
+    FRAMEWORK="pytorch"
+    echo -e "Framework: ${CYAN}$FRAMEWORK${NC} (default)"
+else
+    echo -e "Select ML framework:"
+    echo -e "  ${BOLD}1)${NC} PyTorch + CUDA ${GREEN}(recommended)${NC}"
+    echo -e "  ${BOLD}2)${NC} TensorFlow + CUDA"
+    echo -e "  ${BOLD}3)${NC} JAX + CUDA"
+    echo -e "  ${BOLD}4)${NC} Python + CUDA only ${DIM}(minimal)${NC}"
+    echo -e "  ${BOLD}5)${NC} Custom image ${DIM}(enter name)${NC}"
+    echo -e ""
+    read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+    read -p "Choice [1-5, default: 1]: " FRAMEWORK_CHOICE </dev/tty
+
+    case $FRAMEWORK_CHOICE in
+        2) FRAMEWORK="tensorflow" ;;
+        3) FRAMEWORK="jax" ;;
+        4) FRAMEWORK="minimal" ;;
+        5)
+            read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+            read -p "Enter custom image name: " CUSTOM_IMAGE </dev/tty
+            FRAMEWORK="custom"
+            ;;
+        *) FRAMEWORK="pytorch" ;;
+    esac
+fi
+
+# Resolve base image
+if [ "$FRAMEWORK" = "custom" ]; then
+    BASE_IMAGE="$CUSTOM_IMAGE"
+else
+    BASE_IMAGE=$(get_base_image "$FRAMEWORK" 2>/dev/null)
+
+    if [ -z "$BASE_IMAGE" ]; then
+        echo -e "${YELLOW}⚠${NC} AIME catalog not found, using fallback images"
+        case $FRAMEWORK in
+            tensorflow) BASE_IMAGE="tensorflow/tensorflow:2.14.0-gpu" ;;
+            jax) BASE_IMAGE="nvcr.io/nvidia/jax:23.10-py3" ;;
+            minimal) BASE_IMAGE="nvidia/cuda:12.1-runtime-ubuntu22.04" ;;
+            *) BASE_IMAGE="pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime" ;;
+        esac
+    fi
+fi
+
+echo -e "Base image: ${CYAN}$BASE_IMAGE${NC}"
+
+# =============================================================================
+# STEP 3: GPU CONFIGURATION
+# =============================================================================
+
+echo -e ""
+echo -e "${BOLD}Step 3: GPU Configuration${NC}"
+
+if [ "$GUIDED" = true ]; then
+    echo -e ""
+    echo -e "${CYAN}ℹ${NC} ${BOLD}Understanding GPU Options${NC}"
+    echo -e ""
+    echo -e "  ${BOLD}No GPU:${NC}"
+    echo -e "    Container runs permanently (no idle timeout)"
+    echo -e "    Good for editing, git, lightweight work"
+    echo -e ""
+    echo -e "  ${BOLD}MIG Instance:${NC}"
+    echo -e "    Shared GPU slice (e.g., 10GB out of 80GB)"
+    echo -e "    Container stops when VS Code closes"
+    echo -e "    Good for most ML development"
+    echo -e ""
+    echo -e "  ${BOLD}Full GPU:${NC}"
+    echo -e "    Entire GPU (if your quota allows)"
+    echo -e "    For large models that need more memory"
+    echo -e ""
+    read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+    read -p "Press Enter to continue..." </dev/tty
+fi
+echo -e ""
+
+# Only prompt if not set via flags
+if [ "$GPU_MODE" = "mig" ] && [ "$QUICK_MODE" = false ]; then
+    echo -e "GPU requirements:"
+    echo -e "  ${BOLD}1)${NC} No GPU ${DIM}(editing/git only - runs permanently)${NC}"
+    echo -e "  ${BOLD}2)${NC} MIG instance ${DIM}(shared GPU, default)${NC} ${GREEN}(recommended)${NC}"
+    echo -e "  ${BOLD}3)${NC} Full GPU ${DIM}(if your quota allows)${NC}"
+    echo -e ""
+    read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+    read -p "Choice [1-3, default: 2]: " GPU_CHOICE </dev/tty
+
+    case $GPU_CHOICE in
+        1) GPU_MODE="none" ;;
+        3) GPU_MODE="full" ;;
+        *) GPU_MODE="mig" ;;
+    esac
+fi
+
+case $GPU_MODE in
+    none)
+        echo -e "GPU mode: ${CYAN}None${NC} (permanent container)"
+        ;;
+    full)
+        echo -e "GPU mode: ${CYAN}Full GPU${NC}"
+        ;;
+    *)
+        echo -e "GPU mode: ${CYAN}MIG instance${NC} (shared GPU)"
+        ;;
+esac
+
+# Check GPU quota if requesting GPU
+if [ "$GPU_MODE" != "none" ] && [ -f "$GPU_ALLOCATOR" ] && [ -f "$RESOURCE_PARSER" ]; then
+    # Get current usage (simplified check)
+    CURRENT_USAGE=$(python3 "$GPU_ALLOCATOR" status 2>/dev/null | grep -c "$USERNAME" || echo "0")
+    MAX_ALLOWED=$(python3 "$RESOURCE_PARSER" "$USERNAME" --max-mig-instances 2>/dev/null || echo "2")
+
+    if [ "$CURRENT_USAGE" -ge "$MAX_ALLOWED" ] 2>/dev/null; then
+        echo -e ""
+        echo -e "${YELLOW}⚠${NC} GPU quota reached ($CURRENT_USAGE/$MAX_ALLOWED)"
+        echo -e ""
+        echo -e "Your devcontainer.json will be created, but VS Code will wait"
+        echo -e "for a GPU to become available when you open it."
+        echo -e ""
+        echo -e "${DIM}Free up quota: ${GREEN}container retire <name>${NC}"
+    fi
+fi
+
+# =============================================================================
+# STEP 4: ADDITIONAL CONFIGURATION
+# =============================================================================
+
+echo -e ""
+echo -e "${BOLD}Step 4: Additional Configuration${NC}"
+
+if [ "$GUIDED" = true ]; then
+    echo -e ""
+    echo -e "You can optionally configure:"
+    echo -e "  - Python packages to install automatically"
+    echo -e "  - VS Code extensions to enable"
+fi
+echo -e ""
+
+# Requirements file
+if [ -z "$REQUIREMENTS_ARG" ] && [ "$QUICK_MODE" = false ]; then
+    # Check if requirements.txt exists
+    if [ -f "requirements.txt" ]; then
+        echo -e "Found: ${CYAN}requirements.txt${NC}"
+        read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+        read -p "Use this file for auto-install? [Y/n]: " USE_REQ </dev/tty
+        USE_REQ=${USE_REQ:-Y}
+        if [[ "$USE_REQ" =~ ^[Yy] ]]; then
+            REQUIREMENTS_ARG="requirements.txt"
+        fi
+    else
+        read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+        read -p "Path to requirements.txt (Enter to skip): " REQUIREMENTS_ARG </dev/tty
+    fi
+fi
+
+if [ -n "$REQUIREMENTS_ARG" ]; then
+    echo -e "Requirements: ${CYAN}$REQUIREMENTS_ARG${NC}"
+fi
+
+# VS Code extensions
+if [ -z "$EXTENSIONS_ARG" ] && [ "$QUICK_MODE" = false ]; then
+    echo -e ""
+    echo -e "VS Code extensions to install (comma-separated):"
+    echo -e "${DIM}  Common: ms-python.python, ms-toolsai.jupyter${NC}"
+    read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+    read -p "Extensions (Enter to skip): " EXTENSIONS_ARG </dev/tty
+fi
+
+if [ -n "$EXTENSIONS_ARG" ]; then
+    echo -e "Extensions: ${CYAN}$EXTENSIONS_ARG${NC}"
+fi
+
+# =============================================================================
+# GENERATE devcontainer.json
+# =============================================================================
+
+echo -e ""
+echo -e "${BOLD}Generating devcontainer.json...${NC}"
+echo -e ""
+
+# Create output directory
+OUTPUT_DIR=$(dirname "$OUTPUT_PATH")
+mkdir -p "$OUTPUT_DIR"
+
+# Build JSON using heredoc for cleaner formatting
+cat > "$OUTPUT_PATH" << JSONEOF
+{
+  "name": "$PROJECT_NAME",
+  "image": "$BASE_IMAGE",
+
+JSONEOF
+
+# Add runArgs - include user mapping to ensure correct file ownership
+# Files created in container will be owned by host user, not root
+GROUP_ID=$(id -g)
+if [ "$GPU_MODE" != "none" ]; then
+    cat >> "$OUTPUT_PATH" << JSONEOF
+  "runArgs": [
+    "--user", "${USER_ID}:${GROUP_ID}",
+    "--gpus", "all",
+    "--shm-size", "8g"
+  ],
+
+JSONEOF
+else
+    cat >> "$OUTPUT_PATH" << JSONEOF
+  "runArgs": [
+    "--user", "${USER_ID}:${GROUP_ID}",
+    "--shm-size", "8g"
+  ],
+
+JSONEOF
+fi
+
+# Add mounts
+cat >> "$OUTPUT_PATH" << 'JSONEOF'
+  "mounts": [
+    "source=${localEnv:HOME},target=/home/${localEnv:USER},type=bind"
+  ],
+
+JSONEOF
+
+# Add container environment
+cat >> "$OUTPUT_PATH" << 'JSONEOF'
+  "containerEnv": {
+    "HF_HOME": "/home/${localEnv:USER}/.cache/huggingface"
+  },
+
+JSONEOF
+
+# Build postCreateCommand from requirements, packages, and system packages
+POST_CREATE_CMDS=()
+
+# System packages first (apt)
+if [ -n "$SYSTEM_PACKAGES_ARG" ]; then
+    POST_CREATE_CMDS+=("sudo apt-get update && sudo apt-get install -y $SYSTEM_PACKAGES_ARG")
+fi
+
+# Requirements.txt
+if [ -n "$REQUIREMENTS_ARG" ]; then
+    POST_CREATE_CMDS+=("pip install -r $REQUIREMENTS_ARG")
+fi
+
+# Additional pip packages
+if [ -n "$PACKAGES_ARG" ]; then
+    POST_CREATE_CMDS+=("pip install $PACKAGES_ARG")
+fi
+
+# Write postCreateCommand if any commands exist
+if [ ${#POST_CREATE_CMDS[@]} -gt 0 ]; then
+    # Join commands with " && "
+    POST_CREATE_CMD=""
+    for i in "${!POST_CREATE_CMDS[@]}"; do
+        if [ $i -eq 0 ]; then
+            POST_CREATE_CMD="${POST_CREATE_CMDS[$i]}"
+        else
+            POST_CREATE_CMD="$POST_CREATE_CMD && ${POST_CREATE_CMDS[$i]}"
+        fi
+    done
+    cat >> "$OUTPUT_PATH" << JSONEOF
+  "postCreateCommand": "$POST_CREATE_CMD",
+
+JSONEOF
+fi
+
+# Add VS Code customizations if extensions specified
+if [ -n "$EXTENSIONS_ARG" ]; then
+    # Convert comma-separated to JSON array
+    EXT_JSON=$(echo "$EXTENSIONS_ARG" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+    cat >> "$OUTPUT_PATH" << JSONEOF
+  "customizations": {
+    "vscode": {
+      "extensions": $EXT_JSON
+    }
+  },
+
+JSONEOF
+fi
+
+# Add shutdownAction (always, for GPU containers especially)
+cat >> "$OUTPUT_PATH" << 'JSONEOF'
+  "shutdownAction": "stopContainer"
+}
+JSONEOF
+
+# Validate and format JSON
+if command -v python3 &>/dev/null; then
+    TEMP_JSON=$(mktemp)
+    if python3 -m json.tool "$OUTPUT_PATH" > "$TEMP_JSON" 2>/dev/null; then
+        mv "$TEMP_JSON" "$OUTPUT_PATH"
+    else
+        rm -f "$TEMP_JSON"
+        echo -e "${YELLOW}⚠${NC} JSON formatting skipped (validation passed)"
+    fi
+fi
+
+# =============================================================================
+# SUCCESS OUTPUT
+# =============================================================================
+
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}${BOLD}✓ Dev Container Configuration Created${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e ""
+echo -e "${BOLD}File:${NC}      $OUTPUT_PATH"
+echo -e "${BOLD}Project:${NC}   $PROJECT_NAME"
+echo -e "${BOLD}Image:${NC}     $BASE_IMAGE"
+if [ "$GPU_MODE" = "none" ]; then
+    echo -e "${BOLD}GPU:${NC}       None (permanent container)"
+else
+    echo -e "${BOLD}GPU:${NC}       Enabled (auto-releases when VS Code closes)"
+fi
+if [ -n "$SYSTEM_PACKAGES_ARG" ]; then
+    echo -e "${BOLD}System:${NC}    $SYSTEM_PACKAGES_ARG"
+fi
+if [ -n "$PACKAGES_ARG" ]; then
+    echo -e "${BOLD}Packages:${NC}  $PACKAGES_ARG"
+fi
+if [ -n "$REQUIREMENTS_ARG" ]; then
+    echo -e "${BOLD}Reqs:${NC}      $REQUIREMENTS_ARG"
+fi
+echo -e ""
+
+if [ "$GUIDED" = true ]; then
+    echo -e "${CYAN}━━━ What Just Happened ━━━${NC}"
+    echo -e ""
+    echo -e "  • Created devcontainer.json with DS01-optimised settings"
+    echo -e "  • Configured to use AIME base image"
+    if [ "$GPU_MODE" != "none" ]; then
+        echo -e "  • GPU access: DS01 allocates via docker-wrapper.sh"
+        echo -e "  • shutdownAction: Container stops when VS Code closes"
+    fi
+    echo -e "  • Home directory mounted for data persistence"
+    echo -e ""
+fi
+
+echo -e "${BOLD}Next Steps:${NC}"
+echo -e "  1. Open this folder in VS Code"
+echo -e "  2. When prompted, click ${CYAN}\"Reopen in Container\"${NC}"
+echo -e "  3. VS Code will build and start your dev container"
+echo -e ""
+echo -e "${BOLD}Your container will:${NC}"
+echo -e "  • Appear in ${GREEN}container ls${NC} like other DS01 containers"
+echo -e "  • Use the same GPU allocation system"
+if [ "$GPU_MODE" != "none" ]; then
+    echo -e "  • Stop automatically when you close VS Code"
+fi
+echo -e ""
+
+if [ "$GUIDED" = true ]; then
+    echo -e "${YELLOW}💡 Tips:${NC}"
+    echo -e "  • Check config: ${GREEN}devcontainer check${NC}"
+    echo -e "  • View containers: ${GREEN}container ls${NC}"
+    echo -e "  • Learn more: ${GREEN}devcontainer init --concepts${NC}"
+    echo -e ""
+fi

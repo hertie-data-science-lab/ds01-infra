@@ -146,6 +146,7 @@ $VERBOSE && echo -e "${DIM}Wizards:${NC}"
 deploy_cmd "$USER_WIZARDS/user-setup" "user-setup" "Wizards"
 deploy_cmd "$USER_WIZARDS/project-init" "project-init" "Wizards"
 deploy_cmd "$USER_WIZARDS/project-launch" "project-launch" "Wizards"
+deploy_cmd "$USER_WIZARDS/devcontainer-init" "devcontainer-init" "Wizards"
 
 # --- Orchestrators (L3) ---
 $VERBOSE && echo -e "${DIM}Orchestrators:${NC}"
@@ -182,6 +183,7 @@ deploy_cmd "$USER_DISPATCHERS/project-dispatcher.sh" "project" "Dispatchers"
 deploy_cmd "$USER_DISPATCHERS/user-dispatcher.sh" "user" "Dispatchers"
 deploy_cmd "$USER_DISPATCHERS/check-dispatcher.sh" "check" "Dispatchers"
 deploy_cmd "$USER_DISPATCHERS/get-dispatcher.sh" "get" "Dispatchers"
+deploy_cmd "$USER_DISPATCHERS/devcontainer-dispatcher.sh" "devcontainer" "Dispatchers"
 
 # --- Helpers ---
 $VERBOSE && echo -e "${DIM}Helpers:${NC}"
@@ -191,6 +193,7 @@ deploy_cmd "$USER_HELPERS/vscode-setup" "vscode-setup" "Helpers"
 deploy_cmd "$USER_HELPERS/check-limits" "check-limits" "Helpers"
 deploy_cmd "$USER_HELPERS/check-limits" "get-limits" "Helpers"
 deploy_cmd "$INFRA_ROOT/scripts/docker/gpu-queue-manager.py" "gpu-queue" "Helpers"
+deploy_cmd "$USER_HELPERS/devcontainer-check" "devcontainer-check" "Helpers"
 
 # --- Help & Info ---
 $VERBOSE && echo -e "${DIM}Help:${NC}"

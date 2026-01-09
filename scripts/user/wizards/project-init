@@ -610,6 +610,88 @@ if [ "$EXISTING_PROJECT" = false ]; then
 fi
 
 # =============================================================================
+# STEP 7: DEVELOPMENT ENVIRONMENT (Optional)
+# =============================================================================
+
+DEVCONTAINER_CREATED=false
+
+# Step 7 shows unless --quick mode (INTERACTIVE flag only controls project name prompts)
+if [ "$QUICK_MODE" = false ]; then
+    echo -e ""
+    echo -e "${BOLD}Step 7: Development Environment (Optional)${NC}"
+
+    if [ "$GUIDED" = true ]; then
+        echo -e ""
+        echo -e "You can work with your project two ways:"
+        echo -e ""
+        echo -e "  ${BOLD}CLI workflow (traditional):${NC}"
+        echo -e "    1. ${GREEN}project launch $PROJECT_NAME${NC}  - Builds image & starts container"
+        echo -e "    2. ${GREEN}container attach $PROJECT_NAME${NC} - Opens terminal in container"
+        echo -e "    3. Work in terminal (vim, tmux, jupyter, etc.)"
+        echo -e "    4. ${GREEN}container retire $PROJECT_NAME${NC} - Stops & removes when done"
+        echo -e ""
+        echo -e "    ${DIM}You control the lifecycle explicitly via CLI commands.${NC}"
+        echo -e "    ${DIM}Container stays running until you retire it.${NC}"
+        echo -e ""
+        echo -e "  ${BOLD}VS Code Dev Container workflow:${NC}"
+        echo -e "    1. Open project folder in VS Code"
+        echo -e "    2. VS Code prompts: \"Reopen in Container\" - click yes"
+        echo -e "    3. VS Code builds container & connects automatically"
+        echo -e "    4. Full IDE: editing, debugging, integrated terminal"
+        echo -e "    5. Close VS Code → container stops, GPU released"
+        echo -e ""
+        echo -e "    ${DIM}VS Code manages the lifecycle automatically.${NC}"
+        echo -e "    ${DIM}GPU allocated on open, released on close.${NC}"
+        echo -e ""
+        echo -e "  ${BOLD}Key Difference:${NC}"
+        echo -e "    Both use the same AIME base images and GPU allocation system."
+        echo -e "    CLI: You manage start/stop. VS Code: Automatic lifecycle."
+        echo -e ""
+    fi
+    echo -e ""
+
+    echo -e "How will you launch containers for this project?"
+    echo -e "  ${BOLD}1)${NC} CLI ${GREEN}(Recommended)${NC}"
+    echo -e "     ${DIM}Use: project launch $PROJECT_NAME${NC}"
+    echo -e "  ${BOLD}2)${NC} VS Code Dev Container ${CYAN}(experimental - in dev)${NC}"
+    echo -e "     ${DIM}Creates .devcontainer/devcontainer.json${NC}"
+    echo -e "  ${BOLD}3)${NC} Skip ${DIM}(decide later)${NC}"
+    echo -e ""
+    read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+    read -p "Choice [1-3, default: 1]: " DEV_ENV_CHOICE </dev/tty
+
+    case $DEV_ENV_CHOICE in
+        2)
+            echo -e ""
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${BOLD}Dev Container Configuration${NC}"
+            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+            # Call devcontainer-init interactively (not --quick)
+            # This lets users configure base image, GPU mode, etc.
+            DEVCONTAINER_OUTPUT="$PROJECT_DIR/.devcontainer/devcontainer.json"
+
+            # Pass guided flag if project-init is in guided mode
+            DEVCONTAINER_FLAGS="--output=$DEVCONTAINER_OUTPUT"
+            if [ "$GUIDED" = true ]; then
+                DEVCONTAINER_FLAGS="$DEVCONTAINER_FLAGS --guided"
+            fi
+
+            devcontainer-init "$PROJECT_NAME" $DEVCONTAINER_FLAGS
+
+            DEVCONTAINER_CREATED=true
+            ;;
+        3)
+            echo -e "${DIM}Skipping - you can add dev container support later with:${NC}"
+            echo -e "  ${GREEN}cd $PROJECT_DIR && devcontainer init${NC}"
+            ;;
+        *)
+            # Default: CLI workflow, no action needed
+            ;;
+    esac
+fi
+
+# =============================================================================
 # FINAL SUMMARY
 # =============================================================================
 
@@ -627,12 +709,23 @@ echo -e "  pyproject.toml     ${DIM}(project metadata)${NC}"
 echo -e "  requirements.txt   ${DIM}(Python packages)${NC}"
 echo -e "  Dockerfile         ${DIM}(container definition)${NC}"
 echo -e "  README.md          ${DIM}(documentation)${NC}"
+if [ "$DEVCONTAINER_CREATED" = true ]; then
+    echo -e "  .devcontainer/     ${DIM}(VS Code dev container config)${NC}"
+fi
 echo -e ""
-echo -e "${BOLD}Next Step:${NC}"
-echo -e "  1. Edit requirements.txt ${DIM}(if needed): ${GREEN} nano $PROJECT_DIR/requirements.txt${NC}"
-echo -e "  ${GREEN}2. project launch $PROJECT_NAME${NC}   ${DIM}# Build image & deploy container${NC}"
-echo -e ""
-echo -e "${DIM}Or step-by-step:${NC}"
-echo -e "  ${DIM}1. image-create $PROJECT_NAME    # Build Docker image${NC}"
-echo -e "  ${DIM}2. container-deploy $PROJECT_NAME # Start container${NC}"
+
+# Show appropriate next steps based on workflow choice
+if [ "$DEVCONTAINER_CREATED" = true ]; then
+    echo -e "${BOLD}Next Steps:${NC}"
+    echo -e "  1. Open ${CYAN}$PROJECT_DIR${NC} in VS Code"
+    echo -e "  2. Click ${CYAN}\"Reopen in Container\"${NC} when prompted"
+    echo -e ""
+    echo -e "${DIM}Alternative: Use CLI with ${GREEN}project launch $PROJECT_NAME${NC}${NC}"
+else
+    echo -e "${BOLD}Next Steps:${NC}"
+    echo -e "  1. Edit requirements.txt ${DIM}(if needed): ${GREEN}nano $PROJECT_DIR/requirements.txt${NC}"
+    echo -e "  ${GREEN}2. project launch $PROJECT_NAME${NC}   ${DIM}# Build image & deploy container${NC}"
+    echo -e ""
+    echo -e "${DIM}Or use VS Code: ${GREEN}cd $PROJECT_DIR && devcontainer init${NC}${NC}"
+fi
 echo -e ""

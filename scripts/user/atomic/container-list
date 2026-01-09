@@ -74,6 +74,7 @@ DOCKER_BIN="/usr/bin/docker"
 
 get_user_containers() {
     local show_all="$1"
+    local with_type="${2:-false}"  # Set to "true" to output name|type format
 
     # Get all containers with multiple owner label sources
     # Then filter for current user using robust multi-label detection
@@ -82,35 +83,47 @@ get_user_containers() {
         status_filter="--filter status=running"
     fi
 
-    # Query containers with all relevant owner labels
-    # Format: name|ds01.user|aime.mlc.USER|aime.mlc.username|devcontainer.local_folder
+    # Query containers with all relevant owner labels + container type
+    # Format: name|ds01.user|aime.mlc.USER|aime.mlc.username|devcontainer.local_folder|ds01.container_type
     $DOCKER_BIN ps -a $status_filter --format \
-        '{{.Names}}|{{.Label "ds01.user"}}|{{.Label "aime.mlc.USER"}}|{{.Label "aime.mlc.username"}}|{{.Label "devcontainer.local_folder"}}' 2>/dev/null | \
-    while IFS='|' read -r name ds01_user aime_user_upper aime_username devcontainer_path; do
+        '{{.Names}}|{{.Label "ds01.user"}}|{{.Label "aime.mlc.USER"}}|{{.Label "aime.mlc.username"}}|{{.Label "devcontainer.local_folder"}}|{{.Label "ds01.container_type"}}' 2>/dev/null | \
+    while IFS='|' read -r name ds01_user aime_user_upper aime_username devcontainer_path container_type; do
         [ -z "$name" ] && continue
+
+        local is_owner=false
+        local detected_type="ds01"
 
         # Check ds01.user label
         if [ "$ds01_user" = "$USERNAME" ]; then
-            echo "$name"
-            continue
+            is_owner=true
         fi
 
         # Check aime.mlc.USER label (uppercase)
         if [ "$aime_user_upper" = "$USERNAME" ]; then
-            echo "$name"
-            continue
+            is_owner=true
         fi
 
         # Check aime.mlc.username label (lowercase)
         if [ "$aime_username" = "$USERNAME" ]; then
-            echo "$name"
-            continue
+            is_owner=true
         fi
 
         # Check devcontainer.local_folder path for /home/USERNAME/
         if [[ "$devcontainer_path" == "/home/$USERNAME/"* ]]; then
-            echo "$name"
-            continue
+            is_owner=true
+            # If detected via devcontainer path, it's a devcontainer
+            [ -z "$container_type" ] && detected_type="devcontainer"
+        fi
+
+        if [ "$is_owner" = true ]; then
+            # Use explicit label if set, otherwise use detected type
+            local final_type="${container_type:-$detected_type}"
+
+            if [ "$with_type" = "true" ]; then
+                echo "$name|$final_type"
+            else
+                echo "$name"
+            fi
         fi
     done
 }
@@ -194,7 +207,7 @@ show_simple() {
         [ -z "$full_name" ] && continue
         count=$((count + 1))
 
-        # Extract short name
+        # Extract short name (strip ._.UID suffix if present)
         local name=$(echo "$full_name" | sed "s/\._\.$USER_ID//")
 
         # Get info via docker inspect (DS01-specific display)
@@ -202,8 +215,39 @@ show_simple() {
         local image=$(docker inspect --format "{{.Config.Image}}" "$full_name" 2>/dev/null | cut -d: -f1)
         local uptime=$(format_uptime "$status")
 
-        # Status indicator
-        echo -e "${BOLD}$count. ${CYAN}$name${NC}"
+        # Detect container type
+        local container_type=$(docker inspect --format "{{index .Config.Labels \"ds01.container_type\"}}" "$full_name" 2>/dev/null)
+        local devcontainer_label=$(docker inspect --format "{{index .Config.Labels \"devcontainer.local_folder\"}}" "$full_name" 2>/dev/null)
+
+        # Determine type: explicit label > devcontainer detection > default ds01
+        if [ -z "$container_type" ] || [ "$container_type" = "<no value>" ]; then
+            if [ -n "$devcontainer_label" ] && [ "$devcontainer_label" != "<no value>" ]; then
+                container_type="devcontainer"
+            else
+                container_type="ds01"
+            fi
+        fi
+
+        # Format type display
+        local type_display=""
+        case "$container_type" in
+            devcontainer)
+                type_display=" ${DIM}(dev container)${NC}"
+                ;;
+            compose)
+                type_display=" ${DIM}(compose)${NC}"
+                ;;
+            docker)
+                type_display=" ${DIM}(docker)${NC}"
+                ;;
+            *)
+                # ds01 is default, don't show label
+                type_display=""
+                ;;
+        esac
+
+        # Status indicator with type
+        echo -e "${BOLD}$count. ${CYAN}$name${NC}${type_display}"
         echo -e "   Status: $(format_status "$status")"
         echo -e "   Image:  ${DIM}$image${NC}"
         echo -e "   Time:   ${DIM}$uptime${NC}"
