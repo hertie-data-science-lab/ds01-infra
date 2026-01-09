@@ -2,12 +2,17 @@
 
 Cleanup automation and lifecycle management.
 
+## Core Principle
+
+**GPU access = ephemeral enforcement, No GPU = permanent OK.**
+
+ALL containers with GPU access are subject to lifecycle enforcement regardless of how they were created (VS Code dev containers, docker-compose, direct docker run, API calls).
+
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `check-idle-containers.sh` | Stop containers idle beyond idle_timeout |
-| `enforce-max-runtime.sh` | Stop containers exceeding max_runtime |
+| `enforce-max-runtime.sh` | **Universal** max_runtime enforcement for ALL GPU containers |
 | `cleanup-stale-gpu-allocations.sh` | Release GPUs after gpu_hold_after_stop |
 | `cleanup-stale-containers.sh` | Remove stopped containers after timeout |
 | `fix-home-permissions.sh` | Fix home directory permissions |
@@ -15,6 +20,8 @@ Cleanup automation and lifecycle management.
 | `backup-logs.sh` | Backup log files |
 | `setup-scratch-dirs.sh` | Setup scratch directories |
 | `ensure-admin-sudo.sh` | Ensure admin has sudo access |
+
+Note: `check-idle-containers.sh` is in `scripts/monitoring/` (see that CLAUDE.md)
 
 ## Cron Schedule
 
@@ -41,9 +48,20 @@ container_hold_after_stop elapsed?
 cleanup-stale-containers.sh (remove container)
 ```
 
+## Universal Enforcement
+
+Both `enforce-max-runtime.sh` and `check-idle-containers.sh` use container type detection:
+
+**Max runtimes by container type** (from `config/resource-limits.yaml`):
+- `orchestration/atomic`: User's configured max_runtime
+- `devcontainer`: 168h (7 days)
+- `compose`: 72h (3 days)
+- `docker`: 48h (2 days)
+- `unknown`: 24h (strictest)
+
 ## Idle Detection
 
-`check-idle-containers.sh`:
+`check-idle-containers.sh` (in `scripts/monitoring/`):
 - Checks CPU usage (< 1% = idle)
 - Respects `.keep-alive` file in workspace
 - Warns at 80% of idle_timeout

@@ -38,6 +38,103 @@ get_max_runtime() {
     python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --max-runtime
 }
 
+# Check if container has GPU access
+container_has_gpu() {
+    local container="$1"
+    # Check DeviceRequests for nvidia GPU
+    local gpu_info=$(docker inspect "$container" --format '{{.HostConfig.DeviceRequests}}' 2>/dev/null)
+    if echo "$gpu_info" | grep -qi "nvidia\|gpu"; then
+        return 0
+    fi
+    return 1
+}
+
+# Get container type from label
+get_container_type() {
+    local container="$1"
+    local type=$(docker inspect "$container" --format '{{index .Config.Labels "ds01.container_type"}}' 2>/dev/null)
+    if [ -n "$type" ] && [ "$type" != "<no value>" ]; then
+        echo "$type"
+    else
+        # Fallback: detect from labels/name
+        local labels=$(docker inspect "$container" --format '{{json .Config.Labels}}' 2>/dev/null)
+        local name=$(docker inspect "$container" --format '{{.Name}}' 2>/dev/null | tr -d '/')
+
+        if echo "$labels" | grep -q "ds01.interface"; then
+            docker inspect "$container" --format '{{index .Config.Labels "ds01.interface"}}' 2>/dev/null
+        elif echo "$name" | grep -q '\._\.'; then
+            echo "atomic"
+        elif echo "$labels" | grep -q "devcontainer"; then
+            echo "devcontainer"
+        elif echo "$labels" | grep -q "com.docker.compose"; then
+            echo "compose"
+        else
+            echo "docker"
+        fi
+    fi
+}
+
+# Get max runtime for container type (external containers)
+get_container_type_max_runtime() {
+    local container_type="$1"
+
+    # Read from config - container_types section
+    local runtime=$(python3 << PYEOF
+import yaml
+import sys
+
+try:
+    with open("$CONFIG_FILE") as f:
+        config = yaml.safe_load(f)
+
+    container_types = config.get('container_types', {})
+    type_config = container_types.get('$container_type', {})
+    runtime = type_config.get('max_runtime', '48h')
+
+    print(runtime if runtime else '48h')
+except Exception:
+    print('48h')
+PYEOF
+)
+    echo "$runtime"
+}
+
+# Get owner from container (for non-AIME containers)
+get_container_owner() {
+    local container="$1"
+
+    # Try ds01.user label first
+    local owner=$(docker inspect "$container" --format '{{index .Config.Labels "ds01.user"}}' 2>/dev/null)
+    if [ -n "$owner" ] && [ "$owner" != "<no value>" ]; then
+        echo "$owner"
+        return
+    fi
+
+    # Try aime.mlc.USER label
+    owner=$(docker inspect "$container" --format '{{index .Config.Labels "aime.mlc.USER"}}' 2>/dev/null)
+    if [ -n "$owner" ] && [ "$owner" != "<no value>" ]; then
+        echo "$owner"
+        return
+    fi
+
+    # Try devcontainer.local_folder path
+    local folder=$(docker inspect "$container" --format '{{index .Config.Labels "devcontainer.local_folder"}}' 2>/dev/null)
+    if [[ "$folder" == /home/* ]]; then
+        echo "$folder" | cut -d'/' -f3
+        return
+    fi
+
+    # Fallback: extract from name._.uid pattern
+    local name=$(docker inspect "$container" --format '{{.Name}}' 2>/dev/null | tr -d '/')
+    if [[ "$name" == *._\.* ]]; then
+        local uid=$(echo "$name" | rev | cut -d'.' -f1 | rev)
+        getent passwd "$uid" 2>/dev/null | cut -d: -f1
+        return
+    fi
+
+    echo ""
+}
+
 # Convert runtime string (e.g., "48h", "7d") to seconds
 # Uses centralized ds01_parse_duration from init.sh
 runtime_to_seconds() {
@@ -172,20 +269,20 @@ NOTIFEOF
 
 # Main monitoring function
 monitor_containers() {
-    log_color "Starting max runtime enforcement" "$BLUE"
+    log_color "Starting max runtime enforcement (universal)" "$BLUE"
 
-    # Get all running containers (using AIME naming convention: name._.uid)
-    # This is more robust than relying on labels
-    local containers=$(docker ps --format "{{.Names}}" | grep '\._\.' || true)
+    # Get ALL running containers (universal container management)
+    local containers=$(docker ps --format "{{.Names}}")
 
     if [ -z "$containers" ]; then
-        log "No containers running (AIME naming convention)"
+        log "No containers running"
         return
     fi
 
     local monitored_count=0
     local stopped_count=0
     local warned_count=0
+    local skipped_no_gpu=0
 
     for container in $containers; do
         # Verify container still exists (race condition protection)
@@ -194,30 +291,107 @@ monitor_containers() {
             continue
         fi
 
-        # Extract user ID from container name (format: name._.uid)
-        local user_id=$(echo "$container" | rev | cut -d'.' -f1 | rev)
+        # Core principle: GPU access = ephemeral enforcement, No GPU = permanent OK
+        if ! container_has_gpu "$container"; then
+            ((skipped_no_gpu += 1))
+            continue  # No GPU = no max_runtime limit
+        fi
 
-        # Get username from user ID
-        local username=$(getent passwd "$user_id" | cut -d: -f1 2>/dev/null || echo "")
+        # Get container type and owner
+        local container_type=$(get_container_type "$container")
+        local username=$(get_container_owner "$container")
 
         if [ -z "$username" ]; then
-            log "Warning: Cannot resolve username for UID $user_id (container: $container), skipping"
-            continue
+            # Unknown owner with GPU - use strict limits
+            log "Warning: GPU container $container has unknown owner, applying strict limits"
+            username="unknown"
         fi
 
         ((monitored_count += 1))
 
         # Wrap in error handling to prevent one container from breaking the whole loop
-        if ! process_container_runtime "$container" "$username"; then
+        if ! process_container_runtime_universal "$container" "$username" "$container_type"; then
             log_color "Error processing container $container, continuing with next" "$RED"
             continue
         fi
     done
 
-    log_color "Runtime enforcement complete: monitored=$monitored_count, warned=$warned_count, stopped=$stopped_count" "$BLUE"
+    log_color "Runtime enforcement complete: monitored=$monitored_count (GPU), skipped=$skipped_no_gpu (no GPU), warned=$warned_count, stopped=$stopped_count" "$BLUE"
 }
 
-# Process a single container (extracted for error handling)
+# Process a single container with type-aware max_runtime (universal)
+process_container_runtime_universal() {
+    local container="$1"
+    local username="$2"
+    local container_type="$3"
+
+    # Get max runtime based on container type
+    local runtime_str
+    case "$container_type" in
+        orchestration|atomic)
+            # DS01 native containers - use user's configured max_runtime
+            runtime_str=$(get_max_runtime "$username")
+            ;;
+        devcontainer|compose|docker|unknown)
+            # External containers - use container_types config
+            runtime_str=$(get_container_type_max_runtime "$container_type")
+            ;;
+        *)
+            # Fallback to strictest limit
+            runtime_str="24h"
+            ;;
+    esac
+
+    local runtime_seconds=$(runtime_to_seconds "$runtime_str")
+
+    # Skip if no limit set (should not happen for GPU containers, but handle gracefully)
+    if [ "$runtime_seconds" -eq 0 ]; then
+        log "Container $container (user: $username, type: $container_type) has no runtime limit"
+        return 0
+    fi
+
+    # Get container start time
+    local start_time=$(get_container_start_time "$container")
+    if [ "$start_time" -eq 0 ]; then
+        log_color "Warning: Could not get start time for $container" "$YELLOW"
+        return 0
+    fi
+
+    # Calculate runtime
+    local now=$(date +%s)
+    local runtime_seconds_actual=$((now - start_time))
+    local runtime_hours=$((runtime_seconds_actual / 3600))
+
+    # State file for tracking warnings
+    local state_file="$STATE_DIR/${container}.state"
+    if [ ! -f "$state_file" ]; then
+        echo "WARNED=false" > "$state_file"
+    fi
+
+    source "$state_file"
+
+    log "Container $container (user: $username, type: $container_type): runtime ${runtime_hours}h / limit $runtime_str"
+
+    # Calculate warning threshold (90% of limit)
+    local warning_seconds=$((runtime_seconds * 90 / 100))
+
+    # Check if we should warn
+    if [ "$runtime_seconds_actual" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then
+        local hours_until_stop=$(( (runtime_seconds - runtime_seconds_actual) / 3600 ))
+        send_warning "$username" "$container" "$hours_until_stop"
+        sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"
+    fi
+
+    # Check if we should stop
+    if [ "$runtime_seconds_actual" -ge "$runtime_seconds" ]; then
+        stop_runtime_exceeded "$username" "$container" "$runtime_hours"
+        return 0
+    fi
+
+    return 0
+}
+
+# Process a single container (legacy function for backwards compatibility)
 process_container_runtime() {
     local container="$1"
     local username="$2"

@@ -40,14 +40,27 @@ container-stop → mlc-stop
 | `cleanup-stale-gpu-allocations.sh` | :15/hour | Release GPUs after gpu_hold_after_stop |
 | `cleanup-stale-containers.sh` | :00/hour | Remove containers after container_hold_after_stop |
 
-## Docker Wrapper
+## Docker Wrapper (Universal Container Management)
 
-`/usr/local/bin/docker` intercepts all Docker commands:
+`/usr/local/bin/docker` intercepts all Docker CLI commands.
+
+**Core principle**: GPU access = ephemeral enforcement, No GPU = permanent OK.
 
 **On `docker run` / `docker create`:**
 - Injects `--cgroup-parent=ds01-{group}-{user}.slice`
 - Adds `--label ds01.user=<username>`
 - Adds `--label ds01.managed=true`
+
+**GPU interception** (when `--gpus` detected):
+- Detects container type (devcontainer, compose, docker)
+- Calls `gpu_allocator_v2.py allocate-external` for GPU allocation
+- Rewrites `--gpus all` → `--gpus device=<allocated-uuid>`
+- Blocks if no GPU available (3 minute timeout with retry)
+
+**Container type detection** (in docker-wrapper.sh):
+1. `devcontainer.*` labels → devcontainer
+2. `com.docker.compose.*` labels → compose
+3. Fallback → docker
 
 **Ownership detection:**
 1. `ds01.user` label
@@ -78,18 +91,33 @@ Minimal 2.5% modification to AIME's mlc-create:
 - Auto-detected via `nvidia-smi mig -lgi`
 - Profile configured in `config/resource-limits.yaml` → `gpu_allocation.mig_profile`
 
-## Testing
+## GPU Allocator Commands
 
 ```bash
 # Check user limits
 python3 get_resource_limits.py <username>
 
 # GPU allocation status
-python3 gpu_allocator.py status
+python3 gpu_allocator_v2.py status
+
+# Allocate for ds01 container
+python3 gpu_allocator_v2.py allocate <username> <container>
+
+# Allocate for external container (devcontainer, compose, docker)
+python3 gpu_allocator_v2.py allocate-external <username> <container_type>
+
+# Release GPU
+python3 gpu_allocator_v2.py release <username> <container>
 
 # Validate YAML
 python3 -c "import yaml; yaml.safe_load(open('../../config/resource-limits.yaml'))"
 ```
+
+**allocate-external** uses `container_types` config in resource-limits.yaml for MIG limits:
+- `devcontainer`: student=1, researcher=2, faculty=2, admin=unlimited
+- `compose`: student=1, researcher=2, faculty=2, admin=unlimited
+- `docker`: student=1, researcher=1, faculty=2, admin=unlimited
+- `unknown`: student=1, researcher=1, faculty=1, admin=unlimited
 
 ---
 

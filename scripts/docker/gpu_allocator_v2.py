@@ -581,6 +581,112 @@ class GPUAllocatorSmart:
         user_allocs = self.state_reader.get_user_allocations(username)
         return len(user_allocs)
 
+    def _get_external_mig_limit(self, username: str, container_type: str) -> int:
+        """
+        Get MIG limit for external containers based on user group.
+
+        External containers (devcontainer, compose, docker) get limits
+        from container_types config, which varies by user group.
+
+        Args:
+            username: User requesting GPU
+            container_type: devcontainer, compose, docker, unknown
+
+        Returns:
+            Max MIG instances allowed for this user/container_type combo
+        """
+        user_limits = self._get_user_limits(username)
+        user_group = user_limits.get('_group', 'student')
+
+        # Get container type config from config file
+        container_types = self.config.get('container_types', {}) or {}
+        type_config = container_types.get(container_type, {}) or {}
+        mig_config = type_config.get('default_mig_count', {})
+
+        # Look up by group, fall back to student, then to 1
+        if isinstance(mig_config, dict):
+            limit = mig_config.get(user_group)
+            if limit is None:
+                limit = mig_config.get('student', 1)
+            # Handle unlimited (None or "unlimited")
+            if limit is None or limit == "unlimited":
+                return 999
+            return int(limit)
+        elif mig_config is None or mig_config == "unlimited":
+            return 999
+        elif mig_config:
+            return int(mig_config)
+        else:
+            # No container_types config - fall back to user's max_mig_instances
+            max_mig = user_limits.get('max_mig_instances', 1)
+            if max_mig is None or max_mig == "unlimited":
+                return 999
+            return int(max_mig)
+
+    def allocate_external(self, username: str, container_type: str) -> Tuple[Optional[str], str]:
+        """
+        Allocate GPU for external container (devcontainer, compose, docker run, etc.).
+
+        This is called by docker-wrapper.sh for non-ds01 containers requesting GPU.
+        The wrapper handles the retry loop; this method does a single allocation attempt.
+
+        Args:
+            username: User requesting GPU
+            container_type: devcontainer, compose, docker, unknown
+
+        Returns:
+            Tuple of (docker_id, status_message)
+            docker_id: GPU/MIG UUID if successful, None if failed
+            status_message: "SUCCESS", "QUOTA_EXCEEDED:current/max", or error reason
+        """
+        try:
+            # Acquire exclusive lock
+            self._acquire_lock()
+
+            # Get user's MIG limit for this container type
+            max_allowed = self._get_external_mig_limit(username, container_type)
+
+            # Check user's current GPU count (immediate fail if at quota)
+            current_count = self.get_user_gpu_count(username)
+            if current_count >= max_allowed:
+                reason = f"QUOTA_EXCEEDED:{current_count}/{max_allowed}"
+                self._log_event("REJECTED", username, f"external-{container_type}",
+                               reason=reason)
+                return None, reason
+
+            # Find available GPU using availability checker
+            allow_full = self._can_use_full_gpu(username)
+            suggestion = self.availability_checker.suggest_gpu_for_user(
+                username, max_allowed, self._get_user_priority(username),
+                require_full_gpu=False, allow_full_gpu=allow_full
+            )
+
+            if not suggestion['success']:
+                reason = suggestion.get('error', 'NO_GPU_AVAILABLE')
+                # Don't log as REJECTED here - the wrapper will retry
+                return None, reason
+
+            gpu_slot = suggestion['gpu_slot']
+
+            # Double-check full GPU permission (belt and suspenders)
+            if self._is_full_gpu(gpu_slot) and not allow_full:
+                reason = f"FULL_GPU_NOT_ALLOWED (got slot {gpu_slot}, user cannot use full GPUs)"
+                self._log_event("REJECTED", username, f"external-{container_type}",
+                               reason=reason)
+                return None, reason
+
+            # Get Docker-compatible device ID
+            docker_id = self.get_docker_id(gpu_slot)
+
+            # Log allocation
+            self._log_event("ALLOCATED", username, f"external-{container_type}",
+                           gpu_slot, f"External container allocation, slot={gpu_slot}")
+
+            return docker_id, "SUCCESS"
+
+        finally:
+            self._release_lock()
+
     def release_stale_allocations(self, username: str = None) -> list:
         """
         Remove stopped containers that exceeded GPU hold timeout.
@@ -754,6 +860,12 @@ def main():
     parser_multi.add_argument('num_migs', type=int, help='Number of MIG-equivalents to allocate')
     parser_multi.add_argument('--prefer-full', action='store_true', help='Prefer full GPUs over MIGs')
 
+    # allocate-external command (for docker-wrapper.sh - external containers like devcontainers, compose)
+    parser_external = subparsers.add_parser('allocate-external',
+        help='Allocate GPU for external container (devcontainer, compose, docker run)')
+    parser_external.add_argument('user', help='Username')
+    parser_external.add_argument('container_type', help='Container type (devcontainer, compose, docker, unknown)')
+
     args = parser.parse_args()
 
     if not args.command:
@@ -834,6 +946,25 @@ def main():
             print(f"DOCKER_IDS={docker_ids_str}")
         else:
             print(f"✗ Allocation failed: {reason}")
+            sys.exit(1)
+
+    elif args.command == 'allocate-external':
+        # For docker-wrapper.sh - external containers (devcontainer, compose, docker run)
+        docker_id, reason = allocator.allocate_external(args.user, args.container_type)
+
+        if docker_id and reason == "SUCCESS":
+            # Output format expected by docker-wrapper.sh
+            print(f"DOCKER_ID={docker_id}")
+            print(f"STATUS=SUCCESS")
+        elif reason.startswith("QUOTA_EXCEEDED"):
+            # Quota exceeded - wrapper should fail immediately (no retry)
+            print(f"STATUS=QUOTA_EXCEEDED")
+            print(f"REASON={reason}")
+            sys.exit(1)
+        else:
+            # Other failure (e.g., no GPU available) - wrapper may retry
+            print(f"STATUS=FAILED")
+            print(f"REASON={reason}")
             sys.exit(1)
 
 

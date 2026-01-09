@@ -165,6 +165,50 @@ policies:
   # graceful_errors: true          # Show helpful error messages when limits exceeded
   # suggest_alternatives: true     # Suggest alternatives when resource unavailable
 
+# === Container type-specific settings (external containers) ===
+# These apply to containers created outside ds01 CLI (dev containers, compose, direct docker run)
+# Core principle: GPU access = ephemeral enforcement, No GPU = permanent OK
+container_types:
+  # Dev containers (VS Code, Cursor, etc.) - development work
+  devcontainer:
+    idle_timeout: 30m              # Shorter than ds01 default - ephemeral nature
+    max_runtime: 168h              # 1 week max
+    default_mig_count:             # Group-based MIG allocation for external containers
+      student: 1                   # Students get 1 MIG for dev containers
+      researcher: 2                # Researchers can have 2 MIGs in dev containers
+      faculty: 2                   # Faculty can have 2 MIGs in dev containers
+      admin: null                  # Unlimited for admins
+
+  # Docker Compose containers
+  compose:
+    idle_timeout: 30m
+    max_runtime: 72h               # 3 days max
+    default_mig_count:
+      student: 1
+      researcher: 2
+      faculty: 2
+      admin: null
+
+  # Direct docker run commands
+  docker:
+    idle_timeout: 30m
+    max_runtime: 48h               # 2 days max
+    default_mig_count:
+      student: 1
+      researcher: 1                # Slightly stricter for raw docker
+      faculty: 2
+      admin: null
+
+  # API-created containers (Portainer, SDK, etc.) - stricter limits
+  unknown:
+    idle_timeout: 15m              # Short timeout for unidentified containers
+    max_runtime: 24h               # 1 day max
+    default_mig_count:
+      student: 1
+      researcher: 1
+      faculty: 1
+      admin: null
+
 # REMOVED SECTIONS:
 # - advanced: None of these settings are implemented
 # - wizard: Error messages moved to scripts/lib/error-messages.sh
