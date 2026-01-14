@@ -315,13 +315,15 @@ class GPUAvailabilityChecker:
                     'user_current': availability['user_current_count']
                 }
 
-        # Use least-allocated strategy - prefer MIG instances if available and allowed
-        # Sort: MIG instances first (they have '.'), then by slot ID
+        # Use least-allocated strategy with full GPU preference for permitted users
+        # Sort order depends on user's full GPU permission:
+        # - allow_full_gpu=True: Prefer full GPUs (better for vLLM, multi-process workloads)
+        # - allow_full_gpu=False: Prefer MIG instances (default for students)
         def sort_key(slot):
             is_mig = '.' in slot
-            # MIG instances get priority (sort first) unless require_full_gpu
-            if require_full_gpu:
-                return (is_mig, slot)  # Full GPUs first
+            # Full GPUs first if user requires OR is permitted to use them
+            if require_full_gpu or allow_full_gpu:
+                return (is_mig, slot)  # Full GPUs first (is_mig=False sorts before True)
             else:
                 return (not is_mig, slot)  # MIG instances first
 
