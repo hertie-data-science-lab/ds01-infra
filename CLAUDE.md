@@ -17,6 +17,7 @@ sudo deploy                                    # Deploy commands to /usr/local/b
 python3 scripts/docker/get_resource_limits.py <user>  # Check user limits
 python3 scripts/docker/gpu_allocator.py status        # GPU allocation state
 dashboard                                      # System overview
+monitoring-manage status                       # Prometheus/Grafana stack status
 ```
 
 ## Guidelines
@@ -57,6 +58,7 @@ Each directory has detailed CLAUDE.md/README.md. Read the relevant one for your 
 | `scripts/maintenance/` | Cleanup automation | `check-idle-containers.sh`, `cleanup-*.sh` |
 | `config/` | Resource limits, groups | `resource-limits.yaml`, `groups/*.members` |
 | `testing/` | Test suites | `cleanup-automation/`, `validation/` |
+| `monitoring/` | Prometheus/Grafana stack | `docker-compose.yaml`, `ds01_exporter.py` |
 
 ## Coding Conventions
 

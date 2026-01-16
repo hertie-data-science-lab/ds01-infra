@@ -1,0 +1,16 @@
+# Grafana Dashboard Provisioning
+# Auto-loads dashboards from JSON files
+
+apiVersion: 1
+
+providers:
+  - name: 'DS01 Dashboards'
+    orgId: 1
+    folder: 'DS01'
+    folderUid: 'ds01'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/dashboards

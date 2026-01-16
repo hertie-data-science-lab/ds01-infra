@@ -297,6 +297,13 @@ monitor_containers() {
             continue  # No GPU = no max_runtime limit
         fi
 
+        # Skip monitoring infrastructure containers (they need GPU but aren't user workloads)
+        local is_monitoring=$(docker inspect "$container" --format '{{index .Config.Labels "ds01.monitoring"}}' 2>/dev/null)
+        if [ "$is_monitoring" = "true" ]; then
+            log "Skipping monitoring container: $container (ds01.monitoring=true)"
+            continue
+        fi
+
         # Get container type and owner
         local container_type=$(get_container_type "$container")
         local username=$(get_container_owner "$container")

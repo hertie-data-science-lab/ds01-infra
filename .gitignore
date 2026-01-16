@@ -39,3 +39,7 @@ logs/*
 
 # Binary directory
 bin/
+
+# Monitoring secrets
+monitoring/.env
+monitoring/alertmanager/alertmanager-local.yml

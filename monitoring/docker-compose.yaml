@@ -1,0 +1,276 @@
+# DS01 Monitoring Stack
+# Lightweight Prometheus/Grafana deployment for GPU server monitoring
+#
+# Usage:
+#   cd /opt/ds01-infra/monitoring
+#   docker-compose up -d
+#
+# Access:
+#   Prometheus: http://localhost:9090 (localhost only)
+#   Grafana: http://localhost:3000 (requires SSH tunnel or reverse proxy)
+#   Exporter: http://localhost:9101/metrics
+
+services:
+  # DS01 Custom Metrics Exporter
+  # NOTE: Runs as systemd service (ds01-exporter.service), NOT in Docker
+  # This is because the exporter needs nvidia-smi access which is complex in containers.
+  # See: config/deploy/systemd/ds01-exporter.service
+  # Start with: sudo systemctl start ds01-exporter
+
+  # Node Exporter for system metrics (CPU, memory, disk, network)
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: ds01-node-exporter
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.systemd'
+      - '--no-collector.arp'
+      - '--no-collector.infiniband'
+      - '--no-collector.ipvs'
+      - '--no-collector.nfs'
+      - '--no-collector.nfsd'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        labels: "ds01.component"
+    networks:
+      - ds01-monitoring
+    labels:
+      - "ds01.monitoring=true"
+      - "ds01.component=node-exporter"
+      - "ds01.owner=system"
+      - "ds01.managed_by=ds01-monitoring-stack"
+      - "ds01.container_type=infrastructure"
+      - "ds01.protected=true"
+      - "ds01.description=System metrics (CPU, memory, disk, network)"
+
+  # NVIDIA DCGM Exporter - Fast GPU metrics via native driver integration
+  # Provides: utilization, memory, temperature, power, MIG metrics
+  # Uses dcp-metrics-included.csv for MIG-compatible profiling metrics (GR_ENGINE_ACTIVE)
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.0-3.2.0-ubuntu22.04
+    container_name: ds01-dcgm-exporter
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+        limits:
+          memory: 512M
+          cpus: '0.25'
+    ports:
+      - "127.0.0.1:9400:9400"
+    cap_add:
+      - SYS_ADMIN  # Required for DCGM to access GPU counters
+    environment:
+      # Use DCP metrics file which includes DCGM_FI_PROF_GR_ENGINE_ACTIVE
+      # This metric works for MIG instances (unlike DCGM_FI_DEV_GPU_UTIL)
+      - DCGM_EXPORTER_COLLECTORS=/etc/dcgm-exporter/dcp-metrics-included.csv
+    healthcheck:
+      # DCGM image lacks wget/curl, check if exporter process is running
+      test: ["CMD", "pgrep", "-f", "dcgm-exporter"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s  # DCGM needs time to initialize GPU access
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        labels: "ds01.component"
+    networks:
+      - ds01-monitoring
+    labels:
+      - "ds01.monitoring=true"
+      - "ds01.component=dcgm-exporter"
+      - "ds01.owner=system"
+      - "ds01.managed_by=ds01-monitoring-stack"
+      - "ds01.container_type=infrastructure"
+      - "ds01.protected=true"
+      - "ds01.description=GPU metrics via NVIDIA DCGM (utilization, memory, temperature)"
+
+  # Prometheus - Time series database and alerting
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: ds01-prometheus
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    extra_hosts:
+      # Allow access to host's localhost for ds01-exporter (runs as systemd service)
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--storage.tsdb.retention.size=20GB'
+      - '--storage.tsdb.wal-compression'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - ds01-monitoring
+    depends_on:
+      node-exporter:
+        condition: service_healthy
+      # dcgm-exporter is optional - Prometheus will work without GPU metrics
+      dcgm-exporter:
+        condition: service_started
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+        labels: "ds01.component"
+    labels:
+      - "ds01.monitoring=true"
+      - "ds01.component=prometheus"
+      - "ds01.owner=system"
+      - "ds01.managed_by=ds01-monitoring-stack"
+      - "ds01.container_type=infrastructure"
+      - "ds01.protected=true"
+      - "ds01.description=Time series database and alerting engine"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '0.5'
+
+  # Alertmanager - Alert routing and notifications
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: ds01-alertmanager
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/templates:/etc/alertmanager/templates:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    environment:
+      # SMTP credentials (set in .env file)
+      - SMTP_AUTH_USER=${SMTP_AUTH_USER:-}
+      - SMTP_AUTH_PASSWORD=${SMTP_AUTH_PASSWORD:-}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        labels: "ds01.component"
+    networks:
+      - ds01-monitoring
+    labels:
+      - "ds01.monitoring=true"
+      - "ds01.component=alertmanager"
+      - "ds01.owner=system"
+      - "ds01.managed_by=ds01-monitoring-stack"
+      - "ds01.container_type=infrastructure"
+      - "ds01.protected=true"
+      - "ds01.description=Alert routing and email notifications"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.1'
+
+  # Grafana - Dashboards and visualization
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: ds01-grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-ds01admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=${GRAFANA_ROOT_URL:-http://localhost:3000}
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      # Database tuning to reduce SQLite locking issues
+      - GF_DATABASE_WAL=true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+        labels: "ds01.component"
+    networks:
+      - ds01-monitoring
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    labels:
+      - "ds01.monitoring=true"
+      - "ds01.component=grafana"
+      - "ds01.owner=system"
+      - "ds01.managed_by=ds01-monitoring-stack"
+      - "ds01.container_type=infrastructure"
+      - "ds01.protected=true"
+      - "ds01.description=Dashboards and visualization UI"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+networks:
+  ds01-monitoring:
+    driver: bridge
+    name: ds01-monitoring
+
+volumes:
+  prometheus-data:
+    name: ds01-prometheus-data
+  alertmanager-data:
+    name: ds01-alertmanager-data
+  grafana-data:
+    name: ds01-grafana-data

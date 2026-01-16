@@ -1,0 +1,17 @@
+{
+    "name": "testing",
+    "image": "aimehub/pytorch-2.8.0-aime-cuda12.6.3",
+    "runArgs": [
+        "--gpus",
+        "all",
+        "--shm-size",
+        "8g"
+    ],
+    "mounts": [
+        "source=${localEnv:HOME},target=/home/${localEnv:USER},type=bind"
+    ],
+    "containerEnv": {
+        "HF_HOME": "/home/${localEnv:USER}/.cache/huggingface"
+    },
+    "shutdownAction": "stopContainer"
+}
