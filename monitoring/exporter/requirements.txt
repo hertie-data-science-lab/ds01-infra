@@ -1,0 +1,4 @@
+# DS01 Exporter dependencies
+# Using stdlib only - no external dependencies required
+# prometheus_client could be added for more features but stdlib is sufficient
+PyYAML>=6.0

@@ -1,0 +1,61 @@
+#!/bin/bash
+# DS01 Monitoring Status Check
+# Quick health check for monitoring components
+#
+# Usage:
+#   monitoring-status [--quiet]
+
+set -euo pipefail
+
+QUIET="${1:-}"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+check_service() {
+    local name="$1"
+    local url="$2"
+    local timeout="${3:-2}"
+
+    if curl -s --max-time "$timeout" "$url" >/dev/null 2>&1; then
+        if [[ "$QUIET" != "--quiet" ]]; then
+            echo -e "${GREEN}✓${NC} $name"
+        fi
+        return 0
+    else
+        if [[ "$QUIET" != "--quiet" ]]; then
+            echo -e "${RED}✗${NC} $name"
+        fi
+        return 1
+    fi
+}
+
+if [[ "$QUIET" != "--quiet" ]]; then
+    echo "DS01 Monitoring Status"
+    echo "======================"
+fi
+
+all_ok=true
+
+check_service "DS01 Exporter" "http://localhost:9101/health" || all_ok=false
+check_service "Prometheus" "http://localhost:9090/-/healthy" || all_ok=false
+check_service "Alertmanager" "http://localhost:9093/-/healthy" || all_ok=false
+check_service "Grafana" "http://localhost:3000/api/health" || all_ok=false
+
+if [[ "$QUIET" != "--quiet" ]]; then
+    echo ""
+    if [[ "$all_ok" == "true" ]]; then
+        echo -e "${GREEN}All monitoring services healthy${NC}"
+    else
+        echo -e "${YELLOW}Some services are down. Run 'monitoring-manage start' to start.${NC}"
+    fi
+fi
+
+if [[ "$all_ok" == "true" ]]; then
+    exit 0
+else
+    exit 1
+fi

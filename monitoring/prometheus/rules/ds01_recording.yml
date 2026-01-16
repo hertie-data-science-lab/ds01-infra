@@ -1,0 +1,301 @@
+# DS01 Recording Rules
+# Pre-computed metrics for fast dashboard queries
+#
+# Recording rules run at regular intervals and store results as new time series.
+# This is useful for:
+# - Expensive joins between exporters (e.g., user → GPU utilization)
+# - Aggregations that need historical data (e.g., GPU-hours)
+# - Smoothing out metrics for alerting
+#
+# MIG Support:
+# - Full GPUs (0, 1): Use DCGM_FI_DEV_GPU_UTIL directly
+# - MIG instances (2.0, 2.1, etc.): Use DCGM_FI_PROF_GR_ENGINE_ACTIVE via ds01_mig_slot_info mapping
+# - The ds01_mig_slot_info metric correlates DS01 slot format with DCGM GPU_I_ID labels
+
+groups:
+  # MIG slot mapping helpers
+  # Creates utilization metrics with gpu_slot labels for joining with ds01_gpu_allocated
+  - name: ds01_mig_mapping
+    interval: 30s
+    rules:
+      # MIG utilization with slot label (from ds01_mig_slot_info mapping)
+      # Joins DCGM profiling metrics with DS01 slot mapping
+      - record: ds01:mig_utilization
+        expr: |
+          DCGM_FI_PROF_GR_ENGINE_ACTIVE{GPU_I_ID!=""}
+          * on(gpu, GPU_I_ID) group_left(slot)
+          label_replace(ds01_mig_slot_info, "GPU_I_ID", "${1}", "gpu_i_id", "(.+)")
+
+      # Full GPU utilization with slot label
+      - record: ds01:full_gpu_utilization
+        expr: |
+          label_replace(
+            DCGM_FI_DEV_GPU_UTIL{GPU_I_ID=""},
+            "slot", "${1}", "gpu", "([0-9]+)"
+          )
+
+      # Combined utilization metric (MIG + full GPUs) with consistent gpu_slot label
+      - record: ds01:gpu_utilization_by_slot
+        expr: |
+          label_replace(ds01:mig_utilization, "gpu_slot", "${1}", "slot", "(.+)")
+          or
+          label_replace(ds01:full_gpu_utilization, "gpu_slot", "${1}", "slot", "(.+)")
+
+  # Per-user GPU metrics
+  # These join DS01 allocation info with DCGM hardware metrics
+  - name: ds01_user_gpu_metrics
+    interval: 30s
+    rules:
+      # Per-user GPU utilization (avg across all their allocated GPUs)
+      # Works for both full GPUs and MIG instances
+      - record: ds01:user_gpu_utilization_avg
+        expr: |
+          avg by (user) (
+            ds01_gpu_allocated * on(gpu_slot) group_left()
+            ds01:gpu_utilization_by_slot
+          ) or vector(0)
+
+      # Per-user max GPU utilization
+      - record: ds01:user_gpu_utilization_max
+        expr: |
+          max by (user) (
+            ds01_gpu_allocated * on(gpu_slot) group_left()
+            ds01:gpu_utilization_by_slot
+          ) or vector(0)
+
+      # Per-user GPU memory utilization (works for both full GPUs and MIG)
+      # MIG instances have their own memory metrics
+      - record: ds01:user_gpu_memory_percent
+        expr: |
+          avg by (user) (
+            ds01_gpu_allocated * on(gpu_slot) group_left()
+            (
+              # MIG memory utilization via slot mapping
+              label_replace(
+                (
+                  DCGM_FI_DEV_FB_USED{GPU_I_ID!=""} /
+                  (DCGM_FI_DEV_FB_USED{GPU_I_ID!=""} + DCGM_FI_DEV_FB_FREE{GPU_I_ID!=""})
+                ) * 100
+                * on(gpu, GPU_I_ID) group_left(slot)
+                label_replace(ds01_mig_slot_info, "GPU_I_ID", "${1}", "gpu_i_id", "(.+)"),
+                "gpu_slot", "${1}", "slot", "(.+)"
+              )
+              or
+              # Full GPU memory utilization
+              label_replace(
+                (
+                  DCGM_FI_DEV_FB_USED{GPU_I_ID=""} /
+                  (DCGM_FI_DEV_FB_USED{GPU_I_ID=""} + DCGM_FI_DEV_FB_FREE{GPU_I_ID=""})
+                ) * 100,
+                "gpu_slot", "${1}", "gpu", "([0-9]+)"
+              )
+            )
+          ) or vector(0)
+
+  # System-wide aggregations
+  - name: ds01_system_aggregates
+    interval: 30s
+    rules:
+      # Total system GPU utilization (all GPUs and MIG instances)
+      # Uses profiling metric for MIG, GPU_UTIL for full GPUs
+      - record: ds01:system_gpu_utilization_avg
+        expr: |
+          avg(
+            DCGM_FI_PROF_GR_ENGINE_ACTIVE{GPU_I_ID!=""}
+            or
+            DCGM_FI_DEV_GPU_UTIL{GPU_I_ID=""}
+          ) or vector(0)
+
+      # Total allocated MIG slots
+      - record: ds01:system_mig_allocated
+        expr: count(ds01_gpu_allocated) or vector(0)
+
+      # Total MIG instances (from ds01 mapping)
+      - record: ds01:system_mig_total
+        expr: count(ds01_mig_slot_info) or vector(0)
+
+      # Total free MIG slots (MIG instances - allocated MIG slots)
+      # Only calculates when MIG topology is known (DCGM running)
+      # Returns NaN if DCGM is down rather than misleading negative values
+      - record: ds01:system_mig_free
+        expr: |
+          clamp_min(
+            (count(ds01_mig_slot_info) or vector(0))
+            -
+            (count(ds01_gpu_allocated{gpu_slot=~".*\\..*"}) or vector(0)),
+            0
+          )
+
+      # Active users count
+      - record: ds01:system_active_users
+        expr: count(count by (user) (ds01_gpu_allocated)) or vector(0)
+
+      # Running containers count
+      - record: ds01:system_containers_running
+        expr: sum(ds01_containers_total{status="running"}) or vector(0)
+
+  # Hourly aggregations for long-term trends
+  - name: ds01_hourly_aggregates
+    interval: 5m
+    rules:
+      # Hourly average GPU utilization (for trend analysis)
+      - record: ds01:hourly_gpu_util_avg
+        expr: avg_over_time(ds01:system_gpu_utilization_avg[1h])
+
+      # Hourly max GPU utilization
+      - record: ds01:hourly_gpu_util_max
+        expr: max_over_time(ds01:system_gpu_utilization_avg[1h])
+
+      # Hourly average MIG allocation
+      - record: ds01:hourly_mig_allocated_avg
+        expr: avg_over_time(ds01:system_mig_allocated[1h])
+
+  # GPU waste metrics (for alerting and reporting)
+  - name: ds01_waste_metrics
+    interval: 30s
+    rules:
+      # GPU slots with <5% utilization (wasted)
+      - record: ds01:gpu_waste_count
+        expr: |
+          count(
+            ds01_gpu_allocated * on(gpu_slot) group_left()
+            (ds01:gpu_utilization_by_slot < 5)
+          ) or vector(0)
+
+      # GPU waste percentage (wasted / allocated)
+      - record: ds01:gpu_waste_percent
+        expr: |
+          (ds01:gpu_waste_count / ds01:system_mig_allocated) * 100
+          or vector(0)
+
+  # GPU temperature trends (for capacity planning)
+  - name: ds01_temperature_metrics
+    interval: 30s
+    rules:
+      # Per-GPU temperature (full GPUs only - MIG shares parent temp)
+      - record: ds01:gpu_temperature
+        expr: DCGM_FI_DEV_GPU_TEMP
+
+      # System max temperature
+      - record: ds01:system_gpu_temp_max
+        expr: max(DCGM_FI_DEV_GPU_TEMP) or vector(0)
+
+      # System avg temperature
+      - record: ds01:system_gpu_temp_avg
+        expr: avg(DCGM_FI_DEV_GPU_TEMP) or vector(0)
+
+      # Hourly max temperature (for trend analysis)
+      - record: ds01:hourly_gpu_temp_max
+        expr: max_over_time(ds01:system_gpu_temp_max[1h])
+
+      # Daily max temperature
+      - record: ds01:daily_gpu_temp_max
+        expr: max_over_time(ds01:system_gpu_temp_max[24h])
+
+  # GPU-hours cost attribution
+  # Tracks cumulative GPU time per user for billing/reporting
+  - name: ds01_cost_attribution
+    interval: 1m
+    rules:
+      # Per-user GPU-seconds increment (sampled every minute)
+      # Each allocated GPU adds 60 seconds per minute
+      - record: ds01:user_gpu_seconds
+        expr: |
+          sum by (user) (ds01_gpu_allocated) * 60
+
+      # Per-user MIG-equivalent hours (running counter proxy)
+      # Use increase() over time range in dashboards for actual GPU-hours
+      - record: ds01:user_gpu_slots_allocated
+        expr: sum by (user) (ds01_gpu_allocated) or vector(0)
+
+      # System total GPU-seconds per minute
+      - record: ds01:system_gpu_seconds
+        expr: count(ds01_gpu_allocated) * 60 or vector(0)
+
+      # Per-user weighted GPU-hours (utilisation-adjusted)
+      # Weights by actual usage - idle GPU counts less
+      - record: ds01:user_gpu_seconds_weighted
+        expr: |
+          (
+            sum by (user) (ds01_gpu_allocated)
+            * on(user) group_left()
+            (ds01:user_gpu_utilization_avg / 100)
+          ) * 60 or vector(0)
+
+  # Device labelling for clear GPU/MIG distinction in dashboards
+  # Produces metrics with a "device" label: "GPU 0", "GPU 1" for full GPUs, "MIG 2.0", "MIG 2.1" for MIG instances
+  - name: ds01_device_labelling
+    interval: 30s
+    rules:
+      # Utilization with clear device label
+      - record: ds01:device_utilization
+        expr: |
+          # Full GPUs - label as "GPU X"
+          label_replace(
+            DCGM_FI_DEV_GPU_UTIL{GPU_I_ID=""},
+            "device", "GPU ${1}", "gpu", "([0-9]+)"
+          )
+          or
+          # MIG instances - label as "MIG X.Y"
+          label_replace(
+            ds01:mig_utilization,
+            "device", "MIG ${1}", "slot", "(.+)"
+          )
+
+      # Memory usage % with device label
+      - record: ds01:device_memory_percent
+        expr: |
+          # Full GPUs
+          label_replace(
+            (DCGM_FI_DEV_FB_USED{GPU_I_ID=""} /
+             (DCGM_FI_DEV_FB_USED{GPU_I_ID=""} + DCGM_FI_DEV_FB_FREE{GPU_I_ID=""})) * 100,
+            "device", "GPU ${1}", "gpu", "([0-9]+)"
+          )
+          or
+          # MIG instances
+          label_replace(
+            (DCGM_FI_DEV_FB_USED{GPU_I_ID!=""} /
+             (DCGM_FI_DEV_FB_USED{GPU_I_ID!=""} + DCGM_FI_DEV_FB_FREE{GPU_I_ID!=""})) * 100
+            * on(gpu, GPU_I_ID) group_left(slot)
+            label_replace(ds01_mig_slot_info, "GPU_I_ID", "${1}", "gpu_i_id", "(.+)"),
+            "device", "MIG ${1}", "slot", "(.+)"
+          )
+
+      # Memory used (MB) with device label
+      - record: ds01:device_memory_used_mb
+        expr: |
+          label_replace(
+            DCGM_FI_DEV_FB_USED{GPU_I_ID=""},
+            "device", "GPU ${1}", "gpu", "([0-9]+)"
+          )
+          or
+          label_replace(
+            DCGM_FI_DEV_FB_USED{GPU_I_ID!=""}
+            * on(gpu, GPU_I_ID) group_left(slot)
+            label_replace(ds01_mig_slot_info, "GPU_I_ID", "${1}", "gpu_i_id", "(.+)"),
+            "device", "MIG ${1}", "slot", "(.+)"
+          )
+
+      # Temperature (physical GPUs only - MIG shares parent)
+      - record: ds01:device_temperature
+        expr: |
+          label_replace(
+            DCGM_FI_DEV_GPU_TEMP{GPU_I_ID=""},
+            "device", "GPU ${1}", "gpu", "([0-9]+)"
+          )
+
+      # Power (physical GPUs only)
+      - record: ds01:device_power_watts
+        expr: |
+          label_replace(
+            DCGM_FI_DEV_POWER_USAGE{GPU_I_ID=""},
+            "device", "GPU ${1}", "gpu", "([0-9]+)"
+          )
+
+      # SM Clock (physical GPUs only)
+      - record: ds01:device_sm_clock_hz
+        expr: |
+          label_replace(
+            DCGM_FI_DEV_SM_CLOCK{GPU_I_ID=""} * 1000000,
+            "device", "GPU ${1}", "gpu", "([0-9]+)"
+          )

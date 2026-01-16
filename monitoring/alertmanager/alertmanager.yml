@@ -1,0 +1,96 @@
+# DS01 Alertmanager Configuration
+# Routes alerts to appropriate receivers
+#
+# SETUP: Copy this file to alertmanager-local.yml and add SMTP credentials:
+#   1. cp alertmanager.yml alertmanager-local.yml
+#   2. Edit alertmanager-local.yml with your SMTP password
+#   3. The -local.yml file is gitignored
+#
+# Or edit this file directly if credentials are acceptable in repo.
+
+global:
+  # Hertie School SMTP settings
+  smtp_smarthost: 'smtp.hertie-school.org:587'
+  smtp_from: 'ds01-alerts@hertie-school.org'
+  smtp_auth_username: 'ds01-alerts@hertie-school.org'
+  # smtp_auth_password: 'YOUR_PASSWORD_HERE'  # Uncomment and fill in
+  smtp_require_tls: true
+
+  # Resolve timeout
+  resolve_timeout: 5m
+
+# Alert routing tree
+route:
+  # Default receiver
+  receiver: 'ds01-default'
+
+  # Group alerts by these labels
+  group_by: ['alertname', 'severity']
+
+  # Wait before sending first notification for a group
+  group_wait: 30s
+
+  # Wait before sending updated notifications
+  group_interval: 5m
+
+  # Wait before resending notification
+  repeat_interval: 4h
+
+  # Child routes
+  routes:
+    # Critical alerts - shorter intervals
+    - match:
+        severity: critical
+      receiver: 'ds01-critical'
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Warning alerts
+    - match:
+        severity: warning
+      receiver: 'ds01-default'
+      repeat_interval: 4h
+
+    # Info alerts - less frequent
+    - match:
+        severity: info
+      receiver: 'ds01-default'
+      repeat_interval: 24h
+
+# Inhibition rules - suppress alerts when related critical is firing
+inhibit_rules:
+  # If critical, suppress warning for same alertname
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname']
+
+  # If exporter down, suppress all ds01_ alerts
+  - source_match:
+      alertname: 'DS01ExporterDown'
+    target_match_re:
+      alertname: 'DS01.*'
+    equal: ['job']
+
+# Receivers
+receivers:
+  # Default receiver - warning/info alerts (daily digest style)
+  - name: 'ds01-default'
+    email_configs:
+      - to: 'datasciencelab@hertie-school.org'
+        send_resolved: true
+        headers:
+          Subject: '[DS01] {{ .Status | toUpper }}: {{ .GroupLabels.alertname }}'
+
+  # Critical receiver - immediate notification
+  - name: 'ds01-critical'
+    email_configs:
+      - to: 'datasciencelab@hertie-school.org'
+        send_resolved: true
+        headers:
+          Subject: '[DS01 CRITICAL] {{ .GroupLabels.alertname }}'
+
+# Email templates
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'

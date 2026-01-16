@@ -1,0 +1,254 @@
+#!/bin/bash
+# DS01 Monitoring Stack Management
+# Admin command for managing Prometheus/Grafana monitoring stack
+#
+# Usage:
+#   monitoring-manage [command]
+#
+# Commands:
+#   status    - Show monitoring stack status (default)
+#   start     - Start monitoring stack
+#   stop      - Stop monitoring stack
+#   restart   - Restart monitoring stack
+#   logs      - Follow monitoring logs
+#   update    - Pull latest images and restart
+#   build     - Rebuild custom exporter image
+
+set -euo pipefail
+
+# Source common library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INFRA_ROOT="${SCRIPT_DIR%/scripts/*}"
+
+if [[ -f "$INFRA_ROOT/scripts/lib/init.sh" ]]; then
+    source "$INFRA_ROOT/scripts/lib/init.sh"
+fi
+
+COMPOSE_FILE="$INFRA_ROOT/monitoring/docker-compose.yaml"
+COMPOSE_PROJECT="ds01-monitoring"
+
+# Colors (if not loaded from init.sh)
+RED=${RED:-'\033[0;31m'}
+GREEN=${GREEN:-'\033[0;32m'}
+YELLOW=${YELLOW:-'\033[1;33m'}
+BLUE=${BLUE:-'\033[0;34m'}
+NC=${NC:-'\033[0m'}
+
+usage() {
+    cat << 'EOF'
+DS01 Monitoring Stack Management
+
+Usage:
+  monitoring-manage [command]
+
+Commands:
+  status    Show monitoring stack status (default)
+  start     Start monitoring stack
+  stop      Stop monitoring stack
+  restart   Restart monitoring stack
+  logs      Follow monitoring logs (Ctrl+C to exit)
+  update    Pull latest images and restart
+  build     Rebuild custom exporter image
+
+Examples:
+  monitoring-manage              # Show status
+  monitoring-manage start        # Start all monitoring services
+  monitoring-manage logs         # Follow all logs
+  monitoring-manage logs grafana # Follow grafana logs only
+
+Access:
+  Grafana:     http://localhost:3000 (use SSH tunnel)
+  Prometheus:  http://localhost:9090 (localhost only)
+  Metrics:     http://localhost:9101/metrics
+EOF
+}
+
+check_compose() {
+    if [[ ! -f "$COMPOSE_FILE" ]]; then
+        echo -e "${RED}Error: docker-compose.yaml not found at $COMPOSE_FILE${NC}"
+        echo "Please ensure the monitoring stack is installed."
+        exit 1
+    fi
+}
+
+# Fix permissions on Grafana provisioning files
+# Required because user umask (0077) creates files with restrictive permissions
+# Grafana container runs as user 472, needs read access to dashboard JSON files
+fix_permissions() {
+    local grafana_prov_dir="$INFRA_ROOT/monitoring/grafana/provisioning"
+    local fixed=0
+
+    if [[ -d "$grafana_prov_dir" ]]; then
+        # Find files that aren't world-readable and fix them
+        while IFS= read -r -d '' file; do
+            chmod o+r "$file" 2>/dev/null && ((fixed++)) || true
+        done < <(find "$grafana_prov_dir" -type f ! -perm -o=r -print0 2>/dev/null)
+
+        # Ensure directories are executable (traversable)
+        find "$grafana_prov_dir" -type d ! -perm -o=x -exec chmod o+x {} \; 2>/dev/null || true
+
+        if [[ $fixed -gt 0 ]]; then
+            echo -e "${YELLOW}Fixed permissions on $fixed provisioning file(s)${NC}"
+        fi
+    fi
+}
+
+status() {
+    check_compose
+    echo -e "${BLUE}DS01 Monitoring Stack Status${NC}"
+    echo "=============================="
+    echo ""
+
+    # Docker compose status
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" ps 2>/dev/null || \
+        docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" ps
+
+    echo ""
+
+    # Health checks
+    echo -e "${BLUE}Health Checks:${NC}"
+
+    # DS01 Exporter
+    if curl -s --max-time 2 http://localhost:9101/health >/dev/null 2>&1; then
+        echo -e "  DS01 Exporter:  ${GREEN}UP${NC} (http://localhost:9101/metrics)"
+    else
+        echo -e "  DS01 Exporter:  ${RED}DOWN${NC}"
+    fi
+
+    # Prometheus
+    if curl -s --max-time 2 http://localhost:9090/-/healthy >/dev/null 2>&1; then
+        echo -e "  Prometheus:     ${GREEN}UP${NC} (http://localhost:9090)"
+    else
+        echo -e "  Prometheus:     ${RED}DOWN${NC}"
+    fi
+
+    # Alertmanager
+    if curl -s --max-time 2 http://localhost:9093/-/healthy >/dev/null 2>&1; then
+        echo -e "  Alertmanager:   ${GREEN}UP${NC} (http://localhost:9093)"
+    else
+        echo -e "  Alertmanager:   ${RED}DOWN${NC}"
+    fi
+
+    # Grafana
+    if curl -s --max-time 2 http://localhost:3000/api/health >/dev/null 2>&1; then
+        echo -e "  Grafana:        ${GREEN}UP${NC} (http://localhost:3000)"
+    else
+        echo -e "  Grafana:        ${RED}DOWN${NC}"
+    fi
+
+    echo ""
+    echo -e "${YELLOW}Note: Access Grafana via SSH tunnel:${NC}"
+    echo "  ssh -L 3000:localhost:3000 user@ds01-server"
+}
+
+start() {
+    check_compose
+    echo -e "${BLUE}Starting DS01 monitoring stack...${NC}"
+
+    # Fix provisioning file permissions before starting
+    fix_permissions
+
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d 2>/dev/null || \
+        docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d
+
+    echo ""
+    echo -e "${GREEN}Monitoring stack started.${NC}"
+    echo "Run 'monitoring-manage status' to check health."
+}
+
+stop() {
+    check_compose
+    echo -e "${YELLOW}Stopping DS01 monitoring stack...${NC}"
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" down 2>/dev/null || \
+        docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" down
+
+    echo -e "${GREEN}Monitoring stack stopped.${NC}"
+}
+
+restart() {
+    check_compose
+    echo -e "${BLUE}Restarting DS01 monitoring stack...${NC}"
+
+    # Fix provisioning file permissions before restarting
+    fix_permissions
+
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" restart 2>/dev/null || \
+        docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" restart
+
+    echo -e "${GREEN}Monitoring stack restarted.${NC}"
+}
+
+logs() {
+    check_compose
+    local service="${1:-}"
+    echo -e "${BLUE}Following monitoring logs (Ctrl+C to exit)...${NC}"
+    if [[ -n "$service" ]]; then
+        docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs -f "$service" 2>/dev/null || \
+            docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs -f "$service"
+    else
+        docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs -f 2>/dev/null || \
+            docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs -f
+    fi
+}
+
+update() {
+    check_compose
+    echo -e "${BLUE}Updating DS01 monitoring stack...${NC}"
+
+    echo "Pulling latest images..."
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" pull 2>/dev/null || \
+        docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" pull
+
+    # Fix provisioning file permissions before restarting
+    fix_permissions
+
+    echo "Restarting with updated images..."
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d 2>/dev/null || \
+        docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d
+
+    echo -e "${GREEN}Monitoring stack updated.${NC}"
+}
+
+build() {
+    check_compose
+    echo -e "${BLUE}Building DS01 exporter image...${NC}"
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" build ds01-exporter 2>/dev/null || \
+        docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" build ds01-exporter
+
+    echo -e "${GREEN}Exporter image built.${NC}"
+    echo "Run 'monitoring-manage restart' to use new image."
+}
+
+# Main
+case "${1:-status}" in
+    status)
+        status
+        ;;
+    start)
+        start
+        ;;
+    stop)
+        stop
+        ;;
+    restart)
+        restart
+        ;;
+    logs)
+        logs "${2:-}"
+        ;;
+    update)
+        update
+        ;;
+    build)
+        build
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        echo -e "${RED}Unknown command: $1${NC}"
+        echo ""
+        usage
+        exit 1
+        ;;
+esac

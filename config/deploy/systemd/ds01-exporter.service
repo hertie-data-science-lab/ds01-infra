@@ -1,0 +1,36 @@
+[Unit]
+Description=DS01 Prometheus Metrics Exporter
+Documentation=file:///opt/ds01-infra/monitoring/README.md
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/ds01-infra/monitoring/exporter/ds01_exporter.py
+Restart=always
+RestartSec=5
+User=root
+Group=docker
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ds01-exporter
+
+# Environment
+Environment=DS01_EXPORTER_PORT=9101
+# Bind to 0.0.0.0 to allow Docker containers to scrape via host.docker.internal
+# The server firewall should block external access to port 9101
+Environment=DS01_EXPORTER_BIND=0.0.0.0
+
+# Hardening (relaxed to allow nvidia-smi and docker access)
+ProtectSystem=full
+ReadOnlyPaths=/opt/ds01-infra
+ReadWritePaths=/var/log/ds01
+PrivateTmp=true
+NoNewPrivileges=false
+# Required for nvidia-smi access
+ProtectKernelModules=false
+
+[Install]
+WantedBy=multi-user.target

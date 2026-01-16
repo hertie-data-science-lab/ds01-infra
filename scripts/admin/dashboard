@@ -16,6 +16,7 @@ Modular Sections:
   dashboard containers         # All containers with stats
   dashboard users              # Per-user resource summary
   dashboard temp               # GPU temperatures and power
+  dashboard infra              # Monitoring infrastructure status
 
 Additional Views:
   dashboard allocations [N]    # Recent N GPU allocations (default: 10)
@@ -879,6 +880,71 @@ class DashboardRenderer:
         lines.append(self.box_bot())
         return "\n".join(lines)
 
+    def render_infrastructure_section(self) -> str:
+        """Render monitoring infrastructure status"""
+        lines = []
+        lines.append(self.box_top())
+        lines.append(self.box_line(Colors.c("MONITORING INFRASTRUCTURE", Colors.BOLD)))
+        lines.append(self.box_mid())
+
+        # Get infrastructure containers (ds01.monitoring=true)
+        try:
+            result = subprocess.run(
+                [DOCKER_BIN, 'ps', '-a', '--filter', 'label=ds01.monitoring=true',
+                 '--format', '{{.Names}}\t{{.Status}}\t{{.Label "ds01.component"}}\t{{.Label "ds01.description"}}'],
+                capture_output=True, text=True
+            )
+
+            if result.stdout.strip():
+                for line in result.stdout.strip().split('\n'):
+                    parts = line.split('\t')
+                    name = parts[0] if len(parts) > 0 else '?'
+                    status = parts[1] if len(parts) > 1 else '?'
+                    component = parts[2] if len(parts) > 2 else name
+                    description = parts[3] if len(parts) > 3 else ''
+
+                    # Determine health icon
+                    if 'Up' in status and ('healthy' in status or 'health' not in status):
+                        icon = Colors.c("●", Colors.GREEN)
+                        status_short = "running"
+                    elif 'Up' in status:
+                        icon = Colors.c("◐", Colors.YELLOW)
+                        status_short = "starting"
+                    else:
+                        icon = Colors.c("○", Colors.RED)
+                        status_short = "stopped"
+
+                    # Format: icon component (status) - description
+                    if description:
+                        lines.append(self.box_line(f"  {icon} {component:<18} {Colors.c(status_short, Colors.GRAY):<12} {description[:35]}"))
+                    else:
+                        lines.append(self.box_line(f"  {icon} {component:<18} {Colors.c(status_short, Colors.GRAY)}"))
+            else:
+                lines.append(self.box_line(Colors.c("  No monitoring containers found", Colors.YELLOW)))
+
+        except Exception as e:
+            lines.append(self.box_line(Colors.c(f"  Error: {e}", Colors.RED)))
+
+        # Check Prometheus targets if possible
+        lines.append(self.box_mid())
+        try:
+            import urllib.request
+            import json as json_mod
+            with urllib.request.urlopen('http://localhost:9090/api/v1/targets', timeout=2) as resp:
+                data = json_mod.loads(resp.read().decode())
+                targets = data.get('data', {}).get('activeTargets', [])
+                healthy = sum(1 for t in targets if t.get('health') == 'up')
+                total = len(targets)
+                if healthy == total:
+                    lines.append(self.box_line(f"  Prometheus: {Colors.c(f'{healthy}/{total} targets healthy', Colors.GREEN)}"))
+                else:
+                    lines.append(self.box_line(f"  Prometheus: {Colors.c(f'{healthy}/{total} targets healthy', Colors.YELLOW)}"))
+        except Exception:
+            lines.append(self.box_line(f"  Prometheus: {Colors.c('unreachable', Colors.RED)}"))
+
+        lines.append(self.box_bot())
+        return "\n".join(lines)
+
     def render_containers_section(self) -> str:
         """Render all containers with stats"""
         lines = []
@@ -1017,7 +1083,7 @@ def main():
     parser.add_argument('--json', action='store_true', help='JSON output')
     parser.add_argument('command', nargs='?',
                         choices=['gpu', 'cpu', 'mig-config', 'system', 'containers', 'users',
-                                 'allocations', 'temp', 'alerts', 'monitor'],
+                                 'allocations', 'temp', 'alerts', 'monitor', 'infrastructure', 'infra'],
                         help='Subcommand')
     parser.add_argument('args', nargs='*', help='Subcommand arguments')
 
@@ -1083,6 +1149,8 @@ def main():
             print(alerts)
         else:
             print(Colors.c("No active alerts", Colors.GREEN))
+    elif args.command in ('infrastructure', 'infra'):
+        print(renderer.render_infrastructure_section())
     elif args.full:
         print(renderer.render_full_view())
     else:

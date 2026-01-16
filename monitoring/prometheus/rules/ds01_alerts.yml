@@ -1,0 +1,219 @@
+# DS01 Alert Rules
+# Prometheus alerting rules for GPU waste, system health, and resource limits
+
+groups:
+  # GPU-related alerts
+  - name: ds01_gpu_alerts
+    interval: 30s
+    rules:
+      # GPU waste detection - allocated but idle
+      - alert: DS01GPUWaste
+        expr: |
+          ds01_gpu_allocated == 1
+          and on(gpu_slot) (ds01_gpu_utilization_percent < 5)
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Allocated GPU is idle"
+          description: "GPU {{ $labels.gpu_slot }} allocated to {{ $labels.container }} ({{ $labels.user }}) has <5% utilization for 30m"
+
+      # High GPU temperature
+      - alert: DS01GPUHighTemperature
+        expr: ds01_gpu_temperature_celsius > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU temperature above 85C"
+          description: "GPU {{ $labels.gpu }} at {{ $value }}C"
+
+      # Critical GPU temperature
+      - alert: DS01GPUCriticalTemperature
+        expr: ds01_gpu_temperature_celsius > 90
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU temperature critical (>90C)"
+          description: "GPU {{ $labels.gpu }} at {{ $value }}C - thermal throttling likely"
+
+      # High GPU memory usage
+      - alert: DS01GPUMemoryHigh
+        expr: (ds01_gpu_memory_used_bytes / ds01_gpu_memory_total_bytes) > 0.95
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU memory usage above 95%"
+          description: "GPU {{ $labels.gpu }} memory at {{ $value | humanizePercentage }}"
+
+  # Container alerts
+  - name: ds01_container_alerts
+    interval: 30s
+    rules:
+      # Container high CPU
+      - alert: DS01ContainerHighCPU
+        expr: ds01_container_cpu_percent > 400
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "Container high CPU usage"
+          description: "{{ $labels.container }} using {{ $value }}% CPU for 30m"
+
+      # Container high memory
+      - alert: DS01ContainerHighMemory
+        expr: ds01_container_memory_percent > 90
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container near memory limit"
+          description: "{{ $labels.container }} using {{ $value }}% of memory limit"
+
+  # System health alerts
+  - name: ds01_system_alerts
+    interval: 30s
+    rules:
+      # DS01 exporter down
+      - alert: DS01ExporterDown
+        expr: up{job="ds01-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "DS01 exporter is down"
+          description: "DS01 metrics exporter is not responding"
+
+      # Node exporter down
+      - alert: DS01NodeExporterDown
+        expr: up{job="node-exporter"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Node exporter is down"
+          description: "System metrics are not being collected"
+
+      # DS01 state directory disk space
+      - alert: DS01DiskSpaceLow
+        expr: (ds01_state_disk_bytes{type="free"} / ds01_state_disk_bytes{type="total"}) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DS01 state directory low on space"
+          description: "Less than 10% disk space remaining"
+
+      # Prometheus storage (from node_exporter if available)
+      - alert: DS01PrometheusStorageLow
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint=~"/var/lib/docker/volumes/ds01-prometheus.*"}
+           / node_filesystem_size_bytes{mountpoint=~"/var/lib/docker/volumes/ds01-prometheus.*"}) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Prometheus storage low"
+          description: "Prometheus data volume has less than 10% free space"
+
+      # High system load
+      - alert: DS01HighSystemLoad
+        expr: node_load15 > (count(node_cpu_seconds_total{mode="idle"}) * 0.8)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High system load"
+          description: "15-minute load average is high: {{ $value }}"
+
+      # Low available memory
+      - alert: DS01LowMemory
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low available memory"
+          description: "Less than 10% memory available"
+
+      # MIG topology mismatch (nvidia-smi vs DCGM)
+      # Fires when MIG partitions change but DCGM hasn't been restarted
+      - alert: DS01MIGMappingMismatch
+        expr: ds01_mig_mapping_status == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MIG topology mismatch detected"
+          description: "MIG slot mapping shows {{ $labels.unmapped }} unmapped instances. DCGM exporter may need restart after partition change."
+
+      # DCGM exporter down
+      - alert: DS01DCGMExporterDown
+        expr: up{job="dcgm-exporter"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DCGM exporter is down"
+          description: "GPU hardware metrics are not being collected"
+
+  # User-specific alerts (using recording rules)
+  - name: ds01_user_alerts
+    interval: 30s
+    rules:
+      # User has GPUs with very low utilization
+      - alert: DS01UserGPUWaste
+        expr: ds01:user_gpu_utilization_avg < 5
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "User {{ $labels.user }} has low GPU utilization"
+          description: "User {{ $labels.user }} has avg GPU utilization of {{ $value | printf \"%.1f\" }}% for 1+ hour. Consider releasing unused GPUs."
+
+      # High GPU waste across system (>50% of allocated GPUs idle)
+      - alert: DS01SystemHighGPUWaste
+        expr: ds01:gpu_waste_percent > 50
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High GPU waste across system"
+          description: "{{ $value | printf \"%.0f\" }}% of allocated GPUs have <5% utilization"
+
+      # User approaching MIG limit (>80% of their quota)
+      - alert: DS01UserNearMIGLimit
+        expr: |
+          (sum by (user) (ds01_gpu_allocated) / on(user) ds01_user_max_mig_instances) > 0.8
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "User {{ $labels.user }} near GPU allocation limit"
+          description: "User {{ $labels.user }} has used >80% of their GPU quota"
+
+  # Capacity planning alerts
+  - name: ds01_capacity_alerts
+    interval: 5m
+    rules:
+      # High MIG utilization (system running low on free slots)
+      - alert: DS01LowMIGCapacity
+        expr: (ds01:system_mig_free / (ds01:system_mig_allocated + ds01:system_mig_free)) < 0.2
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "Low MIG capacity available"
+          description: "Only {{ $value | humanizePercentage }} of MIG slots are free"
+
+      # Very low MIG capacity
+      - alert: DS01CriticalMIGCapacity
+        expr: ds01:system_mig_free < 2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Critical: Very few MIG slots available"
+          description: "Only {{ $value }} MIG slots free. Users may be unable to create containers."

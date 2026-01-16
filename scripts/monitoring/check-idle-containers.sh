@@ -428,6 +428,7 @@ monitor_containers() {
     local stopped_count=0
     local warned_count=0
     local skipped_no_gpu=0
+    local skipped_monitoring=0
 
     for container in $containers; do
         # Verify container still exists (race condition protection)
@@ -440,6 +441,14 @@ monitor_containers() {
         if ! container_has_gpu "$container"; then
             ((skipped_no_gpu += 1))
             continue  # No GPU = no idle timeout
+        fi
+
+        # Skip monitoring infrastructure containers (they need GPU but aren't user workloads)
+        local is_monitoring=$(docker inspect "$container" --format '{{index .Config.Labels "ds01.monitoring"}}' 2>/dev/null)
+        if [ "$is_monitoring" = "true" ]; then
+            log "Skipping monitoring container: $container (ds01.monitoring=true)"
+            ((skipped_monitoring += 1))
+            continue
         fi
 
         # Get container type and owner
@@ -461,7 +470,7 @@ monitor_containers() {
         fi
     done
 
-    log_color "Idle monitoring complete: monitored=$monitored_count (GPU), skipped=$skipped_no_gpu (no GPU), warned=$warned_count, stopped=$stopped_count" "$BLUE"
+    log_color "Idle monitoring complete: monitored=$monitored_count (GPU), skipped_no_gpu=$skipped_no_gpu, skipped_monitoring=$skipped_monitoring, warned=$warned_count, stopped=$stopped_count" "$BLUE"
 }
 
 # Process a single container with type-aware timeout (universal)

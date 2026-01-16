@@ -492,6 +492,14 @@ filter_container_list() {
     exec "$REAL_DOCKER" "$@"
 }
 
+# Check if a container is protected infrastructure
+is_protected_container() {
+    local container="$1"
+    local is_protected
+    is_protected=$($REAL_DOCKER inspect "$container" --format '{{index .Config.Labels "ds01.protected"}}' 2>/dev/null)
+    [[ "$is_protected" == "true" ]]
+}
+
 # Main logic
 main() {
     # If no arguments, pass through
@@ -501,6 +509,23 @@ main() {
 
     # Get the Docker subcommand
     local subcommand="$1"
+
+    # Protection: Prevent non-admins from stopping/removing infrastructure containers
+    if [[ "$subcommand" == "stop" || "$subcommand" == "rm" || "$subcommand" == "remove" || "$subcommand" == "kill" ]]; then
+        # Get the container name (last argument, or after flags)
+        local target="${@: -1}"
+        # Skip if target looks like a flag
+        if [[ "$target" != -* ]] && [ -n "$target" ]; then
+            if is_protected_container "$target"; then
+                if ! is_admin; then
+                    echo "Error: Container '$target' is protected infrastructure." >&2
+                    echo "Admin access required. Contact system administrator." >&2
+                    exit 1
+                fi
+                log_debug "Admin $CURRENT_USER allowed to $subcommand protected container: $target"
+            fi
+        fi
+    fi
 
     # Phase B: Filter 'ps' command for non-admins
     if [[ "$subcommand" == "ps" ]]; then
