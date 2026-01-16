@@ -615,12 +615,12 @@
       },
       "targets": [
         {
-          "expr": "ds01:gpu_utilization_by_slot",
-          "legendFormat": "{{ gpu_slot }}",
+          "expr": "ds01:device_utilization",
+          "legendFormat": "{{ device }}",
           "refId": "A"
         }
       ],
-      "title": "GPU/MIG Slot Utilisation (0,1=full GPU | X.Y=MIG)",
+      "title": "GPU/MIG Slot Utilisation",
       "type": "timeseries"
     }
   ],

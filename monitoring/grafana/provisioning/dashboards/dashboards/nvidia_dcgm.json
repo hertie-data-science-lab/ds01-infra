@@ -70,8 +70,8 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "DCGM_FI_DEV_GPU_TEMP{gpu=~\"$gpu\"}",
-          "legendFormat": "GPU {{gpu}}",
+          "expr": "ds01:device_temperature",
+          "legendFormat": "{{ device }}",
           "refId": "A"
         }
       ],
@@ -175,8 +175,8 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "DCGM_FI_DEV_POWER_USAGE{gpu=~\"$gpu\"}",
-          "legendFormat": "GPU {{gpu}}",
+          "expr": "ds01:device_power_watts",
+          "legendFormat": "{{ device }}",
           "refId": "A"
         }
       ],
@@ -280,8 +280,8 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "DCGM_FI_DEV_GPU_UTIL{gpu=~\"$gpu\"}",
-          "legendFormat": "GPU {{gpu}}",
+          "expr": "ds01:device_utilization",
+          "legendFormat": "{{ device }}",
           "refId": "A"
         }
       ],
@@ -340,8 +340,8 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "DCGM_FI_DEV_FB_USED{gpu=~\"$gpu\"}",
-          "legendFormat": "GPU {{gpu}}",
+          "expr": "ds01:device_memory_used_mb",
+          "legendFormat": "{{ device }}",
           "refId": "A"
         }
       ],
@@ -401,8 +401,8 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "DCGM_FI_DEV_SM_CLOCK{gpu=~\"$gpu\"} * 1000000",
-          "legendFormat": "GPU {{gpu}}",
+          "expr": "ds01:device_sm_clock_hz",
+          "legendFormat": "{{ device }}",
           "refId": "A"
         }
       ],
