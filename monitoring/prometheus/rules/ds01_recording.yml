@@ -299,3 +299,37 @@ groups:
             DCGM_FI_DEV_SM_CLOCK{GPU_I_ID=""} * 1000000,
             "device", "GPU ${1}", "gpu", "([0-9]+)"
           )
+
+  # Unmanaged GPU container tracking
+  # Containers with GPU access that bypass DS01 tracking (compose v2, API, etc.)
+  - name: ds01_unmanaged_metrics
+    interval: 30s
+    rules:
+      # Total unmanaged GPU containers (running + stopped)
+      - record: ds01:unmanaged_gpu_containers
+        expr: ds01_unmanaged_gpu_count or vector(0)
+
+      # Running unmanaged GPU containers
+      - record: ds01:unmanaged_gpu_running
+        expr: ds01_unmanaged_gpu_running or vector(0)
+
+      # Containers with unrestricted GPU access (--gpus all)
+      # These are particularly problematic as they can access any GPU
+      - record: ds01:unmanaged_gpu_unrestricted
+        expr: ds01_unmanaged_gpu_all_access or vector(0)
+
+      # Per-user unmanaged container count
+      - record: ds01:unmanaged_by_user
+        expr: |
+          sum by (user) (ds01_unmanaged_gpu_container) or vector(0)
+
+      # Unmanaged container presence indicator (for alerting)
+      # Value is 1 if any unmanaged containers exist, 0 otherwise
+      - record: ds01:unmanaged_present
+        expr: |
+          clamp_max(ds01_unmanaged_gpu_count, 1) or vector(0)
+
+      # Unrestricted GPU access indicator (high severity)
+      - record: ds01:unrestricted_gpu_present
+        expr: |
+          clamp_max(ds01_unmanaged_gpu_all_access, 1) or vector(0)

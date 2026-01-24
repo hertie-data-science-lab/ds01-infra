@@ -276,6 +276,56 @@ def collect_system_metrics() -> List[str]:
     return lines
 
 
+def collect_unmanaged_metrics() -> List[str]:
+    """Collect metrics for GPU containers outside DS01 tracking.
+
+    Unmanaged containers bypass the docker wrapper (e.g., Docker Compose v2)
+    and may have unrestricted GPU access.
+    """
+    lines = []
+
+    try:
+        state_mod = get_gpu_state_module()
+        reader = state_mod.get_reader()
+        unmanaged = reader.get_unmanaged_gpu_containers()
+
+        lines.append('# HELP ds01_unmanaged_gpu_container Unmanaged container with GPU access')
+        lines.append('# TYPE ds01_unmanaged_gpu_container gauge')
+
+        for c in unmanaged:
+            name = c.get('name', 'unknown').replace('"', '\\"')
+            user = c.get('user', 'unknown').replace('"', '\\"')
+            gpu_count = c.get('gpu_count', 0)
+            access_type = c.get('access_type', 'unknown')
+            running = 'true' if c.get('running') else 'false'
+
+            # Convert -1 to "ALL" for display
+            gpu_display = 'ALL' if gpu_count == -1 else str(gpu_count)
+
+            lines.append(
+                f'ds01_unmanaged_gpu_container{{'
+                f'container="{name}",user="{user}",gpu_count="{gpu_display}",'
+                f'access_type="{access_type}",running="{running}"}} 1'
+            )
+
+        # Summary metrics
+        lines.append('')
+        lines.append('# HELP ds01_unmanaged_gpu_count Total unmanaged GPU containers')
+        lines.append('# TYPE ds01_unmanaged_gpu_count gauge')
+        lines.append(f'ds01_unmanaged_gpu_count {len(unmanaged)}')
+
+        running_count = sum(1 for c in unmanaged if c.get('running'))
+        lines.append('')
+        lines.append('# HELP ds01_unmanaged_gpu_running Running unmanaged GPU containers')
+        lines.append('# TYPE ds01_unmanaged_gpu_running gauge')
+        lines.append(f'ds01_unmanaged_gpu_running {running_count}')
+
+    except Exception as e:
+        lines.append(f'# Error collecting unmanaged metrics: {e}')
+
+    return lines
+
+
 # ============================================================================
 # MIG Slot Mapping (for joining with DCGM metrics)
 # ============================================================================
@@ -514,6 +564,8 @@ def collect_all_metrics() -> str:
     lines.extend(collect_system_metrics())
     lines.append('')
     lines.extend(collect_mig_slot_mapping())
+    lines.append('')
+    lines.extend(collect_unmanaged_metrics())
 
     return '\n'.join(lines) + '\n'
 

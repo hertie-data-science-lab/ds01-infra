@@ -14,7 +14,7 @@ import subprocess
 import json
 import re
 import sys
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Set
 from collections import defaultdict
 
 # Real Docker binary - bypasses the wrapper at /usr/local/bin/docker
@@ -29,6 +29,17 @@ INTERFACE_ORCHESTRATION = "orchestration"
 INTERFACE_ATOMIC = "atomic"
 INTERFACE_DOCKER = "docker"
 INTERFACE_OTHER = "other"
+INTERFACE_UNMANAGED = "unmanaged"  # Containers outside DS01 tracking (bypass wrapper)
+
+# Infrastructure containers - excluded from monitoring
+INFRASTRUCTURE_CONTAINER_PATTERNS = [
+    "ds01-prometheus",
+    "ds01-grafana",
+    "ds01-alertmanager",
+    "ds01-dcgm-exporter",
+    "ds01-node-exporter",
+]
+INFRASTRUCTURE_LABEL = "ds01.protected"
 
 
 class GPUStateReader:
@@ -284,6 +295,186 @@ class GPUStateReader:
         except subprocess.CalledProcessError:
             # nvidia-smi query failed - GPU extraction failed
             return None
+
+    def _is_infrastructure_container(self, name: str, labels: dict) -> bool:
+        """Check if container is DS01 infrastructure (monitoring stack).
+
+        Infrastructure containers are excluded from unmanaged container detection
+        because they are intentionally created outside DS01 tracking.
+        """
+        # Check for explicit protected label
+        if labels.get(INFRASTRUCTURE_LABEL) == 'true':
+            return True
+
+        # Check against known infrastructure patterns
+        for pattern in INFRASTRUCTURE_CONTAINER_PATTERNS:
+            if name.startswith(pattern) or name == pattern:
+                return True
+
+        return False
+
+    def _extract_owner_from_compose(self, labels: dict) -> Optional[str]:
+        """Extract owner from compose project path or devcontainer.local_folder.
+
+        For containers created via docker compose or dev containers, the owner
+        can often be inferred from the working directory path.
+
+        Priority:
+        1. devcontainer.local_folder (most reliable)
+        2. com.docker.compose.project.working_dir (compose projects)
+
+        Returns username if extractable from /home/<username>/..., else None.
+        """
+        # Priority 1: devcontainer.local_folder
+        path = labels.get('devcontainer.local_folder', '')
+
+        # Priority 2: com.docker.compose.project.working_dir
+        if not path:
+            path = labels.get('com.docker.compose.project.working_dir', '')
+
+        # Extract username from path like /home/h.baker@hertie-school.lan/...
+        if path and path.startswith('/home/'):
+            parts = path.split('/')
+            if len(parts) >= 3:
+                return parts[2]  # The username part after /home/
+
+        return None
+
+    def _get_gpu_access_info(self, container_data: Dict) -> Optional[Dict]:
+        """Get GPU access information for a container.
+
+        Returns dict with:
+        - gpu_count: Number of GPUs requested (-1 means all GPUs)
+        - gpu_uuids: List of specific GPU UUIDs if pinned
+        - access_type: 'all', 'count', 'specific', or None
+
+        Returns None if container has no GPU access.
+        """
+        try:
+            device_requests = container_data.get('HostConfig', {}).get('DeviceRequests', [])
+
+            if not device_requests:
+                return None
+
+            for request in device_requests:
+                driver = request.get('Driver', '')
+                caps = request.get('Capabilities', [])
+
+                # Check if this is an NVIDIA GPU request
+                is_nvidia = driver == 'nvidia' or any('gpu' in cap for cap in caps)
+
+                if is_nvidia:
+                    device_ids = request.get('DeviceIDs', [])
+                    count = request.get('Count', 0)
+
+                    if device_ids:
+                        return {
+                            'gpu_count': len(device_ids),
+                            'gpu_uuids': device_ids,
+                            'access_type': 'specific'
+                        }
+                    elif count == -1:
+                        return {
+                            'gpu_count': -1,  # All GPUs
+                            'gpu_uuids': [],
+                            'access_type': 'all'
+                        }
+                    elif count > 0:
+                        return {
+                            'gpu_count': count,
+                            'gpu_uuids': [],
+                            'access_type': 'count'
+                        }
+
+            return None
+
+        except (KeyError, TypeError):
+            return None
+
+    def get_unmanaged_gpu_containers(self) -> List[Dict]:
+        """Get ALL containers with GPU access that are NOT tracked by DS01.
+
+        Unmanaged containers are:
+        - Not in ds01.slice hierarchy (empty cgroup-parent or different slice)
+        - Not DS01 infrastructure (prometheus, grafana, etc.)
+        - Have DeviceRequests for nvidia/gpu
+
+        Returns list of dicts with:
+        - name: Container name
+        - user: Detected owner (from compose path, or 'unknown')
+        - gpu_count: Number of GPUs (-1 = all)
+        - gpu_uuids: List of pinned GPU UUIDs (if specific)
+        - access_type: 'all', 'count', or 'specific'
+        - labels: Relevant labels for debugging
+        """
+        unmanaged = []
+
+        try:
+            # Get ALL containers (using real docker binary)
+            result = subprocess.run(
+                [DOCKER_BIN, "ps", "-a", "--format", "{{.Names}}"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+
+            for name in result.stdout.split('\n'):
+                name = name.strip()
+                if not name:
+                    continue
+
+                container_data = self._get_container_inspect(name)
+                if not container_data:
+                    continue
+
+                labels = container_data.get('Config', {}).get('Labels', {}) or {}
+                cgroup_parent = container_data.get('HostConfig', {}).get('CgroupParent', '')
+
+                # Skip if it's tracked by DS01
+                in_ds01_slice = cgroup_parent.startswith('ds01')
+                has_ds01_labels = any(k.startswith('ds01.') for k in labels.keys())
+                has_aime_naming = '._.' in name
+
+                if in_ds01_slice or has_ds01_labels or has_aime_naming:
+                    continue
+
+                # Skip infrastructure containers
+                if self._is_infrastructure_container(name, labels):
+                    continue
+
+                # Check for GPU access
+                gpu_info = self._get_gpu_access_info(container_data)
+                if not gpu_info:
+                    continue
+
+                # Get container state
+                state = container_data.get('State', {})
+                is_running = state.get('Running', False)
+                status = state.get('Status', 'unknown')
+
+                # Try to detect owner
+                user = self._extract_owner_from_compose(labels) or 'unknown'
+
+                unmanaged.append({
+                    'name': name,
+                    'user': user,
+                    'gpu_count': gpu_info['gpu_count'],
+                    'gpu_uuids': gpu_info['gpu_uuids'],
+                    'access_type': gpu_info['access_type'],
+                    'running': is_running,
+                    'status': status,
+                    'cgroup_parent': cgroup_parent,
+                    'labels': {
+                        'compose_project': labels.get('com.docker.compose.project', ''),
+                        'compose_service': labels.get('com.docker.compose.service', ''),
+                        'devcontainer': labels.get('devcontainer.local_folder', ''),
+                    }
+                })
+
+        except subprocess.CalledProcessError:
+            pass
+
+        return unmanaged
 
     def get_all_allocations(self) -> Dict:
         """
@@ -610,6 +801,20 @@ def get_all_allocations_flat() -> List[Dict]:
     return result
 
 
+def get_unmanaged_gpu_containers() -> List[Dict]:
+    """
+    Get containers with GPU access that bypass DS01 tracking.
+
+    These are containers that:
+    - Are NOT in ds01.slice hierarchy
+    - Are NOT DS01 infrastructure (prometheus, grafana, etc.)
+    - Have GPU DeviceRequests (--gpus flag)
+
+    This is used for monitoring compliance and detecting resource leaks.
+    """
+    return get_reader().get_unmanaged_gpu_containers()
+
+
 def main():
     """CLI interface"""
     reader = GPUStateReader()
@@ -622,8 +827,10 @@ def main():
         print("  container <name>       - Show GPU for specific container")
         print("  user <username>        - Show user's GPU allocations (with MIG-equiv)")
         print("  user-mig-total <user>  - Get total MIG-equivalents for user")
+        print("  unmanaged              - Show containers with GPU access outside DS01 tracking")
         print("  json                   - Output all allocations as JSON")
         print("  json-by-interface      - Output containers by interface as JSON")
+        print("  json-unmanaged         - Output unmanaged GPU containers as JSON")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -692,6 +899,30 @@ def main():
         username = sys.argv[2]
         total = reader.get_user_mig_total(username)
         print(total)
+
+    elif command == "unmanaged":
+        unmanaged = reader.get_unmanaged_gpu_containers()
+        if not unmanaged:
+            print("No unmanaged GPU containers detected.")
+        else:
+            print(f"\n⚠️  UNMANAGED GPU CONTAINERS ({len(unmanaged)}):")
+            print("   (These containers bypass DS01 tracking and resource limits)\n")
+            for c in unmanaged:
+                status = "🟢" if c['running'] else "○"
+                gpu_str = "all GPUs" if c['gpu_count'] == -1 else f"{c['gpu_count']} GPU(s)"
+                access_warning = " ⚠️ UNRESTRICTED" if c['access_type'] == 'all' else ""
+                print(f"  {status} {c['name']}")
+                print(f"      User: {c['user']}")
+                print(f"      GPUs: {gpu_str}{access_warning}")
+                if c['labels']['compose_project']:
+                    print(f"      Compose: {c['labels']['compose_project']}/{c['labels']['compose_service']}")
+                if c['labels']['devcontainer']:
+                    print(f"      DevContainer: {c['labels']['devcontainer']}")
+                print()
+
+    elif command == "json-unmanaged":
+        unmanaged = reader.get_unmanaged_gpu_containers()
+        print(json.dumps(unmanaged, indent=2, default=str))
 
     else:
         print(f"Unknown command: {command}")

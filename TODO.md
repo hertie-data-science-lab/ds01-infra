@@ -1,15 +1,40 @@
 # DS01 Infrastructure TODO
 
-**Last Updated:** 2026-01-09
+**Last Updated:** 2026-01-16
 **Status:** Core system production-ready, monitoring deployed, dev container integration complete (experimental)
 
 ---
 
 ## HIGH Priority (Fix Now)
 
+### Host GPU Process Detection (GAP IN TRACKING)
+- [ ] **CRITICAL: DS01 doesn't capture host GPU processes** - Users bypassing containers entirely
+  - **Audit (2026-01-16):** Found user `248835@hertie-school.lan` running 2 Jupyter kernels directly on host:
+    - GPU 0: 4.4GB used (PID 1879486, bloom_test venv)
+    - MIG 2.0: 9.8GB used (PID 2502049, bloom_test venv)
+  - **Impact:** 0 DS01 containers with GPU assignments, but ~14GB GPU memory in use
+  - **Root cause:** DS01 exporter only queries Docker for `ds01.*` labelled containers
+  - **Why it happens:** Users with SSH access + docker/video group can use GPUs directly
+  - **Detection gap:** DCGM sees GPU activity (shows in Grafana), but DS01 can't attribute to users
+- [ ] **Add host GPU process monitor** - Detect non-container GPU processes
+  - Cross-reference `nvidia-smi --query-compute-apps` PIDs with Docker container cgroups
+  - Flag any PID not in a container as "untracked host process"
+  - Include in `ds01_exporter.py` as new metric: `ds01_untracked_gpu_processes`
+- [ ] **Add alerting for host GPU usage** - Prometheus alert when untracked processes detected
+- [ ] **Consider enforcement options:**
+  - Remove users from `video` group (breaks direct GPU access)
+  - Use udev rules to restrict `/dev/nvidia*` access
+  - Systemd device policies to limit GPU access to containers only
+  - Or: accept host access but ensure monitoring captures it
+- [ ] **Short-term fix:** Add `ds01_host_gpu_usage` metric to exporter
+  - Query `nvidia-smi` for all GPU processes
+  - Match PIDs to users via `/proc/<pid>/loginuid` or process owner
+  - Report as separate metric series for visibility
+
 ### Monitoring Fixes
+- [x] **Fix Grafana dashboard provisioning** - was permission issue (files were 600, needed 644)
+- [x] **Fix GPU-Hours query** - was using `increase()` on gauge metric, changed to `avg_over_time()`
 - [ ] **Restart DCGM Exporter container** - crashed 17h ago
-- [ ] **Fix Grafana dashboard provisioning** - missing `/etc/grafana/provisioning/dashboards/dashboards` directory
 - [ ] **Investigate empty event log** - `/var/log/ds01/events.jsonl` has 0 lines
 - [ ] **Verify metric collection** - check `/var/log/ds01-infra/metrics/` has data
 - [ ] **Update documentation** - ensure docs reflect hybrid architecture (DS01 Exporter = systemd, Prometheus/Grafana = Docker)
