@@ -383,7 +383,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 3,
         "x": 4,
         "y": 6
       },
@@ -462,8 +462,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 8,
+        "w": 3,
+        "x": 7,
         "y": 6
       },
       "id": 3,
@@ -490,6 +490,77 @@
         }
       ],
       "title": "Active Users",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "GPU containers not tracked by DS01 (bypassed docker wrapper). These may have unrestricted GPU access.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "None"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 10,
+        "y": 6
+      },
+      "id": 22,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.2.0",
+      "targets": [
+        {
+          "expr": "ds01_unmanaged_gpu_count",
+          "legendFormat": "Unmanaged",
+          "refId": "A"
+        }
+      ],
+      "title": "⚠️ Unmanaged",
       "type": "stat"
     },
     {
@@ -527,8 +598,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 12,
+        "w": 3,
+        "x": 13,
         "y": 6
       },
       "id": 4,
@@ -684,7 +755,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "All current GPU allocations with user, container, and slot details",
+      "description": "All GPU allocations including both DS01-managed and unmanaged containers. Unmanaged containers bypass DS01 tracking.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -755,10 +826,21 @@
           "instant": true,
           "legendFormat": "",
           "refId": "A"
+        },
+        {
+          "expr": "label_replace(label_replace(ds01_unmanaged_gpu_container, \"interface\", \"unmanaged\", \"\", \"\"), \"gpu_slot\", \"$1\", \"gpu_count\", \"(.*)\")",
+          "format": "table",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "B"
         }
       ],
       "title": "Current Allocations",
       "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
         {
           "id": "organize",
           "options": {
@@ -766,6 +848,9 @@
               "Time": true,
               "__name__": true,
               "job": true,
+              "gpu_count": true,
+              "access_type": true,
+              "running": true,
               "instance": true
             },
             "indexByName": {

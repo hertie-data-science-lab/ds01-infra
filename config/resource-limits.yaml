@@ -209,6 +209,22 @@ container_types:
       faculty: 1
       admin: null
 
+# === Monitoring configuration ===
+# Infrastructure containers excluded from unmanaged container detection
+monitoring:
+  # Containers matching these prefixes are considered DS01 infrastructure
+  # and are excluded from unmanaged container alerts
+  infrastructure_containers:
+    - ds01-prometheus
+    - ds01-grafana
+    - ds01-alertmanager
+    - ds01-dcgm-exporter
+    - ds01-node-exporter
+
+  # Label that marks a container as protected infrastructure
+  # Containers with ds01.protected=true are excluded from unmanaged detection
+  infrastructure_label: "ds01.protected"
+
 # REMOVED SECTIONS:
 # - advanced: None of these settings are implemented
 # - wizard: Error messages moved to scripts/lib/error-messages.sh
