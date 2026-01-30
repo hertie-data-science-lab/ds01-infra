@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-01-30)
 ## Current Position
 
 Phase: 1 of 10 (Foundation & Observability)
-Plan: 1 of TBD in current phase
+Plan: 2 of TBD in current phase
 Status: In progress
-Last activity: 2026-01-30 — Completed 01-02-PLAN.md (DCGM exporter stability)
+Last activity: 2026-01-30 — Completed 01-04-PLAN.md (Automated release & linting)
 
-Progress: [█░░░░░░░░░] 10%
+Progress: [██░░░░░░░░] 20%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 4 min
-- Total execution time: 4 min
+- Total plans completed: 2
+- Average duration: 2.5 min
+- Total execution time: 5 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-foundation-observability | 1 | 4min | 4min |
+| 01-foundation-observability | 2 | 5min | 2.5min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (4min)
-- Trend: Just started
+- Last 5 plans: 01-02 (4min), 01-04 (1min)
+- Trend: Accelerating (automation tasks)
 
 *Updated after each plan completion*
 
@@ -47,6 +47,7 @@ Recent decisions affecting current work:
 - Milestones ordered: control → observability → hygiene → SLURM → cloud
 - Use systemd for DCGM restart management (not docker-compose) — prevents restart conflicts and MIG race conditions (01-02)
 - Hybrid docker-compose + systemd pattern for infrastructure containers — compose creates, systemd manages restarts (01-02)
+- Replaced commitizen with semantic-release for automated versioning — auto-triggers on push to main (01-04)
 
 ### Pending Todos
 
@@ -66,6 +67,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-30 13:16 UTC
-Stopped at: Completed 01-02-PLAN.md (DCGM exporter stability)
+Last session: 2026-01-30 13:15 UTC
+Stopped at: Completed 01-04-PLAN.md (Automated release & linting)
 Resume file: None
