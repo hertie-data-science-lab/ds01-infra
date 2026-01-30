@@ -54,6 +54,12 @@ else
     }
 fi
 
+# Source event logging library
+EVENTS_LIB="$INFRA_ROOT/scripts/lib/ds01_events.sh"
+if [ -f "$EVENTS_LIB" ]; then
+    source "$EVENTS_LIB"
+fi
+
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 
@@ -588,7 +594,14 @@ main() {
                 GPU_UUID=$(allocate_gpu_for_container "$effective_owner" "$CONTAINER_TYPE")
 
                 if [ -z "$GPU_UUID" ]; then
-                    # Allocation failed
+                    # Allocation failed - log auth denial
+                    if command -v log_event &>/dev/null; then
+                        log_event "auth.denied" "$effective_owner" "docker-wrapper" \
+                            reason="${GPU_ALLOC_ERROR}: ${GPU_ALLOC_DETAILS}" \
+                            container_type="$CONTAINER_TYPE" || true
+                    fi
+
+                    # Show error to user
                     show_gpu_error "$GPU_ALLOC_ERROR" "$GPU_ALLOC_DETAILS"
                     exit 1
                 fi
@@ -676,6 +689,51 @@ main() {
 
         # Execute with injected args
         log_debug "Executing: $REAL_DOCKER $subcommand ${INJECT_ARGS[*]} ${FINAL_ARGS[*]}"
+
+        # Log container creation event (best-effort, never blocks)
+        # Extract container name from args for logging
+        local CONTAINER_NAME=""
+        local IMAGE_NAME=""
+        local skip_next=false
+        for arg in "${FINAL_ARGS[@]}"; do
+            if $skip_next; then
+                skip_next=false
+                continue
+            fi
+            case "$arg" in
+                --name)
+                    skip_next=true
+                    ;;
+                --name=*)
+                    CONTAINER_NAME="${arg#--name=}"
+                    ;;
+                *)
+                    # Last non-flag arg is typically the image
+                    if [[ "$arg" != -* ]] && [[ "$arg" != *=* ]]; then
+                        IMAGE_NAME="$arg"
+                    fi
+                    ;;
+            esac
+        done
+
+        # Determine effective owner for logging
+        local LOG_USER="$CURRENT_USER"
+        local devcontainer_owner
+        devcontainer_owner=$(get_devcontainer_owner "$@")
+        if [ -n "$devcontainer_owner" ]; then
+            LOG_USER="$devcontainer_owner"
+        fi
+
+        # Log event BEFORE docker exec (so we capture creation attempt)
+        # Using || true ensures this never blocks the operation
+        if command -v log_event &>/dev/null; then
+            log_event "container.create" "$LOG_USER" "docker-wrapper" \
+                container="${CONTAINER_NAME:-unknown}" \
+                image="${IMAGE_NAME:-unknown}" \
+                container_type="$CONTAINER_TYPE" \
+                gpu="${GPU_SLOT:-none}" || true
+        fi
+
         exec "$REAL_DOCKER" "$subcommand" "${INJECT_ARGS[@]}" "${FINAL_ARGS[@]}"
     else
         # Pass through unchanged

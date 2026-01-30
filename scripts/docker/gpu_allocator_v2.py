@@ -46,6 +46,14 @@ except ImportError:
         sanitized = _re.sub(r'-+', '-', sanitized).strip('-')
         return sanitized
 
+# Import event logging (with safe fallback - allocator must work even if logging fails)
+try:
+    from ds01_events import log_event
+except ImportError:
+    # Fallback: no-op function if ds01_events not available
+    def log_event(*args, **kwargs) -> bool:
+        return False
+
 # Dynamic import for gpu-state-reader.py
 spec = importlib.util.spec_from_file_location('gpu_state_reader', str(SCRIPT_DIR / 'gpu-state-reader.py'))
 gpu_state_module = importlib.util.module_from_spec(spec)
@@ -278,6 +286,16 @@ class GPUAllocatorSmart:
                 group = limits.get('_group', 'default')
                 reason = f"FULL_GPU_NOT_ALLOWED (group={group}, allow_full_gpu=false)"
                 self._log_event("REJECTED", username, container, reason=reason)
+
+                # Log to centralized event system (best-effort)
+                log_event(
+                    "gpu.reject",
+                    user=username,
+                    source="gpu_allocator",
+                    container=container,
+                    reason=reason
+                )
+
                 return None, reason
 
             # Check user's current GPU count
@@ -287,6 +305,16 @@ class GPUAllocatorSmart:
             if current_count >= max_gpus:
                 reason = f"USER_AT_LIMIT ({current_count}/{max_gpus})"
                 self._log_event("REJECTED", username, container, reason=reason)
+
+                # Log to centralized event system (best-effort)
+                log_event(
+                    "gpu.reject",
+                    user=username,
+                    source="gpu_allocator",
+                    container=container,
+                    reason=reason
+                )
+
                 return None, reason
 
             # Find available GPU
@@ -300,6 +328,16 @@ class GPUAllocatorSmart:
             if not suggestion['success']:
                 reason = suggestion['error']
                 self._log_event("REJECTED", username, container, reason=reason)
+
+                # Log to centralized event system (best-effort)
+                log_event(
+                    "gpu.reject",
+                    user=username,
+                    source="gpu_allocator",
+                    container=container,
+                    reason=reason
+                )
+
                 return None, reason
 
             gpu_slot = suggestion['gpu_slot']
@@ -308,11 +346,31 @@ class GPUAllocatorSmart:
             if self._is_full_gpu(gpu_slot) and not allow_full:
                 reason = f"FULL_GPU_NOT_ALLOWED (got slot {gpu_slot}, user cannot use full GPUs)"
                 self._log_event("REJECTED", username, container, reason=reason)
+
+                # Log to centralized event system (best-effort)
+                log_event(
+                    "gpu.reject",
+                    user=username,
+                    source="gpu_allocator",
+                    container=container,
+                    reason=reason
+                )
+
                 return None, reason
 
-            # Log allocation
+            # Log allocation to legacy log
             reason = f"ALLOCATED (user has {current_count + 1}/{max_gpus} GPUs)"
             self._log_event("ALLOCATED", username, container, gpu_slot, reason)
+
+            # Log to centralized event system (best-effort, never blocks)
+            log_event(
+                "gpu.allocate",
+                user=username,
+                source="gpu_allocator",
+                container=container,
+                gpu_uuid=gpu_slot,
+                reason=reason
+            )
 
             return gpu_slot, "SUCCESS"
 
@@ -552,9 +610,19 @@ class GPUAllocatorSmart:
         gpu_slot = container_gpu['gpu_slot']
         username = container_gpu['user']
 
-        # Log release
+        # Log release to legacy log
         reason = f"RELEASED (container removed/stopped)"
         self._log_event("RELEASED", username, container, gpu_slot, reason)
+
+        # Log to centralized event system (best-effort)
+        log_event(
+            "gpu.release",
+            user=username,
+            source="gpu_allocator",
+            container=container,
+            gpu_uuid=gpu_slot,
+            reason=reason
+        )
 
         return gpu_slot, "SUCCESS"
 
