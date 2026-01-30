@@ -16,8 +16,8 @@
 global:
   # Hertie School SMTP settings
   smtp_smarthost: 'smtp.hertie-school.org:587'
-  smtp_from: 'datasciencelab@hertie-school.org'
-  smtp_auth_username: 'datasciencelab@hertie-school.org'
+  smtp_from: 'h.baker@hertie-school.org'
+  smtp_auth_username: 'h.baker@hertie-school.org'
   # smtp_auth_password: 'YOUR_PASSWORD_HERE'  # Uncomment and fill in, or set via SMTP_AUTH_PASSWORD env var
   smtp_require_tls: true
 
