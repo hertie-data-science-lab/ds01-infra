@@ -8,7 +8,9 @@
 
 Detect all GPU workloads regardless of how they were created — managed containers, unmanaged containers, and host processes. Build a unified inventory queryable from a single command. Zero blind spots.
 
-Enforcement (blocking, stopping, access restriction) belongs to Phase 3/4, with one exception: soft enforcement (cgroup slice application) for unmanaged containers is included in this phase.
+Enforcement (blocking, stopping, access restriction, cgroup slice application) belongs to Phase 3/4. Soft enforcement (cgroup slice application to unmanaged containers) was originally scoped for Phase 2 but has been deferred — see research constraint below.
+
+**Deferred from Phase 2:** Cgroup slice application to unmanaged containers. Research (02-RESEARCH.md, Pitfall 2) confirmed that `--cgroup-parent` cannot be changed on running containers via Docker API. Options (systemd transient scopes, container recreation) are fragile and invasive. Slices will be applied via the docker wrapper on next container creation/restart, which is an enforcement concern (Phase 3/4), not an awareness concern.
 
 </domain>
 
@@ -23,6 +25,7 @@ Enforcement (blocking, stopping, access restriction) belongs to Phase 3/4, with 
 - Persists inventory state to file in /var/lib/ds01/ (survives reboots)
 - Emits events to Phase 1 event log for all transitions: new workload detected, workload exited, classification changed
 - Non-GPU containers noted in inventory without deep tracking (flags "shadow" workloads)
+- Inventory is near-real-time: current state at last scan, max 30s lag from polling interval (acceptable for 60s detection window)
 
 ### Inventory & reporting
 - New dedicated command: `ds01-workloads` (separate from ds01-events)
@@ -40,7 +43,7 @@ Enforcement (blocking, stopping, access restriction) belongs to Phase 3/4, with 
 - Clearly separated from ds01-managed labels (no confusion with ds01.* managed labels)
 - Best-effort user attribution using available signals (process owner, env vars, docker inspect)
 - If user cannot be determined: label as `ds01.detected.user=unknown`
-- Soft enforcement: apply DS01 cgroup slices to ALL unmanaged containers (not just GPU ones)
+- ~~Soft enforcement: apply DS01 cgroup slices to ALL unmanaged containers (not just GPU ones)~~ **DEFERRED to Phase 3/4** — cgroup-parent cannot be changed on running containers (see 02-RESEARCH.md Pitfall 2). Docker wrapper already applies slices to new containers; enforcement of existing containers requires restart and belongs in enforcement phase.
 - Skip already-labelled containers on subsequent scans (no re-processing)
 
 ### Host process attribution
@@ -55,7 +58,6 @@ Enforcement (blocking, stopping, access restriction) belongs to Phase 3/4, with 
 - Transient process handling (processes that appear in one scan and are gone by the next)
 - System/infrastructure GPU process handling (DCGM, Xorg, nvidia-persistenced — exclude or tag as system)
 - Exact inventory file format and location within /var/lib/ds01/
-- Cgroup slice application mechanism for unmanaged containers
 - Attribution signal priority ordering
 
 </decisions>
@@ -73,7 +75,7 @@ Enforcement (blocking, stopping, access restriction) belongs to Phase 3/4, with 
 <deferred>
 ## Deferred Ideas
 
-None — discussion stayed within phase scope
+- **Cgroup slice application to unmanaged containers** — cannot change cgroup-parent on running containers (research finding). Deferred to Phase 3/4 enforcement phase where container restart/recreation is acceptable.
 
 </deferred>
 
@@ -81,3 +83,4 @@ None — discussion stayed within phase scope
 
 *Phase: 02-awareness-layer*
 *Context gathered: 2026-01-30*
+*Revised: 2026-01-30 (deferred soft enforcement, clarified near-real-time semantics)*
