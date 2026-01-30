@@ -16,8 +16,8 @@
 global:
   # Hertie School SMTP settings
   smtp_smarthost: 'smtp.hertie-school.org:587'
-  smtp_from: 'ds01-alerts@hertie-school.org'
-  smtp_auth_username: 'ds01-alerts@hertie-school.org'
+  smtp_from: 'datasciencelab@hertie-school.org'
+  smtp_auth_username: 'datasciencelab@hertie-school.org'
   # smtp_auth_password: 'YOUR_PASSWORD_HERE'  # Uncomment and fill in, or set via SMTP_AUTH_PASSWORD env var
   smtp_require_tls: true
 
@@ -75,9 +75,13 @@ receivers:
         send_resolved: true
         headers:
           Subject: '[DS01] {{ .Status | toUpper }}: {{ .GroupLabels.alertname }}'
+      - to: 'h.baker@hertie-school.org'
+        send_resolved: true
+        headers:
+          Subject: '[DS01] {{ .Status | toUpper }}: {{ .GroupLabels.alertname }}'
     webhook_configs:
       # Microsoft Teams webhook (native support in v0.28.1+)
-      - url: '${TEAMS_WEBHOOK_URL}'
+      - url: 'https://hertieschool.webhook.office.com/webhookb2/34f05edb-c358-4de0-9c27-6f42feb70a20@93527bf6-801e-4865-92ce-d4667ecbde2a/IncomingWebhook/cf7980f2ddf741f29488907b82953bd1/2a0a7d80-7335-47c6-bc00-768375f53933/V24DVhu5E3wWUf1wYa2l859YPySTXNxCN94fpHHrhazFs1'
         send_resolved: true
 
   # Critical receiver - immediate notification (email + Teams with priority)
@@ -87,9 +91,13 @@ receivers:
         send_resolved: true
         headers:
           Subject: '[DS01 CRITICAL] {{ .GroupLabels.alertname }}'
+      - to: 'h.baker@hertie-school.org'
+        send_resolved: true
+        headers:
+          Subject: '[DS01 CRITICAL] {{ .GroupLabels.alertname }}'
     webhook_configs:
       # Microsoft Teams webhook for critical alerts
-      - url: '${TEAMS_WEBHOOK_URL}'
+      - url: 'https://hertieschool.webhook.office.com/webhookb2/34f05edb-c358-4de0-9c27-6f42feb70a20@93527bf6-801e-4865-92ce-d4667ecbde2a/IncomingWebhook/cf7980f2ddf741f29488907b82953bd1/2a0a7d80-7335-47c6-bc00-768375f53933/V24DVhu5E3wWUf1wYa2l859YPySTXNxCN94fpHHrhazFs1'
         send_resolved: true
 
 # Email templates
