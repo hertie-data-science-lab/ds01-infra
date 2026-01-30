@@ -172,7 +172,7 @@ services:
 
   # Alertmanager - Alert routing and notifications
   alertmanager:
-    image: prom/alertmanager:v0.26.0
+    image: prom/alertmanager:v0.28.1
     container_name: ds01-alertmanager
     restart: unless-stopped
     ports:
