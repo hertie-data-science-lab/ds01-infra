@@ -36,10 +36,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Alertmanager email configuration functional (test notification delivered)
   5. Admin can query event log for audit purposes via CLI or log viewer
   6. Automated semantic versioning via CI pipeline produces correct version tags on merge to main
-**Plans**: TBD
+**Plans**: 6 plans
 
 Plans:
-- [ ] 01-01: TBD during planning
+- [ ] 01-01-PLAN.md — Shared event logging library (Python + Bash) and logrotate fix
+- [ ] 01-02-PLAN.md — DCGM exporter stability (systemd service with restart/stop handling)
+- [ ] 01-03-PLAN.md — Alertmanager dual-channel alerting (email + Teams) and alert rules
+- [ ] 01-04-PLAN.md — CI/CD pipeline (semantic-release replacing commitizen, ruff linting)
+- [ ] 01-05-PLAN.md — Refactor event-logger.py and rewrite ds01-events query tool
+- [ ] 01-06-PLAN.md — Instrument existing scripts with event logging calls
 
 ### Phase 2: Awareness Layer
 **Goal**: System detects ALL GPU workloads regardless of how they were created. Zero blind spots.
@@ -182,7 +187,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Observability | 0/TBD | Not started | - |
+| 1. Foundation & Observability | 0/6 | Planned | - |
 | 2. Awareness Layer | 0/TBD | Not started | - |
 | 3. Access Control | 0/TBD | Not started | - |
 | 4. Comprehensive Resource Enforcement | 0/TBD | Not started | - |
