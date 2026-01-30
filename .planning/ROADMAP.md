@@ -56,10 +56,12 @@ Plans:
   3. System detects host GPU processes (outside containers) and attributes them to a user via /proc
   4. Admin can query unified inventory showing all GPU workloads (DS01-managed, unmanaged containers, host processes) from single command
   5. Detection handles containers created via Docker API without DS01 labels
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: TBD during planning
+- [ ] 02-01-PLAN.md — Core workload detection scanner (container classification, host GPU process detection, inventory persistence)
+- [ ] 02-02-PLAN.md — Systemd timer/service units and deployment integration
+- [ ] 02-03-PLAN.md — ds01-workloads unified query command (table/wide/by-user/JSON output)
 
 ### Phase 3: Access Control
 **Goal**: Users cannot bypass DS01 controls or interfere with each other. Bare metal GPU access restricted, user isolation enforced.
@@ -188,7 +190,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Observability | 6/6 | ✓ Complete | 2026-01-30 |
-| 2. Awareness Layer | 0/TBD | Not started | - |
+| 2. Awareness Layer | 0/3 | Not started | - |
 | 3. Access Control | 0/TBD | Not started | - |
 | 4. Comprehensive Resource Enforcement | 0/TBD | Not started | - |
 | 5. Lifecycle Bug Fixes | 0/TBD | Not started | - |
