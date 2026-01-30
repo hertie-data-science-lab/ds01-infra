@@ -12,7 +12,7 @@ Transform DS01 from partial visibility to full control over GPU resources. Build
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Observability** - Event logging, monitoring stability, audit trail
+- [x] **Phase 1: Foundation & Observability** - Event logging, monitoring stability, audit trail
 - [ ] **Phase 2: Awareness Layer** - Detect all GPU workloads (containers, host processes, unmanaged)
 - [ ] **Phase 3: Access Control** - Bare metal restriction, user isolation, bypass prevention
 - [ ] **Phase 4: Comprehensive Resource Enforcement** - CPU, memory, IO, disk limits via cgroup v2
@@ -39,12 +39,12 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 6 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Shared event logging library (Python + Bash) and logrotate fix
-- [ ] 01-02-PLAN.md — DCGM exporter stability (systemd service with restart/stop handling)
-- [ ] 01-03-PLAN.md — Alertmanager dual-channel alerting (email + Teams) and alert rules
-- [ ] 01-04-PLAN.md — CI/CD pipeline (semantic-release replacing commitizen, ruff linting)
-- [ ] 01-05-PLAN.md — Refactor event-logger.py and rewrite ds01-events query tool
-- [ ] 01-06-PLAN.md — Instrument existing scripts with event logging calls
+- [x] 01-01-PLAN.md — Shared event logging library (Python + Bash) and logrotate fix
+- [x] 01-02-PLAN.md — DCGM exporter stability (systemd service with restart/stop handling)
+- [x] 01-03-PLAN.md — Alertmanager dual-channel alerting (email + Teams) and alert rules
+- [x] 01-04-PLAN.md — CI/CD pipeline (semantic-release replacing commitizen, ruff linting)
+- [x] 01-05-PLAN.md — Refactor event-logger.py and rewrite ds01-events query tool
+- [x] 01-06-PLAN.md — Instrument existing scripts with event logging calls
 
 ### Phase 2: Awareness Layer
 **Goal**: System detects ALL GPU workloads regardless of how they were created. Zero blind spots.
@@ -187,7 +187,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Observability | 0/6 | Planned | - |
+| 1. Foundation & Observability | 6/6 | ✓ Complete | 2026-01-30 |
 | 2. Awareness Layer | 0/TBD | Not started | - |
 | 3. Access Control | 0/TBD | Not started | - |
 | 4. Comprehensive Resource Enforcement | 0/TBD | Not started | - |

@@ -5,16 +5,18 @@
 See: .planning/PROJECT.md (updated 2026-01-30)
 
 **Core value:** Full control over GPU resources — every GPU process tracked, attributed to a user, and controllable
-**Current focus:** Phase 1 (Foundation & Observability)
+**Current focus:** Phase 2 (Awareness Layer)
 
 ## Current Position
 
-Phase: 1 of 10 (Foundation & Observability)
-Plan: 6 of TBD in current phase
-Status: In progress
-Last activity: 2026-01-30 — Completed 01-06-PLAN.md (Event logging instrumentation)
+Phase: 1 of 10 — COMPLETE
+Plan: 6/6 complete
+Status: Phase complete (approved with deployment todos)
+Last activity: 2026-01-30 — Phase 1 verified and approved
 
-Progress: [██████░░░░] 60%
+Progress: [██████████] 100%
+
+Next: Phase 2 (Awareness Layer)
 
 ## Performance Metrics
 
@@ -59,7 +61,8 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- [ ] Deploy DCGM exporter systemd service to `/etc/systemd/system/` and verify 7-day stability (01-02 artefact at `config/deploy/systemd/ds01-dcgm-exporter.service`)
+- [ ] Configure Alertmanager SMTP password for `h.baker@hertie-school.org` and send test email notification
 
 ### Blockers/Concerns
 
@@ -76,6 +79,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-30 13:51 UTC
-Stopped at: Completed 01-06-PLAN.md (Event logging instrumentation)
+Last session: 2026-01-30 15:30 UTC
+Stopped at: Phase 1 complete, verified, approved with deployment todos
 Resume file: None

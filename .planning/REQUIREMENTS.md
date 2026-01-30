@@ -58,14 +58,14 @@ Requirements for Milestone 1: Full Visibility & Control. Each maps to roadmap ph
 
 ### Event Logging
 
-- [ ] **LOG-01**: Event log records all container lifecycle events (create, start, stop, remove)
-- [ ] **LOG-02**: Event log records GPU allocation and release events
-- [ ] **LOG-03**: Event log records unmanaged workload detection events
-- [ ] **LOG-04**: Events stored in structured format (JSON) queryable for audit
+- [x] **LOG-01**: Event log records all container lifecycle events (create, start, stop, remove)
+- [x] **LOG-02**: Event log records GPU allocation and release events
+- [x] **LOG-03**: Event log records unmanaged workload detection events
+- [x] **LOG-04**: Events stored in structured format (JSON) queryable for audit
 
 ### CI/CD Foundation
 
-- [ ] **CICD-01**: Automated semantic versioning through CI pipeline (robust, replaces current fragile commitizen setup)
+- [x] **CICD-01**: Automated semantic versioning through CI pipeline (robust, replaces current fragile commitizen setup)
 
 ### Bug Fixes
 
@@ -169,10 +169,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LOG-01 | Phase 1 | Pending |
-| LOG-02 | Phase 1 | Pending |
-| LOG-03 | Phase 1 | Pending |
-| LOG-04 | Phase 1 | Pending |
+| LOG-01 | Phase 1 | Complete |
+| LOG-02 | Phase 1 | Complete |
+| LOG-03 | Phase 1 | Complete |
+| LOG-04 | Phase 1 | Complete |
 | DETECT-01 | Phase 2 | Pending |
 | DETECT-02 | Phase 2 | Pending |
 | DETECT-03 | Phase 2 | Pending |
@@ -208,7 +208,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FIX-02 | Phase 9 | Pending |
 | FIX-03 | Phase 9 | Pending |
 | FIX-04 | Phase 9 | Pending |
-| CICD-01 | Phase 1 | Pending |
+| CICD-01 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 39 total
