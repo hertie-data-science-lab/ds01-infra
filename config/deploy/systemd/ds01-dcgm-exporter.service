@@ -1,0 +1,44 @@
+# DS01 DCGM Exporter Systemd Service
+#
+# This service manages the restart lifecycle of the ds01-dcgm-exporter container
+# created by docker-compose. Docker-compose creates the container; systemd manages restarts.
+#
+# Deployment:
+#   sudo cp /opt/ds01-infra/config/deploy/systemd/ds01-dcgm-exporter.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable ds01-dcgm-exporter
+#   sudo systemctl start ds01-dcgm-exporter
+#
+# Research references:
+#   - GitHub Issue #606: ExecStop prevents systemd restart hangs
+#   - Pitfall 1: Explicit timeout prevents SIGKILL cascades
+#   - Pitfall 3: Systemd sequencing prevents MIG race conditions
+
+[Unit]
+Description=DS01 DCGM Exporter (GPU metrics)
+Documentation=https://github.com/NVIDIA/dcgm-exporter
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+# Restart rate limiting (prevents infinite restart loops)
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10s
+ExecStartPre=/usr/bin/docker pull nvcr.io/nvidia/k8s/dcgm-exporter:3.3.0-3.2.0-ubuntu22.04 || true
+ExecStart=/usr/bin/docker start -a ds01-dcgm-exporter
+ExecStop=/usr/bin/docker stop -t 30 ds01-dcgm-exporter
+TimeoutStopSec=45s
+TimeoutStartSec=120s
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ds01-dcgm-exporter
+
+[Install]
+WantedBy=multi-user.target
