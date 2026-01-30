@@ -10,28 +10,28 @@ See: .planning/PROJECT.md (updated 2026-01-30)
 ## Current Position
 
 Phase: 1 of 10 (Foundation & Observability)
-Plan: 5 of TBD in current phase
+Plan: 6 of TBD in current phase
 Status: In progress
-Last activity: 2026-01-30 — Completed 01-05-PLAN.md (Event logger refactor & query tool)
+Last activity: 2026-01-30 — Completed 01-06-PLAN.md (Event logging instrumentation)
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 5
-- Average duration: 3.2 min
-- Total execution time: 16 min
+- Total plans completed: 6
+- Average duration: 3.0 min
+- Total execution time: 19 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-foundation-observability | 5 | 16min | 3.2min |
+| 01-foundation-observability | 6 | 19min | 3.2min |
 
 **Recent Trend:**
-- Last 5 plans: 01-02 (4min), 01-04 (1min), 01-01 (6.6min), 01-03 (0.6min), 01-05 (3.6min)
-- Trend: Variable (infrastructure foundation tasks)
+- Last 5 plans: 01-04 (1min), 01-01 (6.6min), 01-03 (0.6min), 01-05 (3.6min), 01-06 (3min)
+- Trend: Stable around 3min (infrastructure instrumentation)
 
 *Updated after each plan completion*
 
@@ -54,6 +54,8 @@ Recent decisions affecting current work:
 - Copytruncate for JSONL logrotate — keeps file descriptors valid for append-only logs (01-01)
 - jq-based event filtering over grep — structured JSON queries for reliable event analysis (01-05)
 - Four-tier help system for admin tools — --help, --info, --concepts, --guided (01-05)
+- Best-effort event logging pattern — log_event || true, never blocks critical operations (01-06)
+- Safe import fallback for Python logging — try/except with no-op function ensures allocator always works (01-06)
 
 ### Pending Todos
 
@@ -74,6 +76,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-01-30 13:40 UTC
-Stopped at: Completed 01-05-PLAN.md (Event logger refactor & query tool)
+Last session: 2026-01-30 13:51 UTC
+Stopped at: Completed 01-06-PLAN.md (Event logging instrumentation)
 Resume file: None
