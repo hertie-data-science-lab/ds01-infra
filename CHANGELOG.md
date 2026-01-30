@@ -1,3 +1,31 @@
+# [1.2.0](https://github.com/hertie-data-science-lab/ds01-infra/compare/v1.1.0...v1.2.0) (2026-01-30)
+
+
+### Bug Fixes
+
+* correct container-retire path in session exit handler ([750f0d4](https://github.com/hertie-data-science-lab/ds01-infra/commit/750f0d4ed1aba77c8389089b60cc1eedc6b10f04))
+* disable GDM on compute server to free GPU handles ([f949d87](https://github.com/hertie-data-science-lab/ds01-infra/commit/f949d873a3fc1e668c18e5265f027abfacf43efa))
+* flush stdin buffer before all prompts in mig-configure ([b9fb303](https://github.com/hertie-data-science-lab/ds01-infra/commit/b9fb30397fe29725ebd7380301835a052567f73e))
+* mig-configure handles pending state and GPU reset ([d9ffe6c](https://github.com/hertie-data-science-lab/ds01-infra/commit/d9ffe6ca4ea1d232f78977d647f2956a53cf1e1e))
+* mig-configure instance count handles disabled GPUs ([d99846d](https://github.com/hertie-data-science-lab/ds01-infra/commit/d99846dee4b32b73e0eff2ec26bff18f75cd4b5f))
+* resolve domain variants to canonical username for docker group ([e4eb58e](https://github.com/hertie-data-science-lab/ds01-infra/commit/e4eb58e21f267aad79738eefd38adbc28395d457))
+* set HOME env var for VS Code server compatibility ([03c1562](https://github.com/hertie-data-science-lab/ds01-infra/commit/03c15629d2ae47a30fea9835946ec623b55290d2))
+* sync alias-list with deployed version, add mig-configure ([77484e2](https://github.com/hertie-data-science-lab/ds01-infra/commit/77484e238adee6f63bb21fd8b5ee6be36c976c12))
+* use ds01 recording rules in user and DCGM dashboards ([45531f8](https://github.com/hertie-data-science-lab/ds01-infra/commit/45531f8aba46b7cf33eb6eac6c84bef04b9616c8))
+
+
+### Features
+
+* **01-04:** replace commitizen with semantic-release ([7113835](https://github.com/hertie-data-science-lab/ds01-infra/commit/711383509fdee74a2b321a4505782819a0cbdb80))
+* add interactive MIG configuration CLI ([1b99fde](https://github.com/hertie-data-science-lab/ds01-infra/commit/1b99fde99966babbe246ba381e6477eb77277f51))
+* add Prometheus/Grafana monitoring stack ([2d1ad6c](https://github.com/hertie-data-science-lab/ds01-infra/commit/2d1ad6c87970fd147123d62e83b9692a8ab5f5d9))
+* add real-time container ownership tracking system ([1be6507](https://github.com/hertie-data-science-lab/ds01-infra/commit/1be65072025bcda5cc77d156f0714d8ea810b4b2))
+* add unmanaged GPU container detection and monitoring ([8fbee85](https://github.com/hertie-data-science-lab/ds01-infra/commit/8fbee85c87ed7a3d7dbd0bb7d915f29d816bb590))
+* add VS Code dev container integration ([945600d](https://github.com/hertie-data-science-lab/ds01-infra/commit/945600d612abd6cf88a812d6b8a194d64bc7a442))
+* mig-configure force reset with process detection ([10970dd](https://github.com/hertie-data-science-lab/ds01-infra/commit/10970dd0c30abe6df233a73c4e3efcc9aef3e800))
+* prefer full GPUs for users with allow_full_gpu permission ([8e03dcb](https://github.com/hertie-data-science-lab/ds01-infra/commit/8e03dcb9ad660b4e62efd7fae5ec64b24a6787de))
+* universal container management for all GPU containers ([4e634f7](https://github.com/hertie-data-science-lab/ds01-infra/commit/4e634f780d1f72ff68f8b4735edf5f309f24a897))
+
 # Changelog
 
 All notable changes to DS01 Infrastructure will be documented in this file.
