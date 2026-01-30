@@ -15,75 +15,79 @@ Usage:
     event-logger.py log <event_type> [key=value ...]
     event-logger.py tail [N]
     event-logger.py search <pattern>
+    event-logger.py user <username>
+    event-logger.py container <name>
+    event-logger.py types
 """
 
 import sys
 import json
-import os
 import re
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Optional, List
+from typing import Dict, List
 
-# Configuration
-LOG_DIR = Path("/var/log/ds01")
-EVENTS_FILE = LOG_DIR / "events.jsonl"
-MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB before rotation
+# Import shared event logging library
+sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
+from ds01_events import log_event, EVENTS_FILE, EVENT_TYPES as BASE_EVENT_TYPES
 
 
-class EventLogger:
+# Expanded event types for DS01 infrastructure
+EVENT_TYPES = {
+    # Container lifecycle
+    "container.create": ["user", "container", "image", "gpu"],
+    "container.start": ["user", "container"],
+    "container.stop": ["user", "container", "reason"],
+    "container.remove": ["user", "container"],
+
+    # GPU allocation
+    "gpu.allocate": ["user", "container", "gpu_uuid", "mig_profile"],
+    "gpu.release": ["user", "container", "gpu_uuid", "reason"],
+    "gpu.reject": ["user", "container", "reason"],
+
+    # Auth events
+    "auth.denied": ["user", "reason", "requested"],
+
+    # Resource events
+    "resource.cgroup_limit": ["user", "container", "resource", "limit"],
+    "resource.oom_kill": ["user", "container"],
+
+    # Maintenance
+    "maintenance.cleanup": ["containers_stopped", "gpus_released", "source"],
+    "maintenance.idle_kill": ["user", "container", "idle_duration"],
+    "maintenance.runtime_kill": ["user", "container", "runtime"],
+
+    # Monitoring
+    "monitoring.dcgm_restart": ["reason"],
+    "monitoring.scrape_failure": ["target", "error"],
+
+    # Config changes
+    "config.change": ["field", "old_value", "new_value", "changed_by"],
+
+    # Unmanaged workload detection (LOG-03)
+    "detection.unmanaged_container": ["container", "user", "source"],
+    "detection.host_gpu_process": ["user", "pid", "command"],
+
+    # Legacy event types (backward compatibility)
+    "container.created": ["user", "container", "interface", "gpu"],
+    "container.started": ["user", "container"],
+    "container.stopped": ["user", "container", "reason"],
+    "container.removed": ["user", "container", "gpu_released"],
+    "gpu.allocated": ["user", "container", "gpu", "priority"],
+    "gpu.released": ["user", "container", "gpu", "reason"],
+    "gpu.rejected": ["user", "container", "reason"],
+    "health.check": ["status", "checks_passed", "checks_failed"],
+    "health.failed": ["check", "message"],
+    "bare_metal.warning": ["user", "pids", "message"],
+    "admin.cleanup": ["containers_removed", "gpus_freed"],
+    "admin.config_change": ["field", "old_value", "new_value"],
+}
+
+
+class EventReader:
+    """Simple reader for querying events (tail/search operations)."""
+
     def __init__(self, log_file: Path = EVENTS_FILE):
         self.log_file = log_file
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
-
-    def log(self, event_type: str, **kwargs) -> bool:
-        """
-        Log an event to the append-only log.
-
-        Args:
-            event_type: Type of event (e.g., container.created, gpu.allocated)
-            **kwargs: Additional key-value pairs for the event
-
-        Returns:
-            True if logged successfully, False otherwise
-        """
-        event = {
-            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "event": event_type,
-            **kwargs
-        }
-
-        try:
-            # Check for rotation
-            self._maybe_rotate()
-
-            # Append to file
-            with open(self.log_file, 'a') as f:
-                f.write(json.dumps(event) + '\n')
-            return True
-
-        except PermissionError:
-            # Permission errors are expected if log file isn't group-writable
-            # Admin should run: sudo chown root:docker /var/log/ds01/events.jsonl && sudo chmod 664 /var/log/ds01/events.jsonl
-            return False
-        except Exception as e:
-            # Other errors - log to stderr for debugging but don't break the system
-            print(f"Warning: Event logging failed: {e}", file=sys.stderr)
-            return False
-
-    def _maybe_rotate(self):
-        """Rotate log file if it exceeds max size."""
-        if not self.log_file.exists():
-            return
-
-        try:
-            if self.log_file.stat().st_size > MAX_FILE_SIZE:
-                # Rotate to timestamped backup
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                backup = self.log_file.with_suffix(f".{timestamp}.jsonl")
-                self.log_file.rename(backup)
-        except (IOError, OSError):
-            pass  # Rotation is best-effort, don't break logging
 
     def tail(self, n: int = 20) -> List[Dict]:
         """Get last N events."""
@@ -93,7 +97,6 @@ class EventLogger:
         events = []
         try:
             with open(self.log_file, 'r') as f:
-                # Read all lines (could optimize for large files)
                 lines = f.readlines()
                 for line in lines[-n:]:
                     try:
@@ -101,7 +104,7 @@ class EventLogger:
                     except json.JSONDecodeError:
                         continue
         except (IOError, OSError):
-            pass  # File read error, return empty list
+            pass
 
         return events
 
@@ -124,7 +127,7 @@ class EventLogger:
                         except json.JSONDecodeError:
                             continue
         except (IOError, OSError):
-            pass  # File read error, return partial results
+            pass
 
         return events
 
@@ -137,36 +140,9 @@ class EventLogger:
         return self.search(f'"user":\\s*"{re.escape(user)}"')
 
 
-# Predefined event types
-EVENT_TYPES = {
-    # Container lifecycle
-    "container.created": ["user", "container", "interface", "gpu"],
-    "container.started": ["user", "container"],
-    "container.stopped": ["user", "container", "reason"],
-    "container.removed": ["user", "container", "gpu_released"],
-
-    # GPU allocation
-    "gpu.allocated": ["user", "container", "gpu", "priority"],
-    "gpu.released": ["user", "container", "gpu", "reason"],
-    "gpu.rejected": ["user", "container", "reason"],
-
-    # System events
-    "health.check": ["status", "checks_passed", "checks_failed"],
-    "health.failed": ["check", "message"],
-    "opa.bypass_attempt": ["user", "cgroup_requested"],
-
-    # Bare metal detection
-    "bare_metal.warning": ["user", "pids", "message"],
-
-    # Admin actions
-    "admin.cleanup": ["containers_removed", "gpus_freed"],
-    "admin.config_change": ["field", "old_value", "new_value"],
-}
-
-
 def main():
     """CLI interface"""
-    logger = EventLogger()
+    reader = EventReader()
 
     if len(sys.argv) < 2:
         print("Usage: event-logger.py <command> [args]")
@@ -178,7 +154,7 @@ def main():
         print("  container <name>                  - Show events for container")
         print("  types                             - List predefined event types")
         print("\nExample:")
-        print("  event-logger.py log container.created user=alice container=proj gpu=1.2")
+        print("  event-logger.py log container.create user=alice container=proj gpu=1.2")
         sys.exit(1)
 
     command = sys.argv[1]
@@ -189,37 +165,46 @@ def main():
             sys.exit(1)
 
         event_type = sys.argv[2]
-        kwargs = {}
+        user = None
+        source = None
+        details = {}
 
         # Parse key=value arguments
         for arg in sys.argv[3:]:
             if '=' in arg:
                 key, value = arg.split('=', 1)
-                # Try to parse as JSON for complex values
-                try:
-                    kwargs[key] = json.loads(value)
-                except json.JSONDecodeError:
-                    kwargs[key] = value
+                # Handle special fields
+                if key == "user":
+                    user = value if value else None
+                elif key == "source":
+                    source = value if value else None
+                else:
+                    # Try to parse as JSON for complex values
+                    try:
+                        details[key] = json.loads(value)
+                    except json.JSONDecodeError:
+                        details[key] = value
 
-        if logger.log(event_type, **kwargs):
+        # Delegate to shared library
+        if log_event(event_type, user=user, source=source, **details):
             print(f"Logged: {event_type}")
         else:
-            # Event logging failed - likely permission issue
-            # Don't exit with error, but warn so admin can fix permissions
             print("Warning: Event logging failed (check permissions on /var/log/ds01/events.jsonl)", file=sys.stderr)
 
     elif command == "tail":
         n = int(sys.argv[2]) if len(sys.argv) > 2 else 20
-        events = logger.tail(n)
+        events = reader.tail(n)
 
         if not events:
             print("No events found")
         else:
             for event in events:
-                ts = event.get('ts', '?')
-                evt = event.get('event', '?')
-                # Remove ts and event for display
-                details = {k: v for k, v in event.items() if k not in ('ts', 'event')}
+                # Handle both old (ts/event) and new (timestamp/event_type) schema
+                ts = event.get('timestamp', event.get('ts', '?'))
+                evt = event.get('event_type', event.get('event', '?'))
+                # Remove timestamp and event_type for details display
+                details = {k: v for k, v in event.items()
+                          if k not in ('timestamp', 'ts', 'event_type', 'event', 'schema_version')}
                 details_str = ' '.join(f"{k}={v}" for k, v in details.items())
                 print(f"{ts} {evt} {details_str}")
 
@@ -229,7 +214,7 @@ def main():
             sys.exit(1)
 
         pattern = sys.argv[2]
-        events = logger.search(pattern)
+        events = reader.search(pattern)
 
         if not events:
             print(f"No events matching '{pattern}'")
@@ -243,13 +228,14 @@ def main():
             sys.exit(1)
 
         user = sys.argv[2]
-        events = logger.get_events_for_user(user)
+        events = reader.get_events_for_user(user)
 
         print(f"Events for user '{user}':")
         for event in events[-50:]:  # Last 50
-            ts = event.get('ts', '?')
-            evt = event.get('event', '?')
-            container = event.get('container', '')
+            ts = event.get('timestamp', event.get('ts', '?'))
+            evt = event.get('event_type', event.get('event', '?'))
+            # Extract container from event or details
+            container = event.get('container', event.get('details', {}).get('container', ''))
             print(f"  {ts} {evt} {container}")
 
     elif command == "container":
@@ -258,21 +244,29 @@ def main():
             sys.exit(1)
 
         container = sys.argv[2]
-        events = logger.get_events_for_container(container)
+        events = reader.get_events_for_container(container)
 
         print(f"Events for container '{container}':")
         for event in events:
-            ts = event.get('ts', '?')
-            evt = event.get('event', '?')
-            details = {k: v for k, v in event.items() if k not in ('ts', 'event', 'container')}
+            ts = event.get('timestamp', event.get('ts', '?'))
+            evt = event.get('event_type', event.get('event', '?'))
+            # Remove common fields for display
+            details = {k: v for k, v in event.items()
+                      if k not in ('timestamp', 'ts', 'event_type', 'event', 'container', 'schema_version')}
+            # Also check details dict
+            if 'details' in event:
+                for k, v in event['details'].items():
+                    if k != 'container':
+                        details[k] = v
             details_str = ' '.join(f"{k}={v}" for k, v in details.items())
             print(f"  {ts} {evt} {details_str}")
 
     elif command == "types":
         print("Predefined event types:\n")
-        for event_type, fields in EVENT_TYPES.items():
+        for event_type, fields in sorted(EVENT_TYPES.items()):
             print(f"  {event_type}")
-            print(f"    Fields: {', '.join(fields)}")
+            if fields:
+                print(f"    Expected fields: {', '.join(fields)}")
 
     else:
         print(f"Unknown command: {command}")
