@@ -9,8 +9,8 @@ providers:
     folder: 'DS01'
     folderUid: 'ds01'
     type: file
-    disableDeletion: false
+    disableDeletion: true
     updateIntervalSeconds: 30
-    allowUiUpdates: true
+    allowUiUpdates: false
     options:
       path: /etc/grafana/provisioning/dashboards/dashboards

@@ -21,6 +21,20 @@ ssh -L 3000:localhost:3000 user@ds01-server
 # Then open http://localhost:3000 in browser
 ```
 
+## Optional: GPU Stress Testing Tools
+
+The monitoring stack includes GPU stress testing tools for dashboard validation. These require **optional Python dependencies** (PyTorch or CuPy) that are **NOT** required for core DS01 functionality.
+
+To use stress testing tools:
+```bash
+# Install PyTorch for GPU compute (most common)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Or see monitoring/requirements.txt for other options
+```
+
+**Note:** These tools never auto-install dependencies. If you try to run them without PyTorch/CuPy, they'll provide clear installation instructions and exit. This design ensures DS01 remains lightweight and doesn't force users to install heavy ML libraries unless explicitly needed.
+
 ## Architecture
 
 DS01 uses a **hybrid exporter architecture** for efficient GPU monitoring:

@@ -126,6 +126,29 @@ groups:
             0
           )
 
+      # Disaggregated slot metrics (MIG vs Full GPU)
+      # MIG slots allocated (slots with . in name like "2.0")
+      - record: ds01:system_mig_slots_allocated
+        expr: count(ds01_gpu_allocated{gpu_slot=~".*\\..*"}) or vector(0)
+
+      # Full GPU slots allocated (slots without . in name like "0", "1")
+      - record: ds01:system_full_gpu_slots_allocated
+        expr: count(ds01_gpu_allocated{gpu_slot!~".*\\..*"}) or vector(0)
+
+      # Total full GPU slots available
+      - record: ds01:system_full_gpu_slots_total
+        expr: count(ds01_gpu_slot_info) or vector(0)
+
+      # Full GPU slots free
+      - record: ds01:system_full_gpu_slots_free
+        expr: |
+          clamp_min(
+            (count(ds01_gpu_slot_info) or vector(0))
+            -
+            (count(ds01_gpu_allocated{gpu_slot!~".*\\..*"}) or vector(0)),
+            0
+          )
+
       # Active users count
       - record: ds01:system_active_users
         expr: count(count by (user) (ds01_gpu_allocated)) or vector(0)
@@ -276,19 +299,21 @@ groups:
             "device", "MIG ${1}", "slot", "(.+)"
           )
 
-      # Temperature (physical GPUs only - MIG shares parent)
+      # Temperature (all physical GPUs - MIG shares parent)
+      # For MIG GPUs, we take the max value per GPU (they're all identical anyway)
       - record: ds01:device_temperature
         expr: |
           label_replace(
-            DCGM_FI_DEV_GPU_TEMP{GPU_I_ID=""},
+            max by (gpu, modelName, UUID, Hostname, DCGM_FI_DRIVER_VERSION, ds01_category, ds01_component, instance, job) (DCGM_FI_DEV_GPU_TEMP),
             "device", "GPU ${1}", "gpu", "([0-9]+)"
           )
 
-      # Power (physical GPUs only)
+      # Power (all physical GPUs)
+      # For MIG GPUs, we take the max value per GPU (they're all identical anyway)
       - record: ds01:device_power_watts
         expr: |
           label_replace(
-            DCGM_FI_DEV_POWER_USAGE{GPU_I_ID=""},
+            max by (gpu, modelName, UUID, Hostname, DCGM_FI_DRIVER_VERSION, ds01_category, ds01_component, instance, job) (DCGM_FI_DEV_POWER_USAGE),
             "device", "GPU ${1}", "gpu", "([0-9]+)"
           )
 

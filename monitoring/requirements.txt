@@ -1,0 +1,20 @@
+# DS01 Monitoring Stack - Optional Dependencies
+# These are NOT required for core DS01 functionality
+# Install only if you want to use the monitoring/stress testing tools
+
+# Prometheus Python client for custom exporters
+prometheus-client>=0.19.0
+
+# GPU stress testing (choose one)
+# Option 1: PyTorch (recommended, more widely used)
+# Uncomment the appropriate line for your CUDA version:
+# torch>=2.1.0  # For CUDA 11.8
+# torch>=2.1.0+cu121 --index-url https://download.pytorch.org/whl/cu121  # For CUDA 12.1
+
+# Option 2: CuPy (lighter alternative)
+# cupy-cuda12x>=12.0.0  # For CUDA 12.x
+
+# Note: PyTorch installation varies by platform/CUDA version
+# See: https://pytorch.org/get-started/locally/
+# For most university GPU servers with CUDA 12.1:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
