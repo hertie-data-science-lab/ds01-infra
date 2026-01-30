@@ -298,7 +298,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "MIG slots currently available for allocation",
+      "description": "GPU/MIG slots currently available for allocation by type",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -327,7 +327,7 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
+        "w": 5,
         "x": 0,
         "y": 6
       },
@@ -344,14 +344,19 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "textMode": "value_and_name"
       },
       "pluginVersion": "10.2.0",
       "targets": [
         {
           "expr": "ds01:system_mig_free",
-          "legendFormat": "Free",
+          "legendFormat": "MIG",
           "refId": "A"
+        },
+        {
+          "expr": "ds01:system_full_gpu_slots_free",
+          "legendFormat": "Full GPU",
+          "refId": "B"
         }
       ],
       "title": "Slots Free",
@@ -362,7 +367,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Currently allocated slots / total available slots",
+      "description": "Currently allocated slots by type (MIG and Full GPU)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -375,6 +380,14 @@
               {
                 "color": "green",
                 "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "orange",
+                "value": 10
               }
             ]
           }
@@ -383,8 +396,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
-        "x": 4,
+        "w": 4,
+        "x": 5,
         "y": 6
       },
       "id": 2,
@@ -405,31 +418,17 @@
       "pluginVersion": "10.2.0",
       "targets": [
         {
-          "expr": "count(ds01_gpu_allocated) or vector(0)",
-          "legendFormat": "",
+          "expr": "ds01:system_mig_slots_allocated",
+          "legendFormat": "MIG",
           "refId": "A"
         },
         {
-          "expr": "count(ds01_mig_slot_info) or vector(14)",
-          "legendFormat": "",
-          "refId": "B",
-          "hide": true
+          "expr": "ds01:system_full_gpu_slots_allocated",
+          "legendFormat": "Full GPU",
+          "refId": "B"
         }
       ],
       "title": "Slots Used",
-      "transformations": [
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "Usage",
-            "mode": "reduceRow",
-            "reduce": {
-              "include": ["A"],
-              "reducer": "lastNotNull"
-            }
-          }
-        }
-      ],
       "type": "stat"
     },
     {
@@ -462,8 +461,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 3,
-        "x": 7,
+        "w": 2,
+        "x": 9,
         "y": 6
       },
       "id": 3,
@@ -505,14 +504,13 @@
           },
           "mappings": [
             {
+              "type": "value",
               "options": {
                 "0": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "None"
+                  "text": "None",
+                  "color": "green"
                 }
-              },
-              "type": "value"
+              }
             }
           ],
           "thresholds": {
@@ -527,14 +525,15 @@
                 "value": 1
               }
             ]
-          }
+          },
+          "noValue": "None"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 4,
         "w": 3,
-        "x": 10,
+        "x": 11,
         "y": 6
       },
       "id": 22,
@@ -550,13 +549,13 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "textMode": "value"
       },
       "pluginVersion": "10.2.0",
       "targets": [
         {
           "expr": "ds01_unmanaged_gpu_count",
-          "legendFormat": "Unmanaged",
+          "legendFormat": "",
           "refId": "A"
         }
       ],
@@ -599,30 +598,35 @@
       "gridPos": {
         "h": 4,
         "w": 3,
-        "x": 13,
+        "x": 14,
         "y": 6
       },
       "id": 4,
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
-            "mean"
+            "lastNotNull"
           ],
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "textMode": "value_and_name"
       },
       "pluginVersion": "10.2.0",
       "targets": [
         {
-          "expr": "avg(ds01:device_utilization)",
-          "legendFormat": "Avg Util",
+          "expr": "avg(avg_over_time(ds01:device_utilization[1h]))",
+          "legendFormat": "1h",
           "refId": "A"
+        },
+        {
+          "expr": "avg(avg_over_time(ds01:device_utilization[7d]))",
+          "legendFormat": "7d",
+          "refId": "B"
         }
       ],
       "title": "Avg Utilisation",
@@ -633,7 +637,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Maximum GPU temperature across all devices",
+      "description": "Maximum GPU temperature across all devices (max over 1h)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -663,8 +667,8 @@
       },
       "gridPos": {
         "h": 4,
-        "w": 4,
-        "x": 16,
+        "w": 3,
+        "x": 17,
         "y": 6
       },
       "id": 5,
@@ -698,7 +702,7 @@
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Total GPU power consumption across all devices",
+      "description": "Total GPU power consumption across all devices (current value)",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -965,7 +969,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 4,
         "w": 6,
         "x": 18,
         "y": 10
@@ -973,7 +977,7 @@
       "id": 9,
       "options": {
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -983,17 +987,22 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "textMode": "value_and_name"
       },
       "pluginVersion": "10.2.0",
       "targets": [
         {
           "expr": "sum(increase(ds01:user_gpu_seconds[24h])) / 3600",
-          "legendFormat": "GPU-Hours",
+          "legendFormat": "24h",
           "refId": "A"
+        },
+        {
+          "expr": "sum(increase(ds01:user_gpu_seconds[7d])) / 3600",
+          "legendFormat": "Total (7d)",
+          "refId": "B"
         }
       ],
-      "title": "GPU-Hours (24h)",
+      "title": "GPU-Hours",
       "type": "stat"
     },
     {
@@ -1844,6 +1853,6 @@
   "timezone": "",
   "title": "DS01 Overview",
   "uid": "ds01-overview",
-  "version": 5,
+  "version": 14,
   "weekStart": ""
 }
