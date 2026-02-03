@@ -113,8 +113,8 @@ echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Check for the specific error condition
-HAS_USER=$(docker exec "$CONTAINER_TAG" cat /etc/passwd 2>/dev/null | grep -c "$(id -u)" || echo "0")
-HAS_GROUP=$(docker exec "$CONTAINER_TAG" cat /etc/group 2>/dev/null | grep -c ":$(id -g):" || echo "0")
+HAS_USER=$(docker exec "$CONTAINER_TAG" cat /etc/passwd 2>/dev/null | grep -c "$(id -u)") || HAS_USER=0
+HAS_GROUP=$(docker exec "$CONTAINER_TAG" cat /etc/group 2>/dev/null | grep -c ":$(id -g):") || HAS_GROUP=0
 
 if [ "$HAS_USER" -eq 0 ] || [ "$HAS_GROUP" -eq 0 ]; then
     echo -e "${RED}ISSUE CONFIRMED: User/group not properly configured in container${NC}"

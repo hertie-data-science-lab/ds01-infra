@@ -12,9 +12,11 @@ Transform DS01 from partial visibility to full control over GPU resources. Build
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Observability** - Event logging, monitoring stability, audit trail
-- [ ] **Phase 2: Awareness Layer** - Detect all GPU workloads (containers, host processes, unmanaged)
+- [x] **Phase 1: Foundation & Observability** - Event logging, monitoring stability, audit trail
+- [x] **Phase 2: Awareness Layer** - Detect all GPU workloads (containers, host processes, unmanaged)
+- [x] **Phase 2.1: GPU Access Control Research** - Research HPC/data centre GPU access patterns, redesign bare metal restriction based on industry practice (INSERTED)
 - [ ] **Phase 3: Access Control** - Bare metal restriction, user isolation, bypass prevention
+- [ ] **Phase 3.1: Hardening & Deployment Fixes** - Permissions manifest, GPU allocator bugs, complete Phase 3 deployment (INSERTED)
 - [ ] **Phase 4: Comprehensive Resource Enforcement** - CPU, memory, IO, disk limits via cgroup v2
 - [ ] **Phase 5: Lifecycle Bug Fixes** - Container retirement, cleanup race conditions, GPU allocation leaks
 - [ ] **Phase 6: Lifecycle Enhancements** - Tuning, overrides, reliability improvements
@@ -36,10 +38,15 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Alertmanager email configuration functional (test notification delivered)
   5. Admin can query event log for audit purposes via CLI or log viewer
   6. Automated semantic versioning via CI pipeline produces correct version tags on merge to main
-**Plans**: TBD
+**Plans**: 6 plans
 
 Plans:
-- [ ] 01-01: TBD during planning
+- [x] 01-01-PLAN.md — Shared event logging library (Python + Bash) and logrotate fix
+- [x] 01-02-PLAN.md — DCGM exporter stability (systemd service with restart/stop handling)
+- [x] 01-03-PLAN.md — Alertmanager dual-channel alerting (email + Teams) and alert rules
+- [x] 01-04-PLAN.md — CI/CD pipeline (semantic-release replacing commitizen, ruff linting)
+- [x] 01-05-PLAN.md — Refactor event-logger.py and rewrite ds01-events query tool
+- [x] 01-06-PLAN.md — Instrument existing scripts with event logging calls
 
 ### Phase 2: Awareness Layer
 **Goal**: System detects ALL GPU workloads regardless of how they were created. Zero blind spots.
@@ -51,12 +58,30 @@ Plans:
   3. System detects host GPU processes (outside containers) and attributes them to a user via /proc
   4. Admin can query unified inventory showing all GPU workloads (DS01-managed, unmanaged containers, host processes) from single command
   5. Detection handles containers created via Docker API without DS01 labels
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 02-01: TBD during planning
+- [x] 02-01-PLAN.md — Core workload detection scanner (container classification, host GPU process detection, inventory persistence)
+- [x] 02-02-PLAN.md — Systemd timer/service units and deployment integration
+- [x] 02-03-PLAN.md — ds01-workloads unified query command (table/wide/by-user/JSON output)
 
-### Phase 3: Access Control
+### Phase 2.1: GPU Access Control Research (INSERTED)
+**Goal**: Research how HPCs, data centres, and multi-user GPU systems handle host vs container GPU access restriction. Audit current Phase 3 approach against industry practice. Produce a design document grounding the access control implementation in proven patterns.
+**Depends on**: Phase 2
+**Requirements**: ACCESS-01 (research-informed redesign)
+**Success Criteria** (what must be TRUE):
+  1. Research document covers how SLURM, Kubernetes, and bare-metal GPU clusters restrict host GPU access
+  2. Current Phase 3 approach (device permissions, video group, nvidia wrappers) audited against findings
+  3. Design decision documented: chosen approach with rationale, rejected alternatives with reasons
+  4. Phase 3 plans updated or replaced to reflect research-informed design
+  5. `container deploy` works end-to-end for a regular user (the bug that triggered this research is resolved)
+**Plans**: 2 plans
+
+Plans:
+- [x] 02.1-01-PLAN.md — Design document + deployment verification (checkpoint: human-verify)
+- [x] 02.1-02-PLAN.md — Update Phase 3 plan 03-03 + profile.d exemption logic
+
+### Phase 3: Access Control (Code Complete)
 **Goal**: Users cannot bypass DS01 controls or interfere with each other. Bare metal GPU access restricted, user isolation enforced.
 **Depends on**: Phase 2
 **Requirements**: ACCESS-01, ACCESS-02, ACCESS-03, ACCESS-04, ACCESS-05
@@ -66,10 +91,46 @@ Plans:
   3. Users cannot see other users' containers via docker ps or similar commands
   4. Users cannot exec into, stop, or remove other users' containers
   5. User isolation enforced via Docker wrapper authorization without requiring OPA
-**Plans**: TBD
+**Plans**: 3 plans (2 complete, 1 superseded → absorbed into Phase 3.1)
 
 Plans:
-- [ ] 03-01: TBD during planning
+- [x] 03-01-PLAN.md — Bare metal GPU restriction (nvidia-* wrappers, video group, admin CLI)
+- [x] 03-02-PLAN.md — Docker wrapper container isolation (user filtering, ownership verification)
+- [~] 03-03-PLAN.md — ~~Deployment integration~~ **SUPERSEDED** → absorbed into Phase 3.1 (never executed; deployment scope expanded after UAT audit)
+
+### Phase 3.1: Access Control Completion & Hardening (INSERTED)
+**Goal**: Complete Phase 3 deployment, fix design-implementation drift, fix systemic permissions/allocator bugs, and deliver a coherent, design-aligned access control system. Absorbs Phase 3 plan 03-03 scope plus all UAT audit fixes.
+**Depends on**: Phase 3 (plans 03-01, 03-02)
+**Requirements**: ACCESS-01 through ACCESS-05 (deployment), cross-phase audit gaps (permissions, GPU allocator, deploy pipeline)
+**Success Criteria** (what must be TRUE):
+  *Permissions & deploy pipeline:*
+  1. Deterministic permissions manifest in deploy.sh — all scripts 755, config 644, state dirs per-policy, lib 755
+  2. Non-admin user (h.baker) can run ds01-events, ds01-workloads, and other deployed commands
+  3. deploy.sh self-bootstrap fixed — single run always applies all changes (no "run twice" requirement)
+  4. deploy.sh deploys mlc-create as symlink with Python dependencies accessible
+  5. All profile.d scripts deployed with correct permissions (0644, not 0600)
+  *GPU allocator fixes:*
+  6. GPU availability checker detects full GPUs when MIG is disabled (4x A100)
+  7. GPU allocator loads .members files for correct group resolution
+  *Bare metal access control (03-03 + design alignment):*
+  8. Udev rules removed (99-ds01-nvidia.rules deleted, device permissions at 0666 defaults)
+  9. Video group restricted to exempt users only (non-exempt users removed)
+  10. Video group exemption logic in profile.d script works (grants + exempt_users + video group check)
+  11. GPU notice library (.so) deployed with correct permissions for LD_PRELOAD
+  12. MOTD updated to mention container-only GPU policy
+  13. Docker wrapper isolation in enforcing mode (not monitoring)
+  *End-to-end validation:*
+  14. Exempt users bypass CUDA_VISIBLE_DEVICES block (grant dir traversable, config readable)
+  15. container deploy works end-to-end for a regular user (h.baker)
+  16. Event logging writable by non-root users (events.jsonl group-writable)
+  17. Cross-phase UAT re-run: all 8 previously-found issues resolved
+**Plans**: 4 plans
+
+Plans:
+- [ ] 03.1-01-PLAN.md — Deploy.sh permissions manifest, self-bootstrap, profile.d deployment, event log fix
+- [ ] 03.1-02-PLAN.md — GPU allocator/checker fail-open hardening, verify full GPU + .members fixes
+- [ ] 03.1-03-PLAN.md — Bare metal deployment: udev removal, video group restriction, nvidia wrappers, enforcing mode
+- [ ] 03.1-04-PLAN.md — End-to-end validation script + human verification checkpoint
 
 ### Phase 4: Comprehensive Resource Enforcement
 **Goal**: CPU, memory, IO, and disk limits enforced per user across complete resource spectrum via cgroup v2.
@@ -178,13 +239,15 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10
+Phases execute in numeric order: 1 → 2 → **2.1** → 3 → **3.1** → 4 → 5 → 6 → 7 → 8 → 9 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Observability | 0/TBD | Not started | - |
-| 2. Awareness Layer | 0/TBD | Not started | - |
-| 3. Access Control | 0/TBD | Not started | - |
+| 1. Foundation & Observability | 6/6 | ✓ Complete | 2026-01-30 |
+| 2. Awareness Layer | 3/3 | ✓ Complete | 2026-01-30 |
+| 2.1. GPU Access Control Research | 2/2 | ✓ Complete | 2026-01-31 |
+| 3. Access Control | 2/3 | Code complete (03-03 → 3.1) | - |
+| 3.1. Access Control Completion & Hardening | 0/TBD | **Next** | - |
 | 4. Comprehensive Resource Enforcement | 0/TBD | Not started | - |
 | 5. Lifecycle Bug Fixes | 0/TBD | Not started | - |
 | 6. Lifecycle Enhancements | 0/TBD | Not started | - |

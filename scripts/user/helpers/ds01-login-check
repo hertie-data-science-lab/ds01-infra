@@ -35,7 +35,7 @@ check_bare_metal() {
 
     # Check for common compute processes
     compute_count=$(ps -u "$USER" -o comm= 2>/dev/null | \
-        grep -cE '^(python|python3|jupyter|train|ray|spark)' || echo 0)
+        grep -cE '^(python|python3|jupyter|train|ray|spark)') || compute_count=0
 
     if [[ $compute_count -gt 0 ]]; then
         # Only show if processes are outside containers

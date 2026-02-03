@@ -24,6 +24,12 @@ LOG_FILE="/var/log/ds01/idle-cleanup.log"
 # Source shared library for colors and utilities
 source "$INFRA_ROOT/scripts/lib/init.sh"
 
+# Source event logging library
+EVENTS_LIB="$INFRA_ROOT/scripts/lib/ds01_events.sh"
+if [ -f "$EVENTS_LIB" ]; then
+    source "$EVENTS_LIB"
+fi
+
 # Create state directory
 mkdir -p "$STATE_DIR"
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -372,9 +378,27 @@ NOTIFEOF
     # GPU freed automatically when container removed (Docker labels gone = GPU freed)
     # This enforces the "running or removed" principle without user command overhead
 
+    # Get idle duration in human-readable format
+    local idle_minutes=$((idle_seconds / 60))
+    local idle_hours=$((idle_seconds / 3600))
+    local idle_display
+    if [ "$idle_hours" -gt 0 ]; then
+        idle_display="${idle_hours}h"
+    else
+        idle_display="${idle_minutes}m"
+    fi
+
     # Stop container (10 second grace period)
     if docker stop -t 10 "$container" &>/dev/null; then
         log_color "Stopped idle container: $container" "$GREEN"
+
+        # Log maintenance.idle_kill event (best-effort)
+        if command -v log_event &>/dev/null; then
+            log_event "maintenance.idle_kill" "$username" "check-idle-containers" \
+                container="$container" \
+                idle_duration="$idle_display" \
+                container_type="$(get_container_type "$container")" || true
+        fi
 
         # Remove container immediately (frees GPU automatically)
         if docker rm "$container" &>/dev/null; then

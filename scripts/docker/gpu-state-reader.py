@@ -14,6 +14,7 @@ import subprocess
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Dict, List, Optional, Set
 from collections import defaultdict
 
@@ -73,11 +74,16 @@ class GPUStateReader:
 
     def _is_full_gpu(self, gpu_slot: str) -> bool:
         """Check if a GPU slot is a full GPU (not MIG instance)"""
-        return '.' not in str(gpu_slot)
+        slot_str = str(gpu_slot)
+        # MIG UUIDs start with "MIG-" and don't contain dots
+        if slot_str.startswith('MIG-'):
+            return False
+        return '.' not in slot_str
 
     def _get_mig_uuid_to_slot_mapping(self) -> Dict[str, str]:
         """
-        Get mapping of MIG UUIDs to slot IDs (e.g., "1.0", "1.2")
+        Get mapping of GPU/MIG UUIDs to slot IDs.
+        Maps both physical GPU UUIDs (GPU-xxx → "0") and MIG UUIDs (MIG-xxx → "1.0").
         Caches result for performance.
         """
         if self._mig_uuid_to_slot_cache is not None:
@@ -85,26 +91,34 @@ class GPUStateReader:
 
         mapping = {}
 
+        # Device permissions are 0666 so all users can query nvidia-smi directly
         try:
-            # Run nvidia-smi to get MIG instances
             result = subprocess.run(
-                ["nvidia-smi", "-L"],
+                ["/usr/bin/nvidia-smi", "-L"],
                 capture_output=True,
                 text=True,
                 check=True
             )
+            nvidia_output = result.stdout
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            self._mig_uuid_to_slot_cache = mapping
+            return mapping
 
-            # Parse output like:
-            # GPU 1: NVIDIA A100-PCIE-40GB (UUID: GPU-xxx)
-            #   MIG 1g.10gb Device 0: (UUID: MIG-abc-123)
-            #   MIG 1g.10gb Device 1: (UUID: MIG-def-456)
+        # Parse output like:
+        # GPU 0: NVIDIA A100-PCIE-40GB (UUID: GPU-14d7e768-...)
+        # GPU 1: NVIDIA A100-PCIE-40GB (UUID: GPU-86021f6f-...)
+        #   MIG 1g.10gb Device 0: (UUID: MIG-abc-123)
+        #   MIG 1g.10gb Device 1: (UUID: MIG-def-456)
 
+        try:
             current_gpu = None
-            for line in result.stdout.split('\n'):
-                # Match GPU line: "GPU 1: ..."
-                gpu_match = re.match(r'GPU (\d+):', line)
+            for line in nvidia_output.split('\n'):
+                # Match GPU line: "GPU 0: NVIDIA A100 (UUID: GPU-xxx)"
+                gpu_match = re.match(r'GPU (\d+):\s+[^(]+\(UUID:\s+(GPU-[a-f0-9-]+)\)', line)
                 if gpu_match:
                     current_gpu = gpu_match.group(1)
+                    gpu_uuid = gpu_match.group(2)
+                    mapping[gpu_uuid] = current_gpu
                     continue
 
                 # Match MIG line: "  MIG 1g.10gb Device 0: (UUID: MIG-xxx)"
@@ -114,9 +128,7 @@ class GPUStateReader:
                     uuid = mig_match.group(2)
                     slot_id = f"{current_gpu}.{device_id}"
                     mapping[uuid] = slot_id
-
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            # MIG not available or nvidia-smi not found
+        except Exception:
             pass
 
         self._mig_uuid_to_slot_cache = mapping
@@ -703,6 +715,27 @@ class GPUStateReader:
         allocations = self.get_user_allocations(username)
         return sum(alloc.get('mig_equiv', 1) for alloc in allocations)
 
+    def get_user_gpu_count(self, username: str) -> int:
+        """
+        Get count of GPU slots allocated to a user (for display purposes).
+
+        Unlike user-mig-total which returns MIG-equivalents (1 full GPU = N mig-equiv),
+        this returns the actual count of GPU/MIG slots:
+        - In non-MIG mode: count of full GPUs (e.g., 1 full GPU = 1)
+        - In MIG mode: count of MIG instances (e.g., 2 MIG instances = 2)
+
+        This is appropriate for user-facing display where users expect to see
+        "1 GPU" when they have 1 GPU, not "4 MIG-equivalents".
+        """
+        allocations = self.get_user_allocations(username)
+        # Count distinct GPU slots across all containers
+        all_slots = set()
+        for alloc in allocations:
+            for slot in alloc.get('gpu_slots', [alloc.get('gpu_slot')]):
+                if slot:
+                    all_slots.add(slot)
+        return len(all_slots)
+
 
 # ============================================================================
 # MODULE-LEVEL API FUNCTIONS (for importing by other scripts)
@@ -827,6 +860,7 @@ def main():
         print("  container <name>       - Show GPU for specific container")
         print("  user <username>        - Show user's GPU allocations (with MIG-equiv)")
         print("  user-mig-total <user>  - Get total MIG-equivalents for user")
+        print("  user-gpu-count <user>  - Get GPU/MIG slot count for display")
         print("  unmanaged              - Show containers with GPU access outside DS01 tracking")
         print("  json                   - Output all allocations as JSON")
         print("  json-by-interface      - Output containers by interface as JSON")
@@ -899,6 +933,11 @@ def main():
         username = sys.argv[2]
         total = reader.get_user_mig_total(username)
         print(total)
+
+    elif command == "user-gpu-count" and len(sys.argv) > 2:
+        username = sys.argv[2]
+        count = reader.get_user_gpu_count(username)
+        print(count)
 
     elif command == "unmanaged":
         unmanaged = reader.get_unmanaged_gpu_containers()

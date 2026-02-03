@@ -5,33 +5,38 @@
 See: .planning/PROJECT.md (updated 2026-01-30)
 
 **Core value:** Full control over GPU resources — every GPU process tracked, attributed to a user, and controllable
-**Current focus:** Phase 1 (Foundation & Observability)
+**Current focus:** Phase 3.1 (Access Control Completion & Hardening) — merged scope from Phase 3 03-03 + UAT fixes
 
 ## Current Position
 
-Phase: 1 of 10 (Foundation & Observability)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-01-30 — Roadmap created
+Phase: 3.1 (inserted) — IN PROGRESS (BLOCKED)
+Plan: 4/4 code complete, 3/4 SUMMARYs committed
+Status: All plans executed. Plan 04 checkpoint approved. BLOCKER: GPU allocation fails for non-video-group users (device perms 0660, need udev rule for 0666).
+Last activity: 2026-02-01 — Plan 04 checkpoint approved, GPU permissions blocker discovered
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████████████████░░░░] 80% (16/~20 plans complete — plan 04 SUMMARY pending)
+Resume: .planning/phases/03.1-hardening-deployment-fixes/.continue-here.md
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 0
-- Average duration: N/A
-- Total execution time: 0 hours
+- Total plans completed: 16
+- Average duration: 3.5 min
+- Total execution time: 56 min
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01-foundation-observability | 6 | 19min | 3.2min |
+| 02-awareness-layer | 3 | 13min | 4.3min |
+| 02.1-gpu-access-control-research | 2 | 8min | 4.0min |
+| 03-access-control | 2 | 10min | 5.0min |
+| 03.1-hardening-deployment-fixes | 3 | 6min | 2.0min |
 
 **Recent Trend:**
-- Last 5 plans: N/A
-- Trend: N/A
+- Last 5 plans: 03.1-03 (2min), 03.1-02 (2min), 03.1-01 (2min), 02-03 (7min), 03-02 (3min)
+- Trend: Hardening fixes consistently fast (2min avg); research plans faster than implementation
 
 *Updated after each plan completion*
 
@@ -45,10 +50,71 @@ Recent decisions affecting current work:
 - Docker wrapper for universal enforcement (not OPA) — intercepts all container creation
 - Awareness-first architecture — detect everything before enforcing
 - Milestones ordered: control → observability → hygiene → SLURM → cloud
+- Use systemd for DCGM restart management (not docker-compose) — prevents restart conflicts and MIG race conditions (01-02)
+- Hybrid docker-compose + systemd pattern for infrastructure containers — compose creates, systemd manages restarts (01-02)
+- Replaced commitizen with semantic-release for automated versioning — auto-triggers on push to main (01-04)
+- Standardised JSON event schema (v1) — timestamp, event_type, source, schema_version with optional user and details (01-01)
+- Never-block event logging pattern — returns False on error, never raises exceptions (01-01)
+- Bash-via-CLI bridge for event logging — Python CLI as bridge between Bash and Python event emission (01-01)
+- Copytruncate for JSONL logrotate — keeps file descriptors valid for append-only logs (01-01)
+- jq-based event filtering over grep — structured JSON queries for reliable event analysis (01-05)
+- Four-tier help system for admin tools — --help, --info, --concepts, --guided (01-05)
+- Best-effort event logging pattern — log_event || true, never blocks critical operations (01-06)
+- Safe import fallback for Python logging — try/except with no-op function ensures allocator always works (01-06)
+- Transient filtering uses 2-scan threshold to avoid event noise from short-lived processes (02-01)
+- System GPU processes (nvidia-persistenced, DCGM, Xorg) excluded from user inventory (02-01)
+- Near-real-time inventory semantics: max 30s lag from polling interval (acceptable for 60s detection window) (02-01)
+- Container name pattern 'vsc-' classified as devcontainer (VSCode pattern) (02-01)
+- Single docker stats call for efficiency in wide mode — batch query not per-container loops (02-03)
+- By-user grouping sorts alphabetically with 'unknown' user always last (02-03)
+- Age display format: Xd/Xh/Xm/Xs for human readability (02-03)
+- Container isolation enforced in Docker wrapper (not OPA) — wrapper-based authorization replacing failed OPA approach (03-02)
+- Filter docker ps via --filter label=ds01.user for performance — leverages daemon filtering instead of post-processing (03-02)
+- Fail-open for unowned containers prevents blocking legacy workloads — allows with warning log (03-02)
+- Rate limiting at 10/hour per user prevents denial log flooding — first denial always logged at warning level (03-02, 03-01)
+- Admin bypass: root, datasciencelab, ds01-admin group — system owner has admin privileges (03-02, 03-01)
+- Monitoring mode (DS01_ISOLATION_MODE=monitoring) logs denials but allows operations — safe rollout path (03-02)
+- Linux video group for bare metal GPU access exemptions — checked by profile.d script, NOT device permissions (03-01, revised in 02.1-02)
+- at command for temporary grant scheduling — purpose-built for one-time tasks, simpler than systemd timers (03-01)
+- SSH session re-login required for group changes — Linux limitation documented in user messages (03-01)
+- Echo piped to wall avoids nested heredoc complexity — cleaner than heredoc-in-heredoc for at command scripts (03-01)
+- Profile.d scripts skip non-interactive shells — [[ $- == *i* ]] check prevents breaking system services and cron jobs (02.1-02)
+- Profile.d scripts use 'return' not 'exit' — sourced scripts must not close user shell (02.1-02)
+- Video group + profile.d exemption is Layer 3 GPU access control — Layer 1 is CUDA_VISIBLE_DEVICES deterrent, Layer 2 is Docker device mapping security boundary (02.1-02)
+- Device permissions remain at defaults (0666) — udev rule manipulation is anti-pattern per HPC research, breaks nvidia-smi and monitoring tools (02.1-02)
+- Three-layer GPU access control architecture — Layer 1: CUDA_VISIBLE_DEVICES (host deterrent), Layer 2: Docker --gpus device mapping (container security), Layer 3: video group exemption (opt-in bare-metal) (02.1-01, 02.1-02)
+- Self-bootstrap re-exec pattern in deploy.sh — deployed copy always re-execs from source, eliminating "run twice" bug (03.1-01)
+- Comprehensive deterministic permissions manifest — explicit chmod/chown on every deploy run ensures correct state regardless of umask or git checkout (03.1-01)
+- Unified profile.d deployment from dual sources — single loop deploys from both config/deploy/profile.d/ and config/etc-mirrors/profile.d/ with 644 permissions (03.1-01)
+- State directory permissions per-policy — bare-metal-grants 711 (traverse without listing), rate-limits 1777 (world-writable with sticky), /var/lib/ds01 775 root:docker (03.1-01)
+- Event log group-writable — events.jsonl 664 root:docker enables non-root users in docker group to log events (03.1-01)
+- Fail-open exception handling for GPU allocation chain — infrastructure errors return safe defaults/structured errors per OWASP 2025 A10, never block container creation (03.1-02)
+- Replace silent exception swallowing with stderr logging — observability without breaking fail-open pattern (03.1-02)
+- Restrictive video group sync — deploy.sh adds exempt users AND removes non-exempt users from video group (03.1-03)
+- Three-tier exemption check in GPU awareness — grant file → config exempt_users → video group membership (03.1-03)
+- Udev rules removed from deployment — device permissions remain at defaults (0666), no manipulation (03.1-03)
+- nvidia-* wrappers deployed as UX tools — provide helpful error messages for blocked users, not a security boundary (03.1-03)
+
+### Roadmap Evolution
+
+- Phase 2.1 inserted after Phase 2: GPU Access Control Research (URGENT) — Phase 3's device-permission approach (/dev/nvidia* 0660, video group) broke the GPU allocation pipeline because nvidia-smi requires device access even for queries. Three separate patches failed to fully resolve. Research completed (02.1-01), design document approved, plan 03-03 revised (02.1-02). Phase 3 now unblocked with research-aligned three-layer architecture.
+- Phase 3.1 inserted after Phase 3: Hardening & Deployment Fixes (URGENT) — Cross-phase UAT audit revealed systemic file permissions (700/600) blocking all non-admin users. 3 blockers + 4 major issues. Covers: deterministic permissions manifest in deploy.sh, GPU allocator bugs (MIG-only checker, .members loading), deploy.sh symlink fix, complete Phase 3 deployment (03-03), event log permissions.
 
 ### Pending Todos
 
-None yet.
+- [ ] Deploy DCGM exporter systemd service to `/etc/systemd/system/` and verify 7-day stability (01-02 artefact at `config/deploy/systemd/ds01-dcgm-exporter.service`)
+- [ ] Configure Alertmanager SMTP password for `h.baker@hertie-school.org` and send test email notification
+- [x] Fix deploy.sh bootstrap problem — first run deploys old copy of itself, needs two runs after changes (self-deploy ordering) — FIXED in 03.1-01
+- [ ] Fix deploy.sh pip install — system Python (`/usr/bin/python3`) has no pip; use `python3 -m ensurepip` or specify full path
+- [ ] Update `scripts/user/atomic/container-list` to use wrapper — currently calls `/usr/bin/docker` directly, bypassing container isolation (03-02 follow-up)
+- [ ] Consolidate `config/deploy/` and `config/etc-mirrors/` into single SSOT — see `.planning/todos/pending/2026-01-31-consolidate-system-config-ssot.md`
+- [ ] Investigate wrapper group detection mismatch — mlc-create-wrapper applies student limits to researcher users — see `.planning/todos/pending/2026-01-31-investigate-wrapper-group-detection-mismatch.md`
+- [ ] Verify GPU/MIG allocation end-to-end via container deploy — full chain test after availability checker fix — see `.planning/todos/pending/2026-01-31-verify-gpu-mig-allocation-end-to-end.md`
+- [x] **URGENT** Fix GPU allocation (full GPU support + permissions + .members loading) — FIXED in 03.1-02 (hardened with fail-open exceptions)
+- [ ] Design group management & file permissions system — deterministic enforcement on deploy — see `.planning/todos/pending/2026-02-01-group-and-permissions-management-system.md`
+- [ ] Add login greeting/welcome message via profile.d — see `.planning/todos/pending/2026-02-01-login-greeting-message-profile-d.md`
+- [x] Finish GPU notice library deployment — .so has 0700 permissions, non-admin users can't load via LD_PRELOAD — FIXED in 03.1-01 (755 permissions)
+- [x] Deterministic file permissions manifest in deploy.sh — all touched files' permissions git-tracked and enforced on deploy — COMPLETED in 03.1-01
 
 ### Blockers/Concerns
 
@@ -56,14 +122,14 @@ None yet.
 - CVE-2025-23266 (NVIDIA Container Toolkit privilege escalation) — verify nvidia-ctk >= 1.17.8 or apply config.toml workaround
 
 **Monitoring:**
-- DCGM exporter crashes periodically (needs stability fixes in Phase 1)
-- Event log currently empty (0 lines) — Phase 1 addresses
+- DCGM exporter systemd service created (01-02) — awaiting deployment to resolve crashes
+- jq dependency required for ds01-events query tool — should add to deployment checklist (01-05)
 
 **Dependencies:**
 - SMTP credentials from IT needed for Alertmanager email (Phase 1)
 
 ## Session Continuity
 
-Last session: 2026-01-30 (roadmap creation)
-Stopped at: Roadmap and STATE.md created, ready for phase planning
-Resume file: None
+Last session: 2026-02-01 16:15 UTC
+Stopped at: GPU permissions blocker resolved. Architecture stabilised: nvidia-smi allowed for all docker users (video group), CUDA_VISIBLE_DEVICES="" blocks host compute (grant files/config for exemptions), nvidia wrapper removed. Dashboard visibility bug outstanding. Consolidation of debug/research files complete.
+Resume file: .planning/debug/CONSOLIDATED-gpu-permissions-access-control.md

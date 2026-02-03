@@ -7,8 +7,19 @@ __pycache__/
 # Linux specific files
 *~
 
-# IDE specific files 
+# IDE specific files
 .vscode/
+.idea/
+
+# User dotfiles (accidentally in repo root)
+.bash_profile
+.bashrc
+.profile
+.zprofile
+.zshrc
+.gitconfig
+.ripgreprc
+.mcp.json
 
 # Virtual environment directories
 venv/
@@ -20,7 +31,10 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Shared objects (except our LD_PRELOAD library)
 *.so
+!lib/*.so
 
 # Coverage/Test files
 .coverage
@@ -33,9 +47,6 @@ htmlcov/
 *.err
 *.out
 logs/*
-
-# Claude AI files
-.claude/
 
 # Binary directory
 bin/

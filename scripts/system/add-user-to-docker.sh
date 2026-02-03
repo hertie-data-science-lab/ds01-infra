@@ -51,13 +51,21 @@ fi
 echo "Adding $CANONICAL_USER to docker group..."
 usermod -aG docker "$CANONICAL_USER"
 
+# Add to video group (required for nvidia-smi / GPU allocator)
+# Video group allows nvidia-smi to communicate with the NVIDIA driver.
+# This does NOT grant bare-metal CUDA access — that's controlled by
+# CUDA_VISIBLE_DEVICES="" in /etc/profile.d/ds01-gpu-awareness.sh.
+# Bare-metal overrides are managed via: sudo bare-metal-access grant <user>
+echo "Adding $CANONICAL_USER to video group..."
+usermod -aG video "$CANONICAL_USER"
+
 echo ""
-echo "$CANONICAL_USER has been added to the docker group"
+echo "$CANONICAL_USER has been added to the docker and video groups"
 echo ""
 echo "IMPORTANT: The user must log out and log back in for this to take effect."
 echo ""
 echo "To verify after logging back in, the user can run:"
 echo "  groups"
 echo ""
-echo "They should see 'docker' in the list of groups."
+echo "They should see 'docker' and 'video' in the list of groups."
 echo ""

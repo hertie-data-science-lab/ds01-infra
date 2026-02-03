@@ -1,19 +1,24 @@
 # DS01 Alertmanager Configuration
-# Routes alerts to appropriate receivers
+# Dual-channel alerting (email + Microsoft Teams webhook)
 #
-# SETUP: Copy this file to alertmanager-local.yml and add SMTP credentials:
-#   1. cp alertmanager.yml alertmanager-local.yml
-#   2. Edit alertmanager-local.yml with your SMTP password
-#   3. The -local.yml file is gitignored
+# SETUP for SMTP:
+#   Option 1: Set in .env file (monitoring/.env):
+#     SMTP_AUTH_PASSWORD=your_password_here
+#   Option 2: Uncomment smtp_auth_password below and add password directly
+#   Option 3: Create alertmanager-local.yml with credentials (gitignored)
 #
-# Or edit this file directly if credentials are acceptable in repo.
+# SETUP for Teams:
+#   1. In Microsoft Teams: Channel -> Manage channel -> Connectors
+#   2. Search "Incoming Webhook" -> Configure -> Create -> Copy URL
+#   3. Set in .env file: TEAMS_WEBHOOK_URL=https://your-tenant.webhook.office.com/...
+#   4. Or replace ${TEAMS_WEBHOOK_URL} placeholder below
 
 global:
   # Hertie School SMTP settings
   smtp_smarthost: 'smtp.hertie-school.org:587'
-  smtp_from: 'ds01-alerts@hertie-school.org'
-  smtp_auth_username: 'ds01-alerts@hertie-school.org'
-  # smtp_auth_password: 'YOUR_PASSWORD_HERE'  # Uncomment and fill in
+  smtp_from: 'h.baker@hertie-school.org'
+  smtp_auth_username: 'h.baker@hertie-school.org'
+  # smtp_auth_password: 'YOUR_PASSWORD_HERE'  # Uncomment and fill in, or set via SMTP_AUTH_PASSWORD env var
   smtp_require_tls: true
 
   # Resolve timeout
@@ -21,41 +26,29 @@ global:
 
 # Alert routing tree
 route:
-  # Default receiver
-  receiver: 'ds01-default'
+  # Default receiver (all alerts go here unless matched by child route)
+  receiver: 'ds01-admin'
 
-  # Group alerts by these labels
-  group_by: ['alertname', 'severity']
+  # Group alerts by alertname only (aggressive grouping for batch notifications)
+  group_by: ['alertname']
 
-  # Wait before sending first notification for a group
-  group_wait: 30s
+  # Wait 5m before sending first notification (batch related alerts)
+  group_wait: 5m
 
-  # Wait before sending updated notifications
+  # Wait 5m before sending updates for existing group
   group_interval: 5m
 
-  # Wait before resending notification
+  # Resend notification every 4h if alert still firing
   repeat_interval: 4h
 
   # Child routes
   routes:
-    # Critical alerts - shorter intervals
+    # Critical alerts - faster notification path
     - match:
         severity: critical
       receiver: 'ds01-critical'
-      group_wait: 10s
-      repeat_interval: 1h
-
-    # Warning alerts
-    - match:
-        severity: warning
-      receiver: 'ds01-default'
-      repeat_interval: 4h
-
-    # Info alerts - less frequent
-    - match:
-        severity: info
-      receiver: 'ds01-default'
-      repeat_interval: 24h
+      group_wait: 30s          # Send critical alerts quickly
+      repeat_interval: 1h      # Remind more frequently
 
 # Inhibition rules - suppress alerts when related critical is firing
 inhibit_rules:
@@ -73,23 +66,39 @@ inhibit_rules:
       alertname: 'DS01.*'
     equal: ['job']
 
-# Receivers
+# Receivers - dual-channel configuration (email + Teams)
 receivers:
-  # Default receiver - warning/info alerts (daily digest style)
-  - name: 'ds01-default'
+  # Admin receiver - warning/info alerts (email + Teams)
+  - name: 'ds01-admin'
     email_configs:
       - to: 'datasciencelab@hertie-school.org'
         send_resolved: true
         headers:
           Subject: '[DS01] {{ .Status | toUpper }}: {{ .GroupLabels.alertname }}'
+      - to: 'h.baker@hertie-school.org'
+        send_resolved: true
+        headers:
+          Subject: '[DS01] {{ .Status | toUpper }}: {{ .GroupLabels.alertname }}'
+    webhook_configs:
+      # Microsoft Teams webhook (native support in v0.28.1+)
+      - url: 'https://hertieschool.webhook.office.com/webhookb2/34f05edb-c358-4de0-9c27-6f42feb70a20@93527bf6-801e-4865-92ce-d4667ecbde2a/IncomingWebhook/cf7980f2ddf741f29488907b82953bd1/2a0a7d80-7335-47c6-bc00-768375f53933/V24DVhu5E3wWUf1wYa2l859YPySTXNxCN94fpHHrhazFs1'
+        send_resolved: true
 
-  # Critical receiver - immediate notification
+  # Critical receiver - immediate notification (email + Teams with priority)
   - name: 'ds01-critical'
     email_configs:
       - to: 'datasciencelab@hertie-school.org'
         send_resolved: true
         headers:
           Subject: '[DS01 CRITICAL] {{ .GroupLabels.alertname }}'
+      - to: 'h.baker@hertie-school.org'
+        send_resolved: true
+        headers:
+          Subject: '[DS01 CRITICAL] {{ .GroupLabels.alertname }}'
+    webhook_configs:
+      # Microsoft Teams webhook for critical alerts
+      - url: 'https://hertieschool.webhook.office.com/webhookb2/34f05edb-c358-4de0-9c27-6f42feb70a20@93527bf6-801e-4865-92ce-d4667ecbde2a/IncomingWebhook/cf7980f2ddf741f29488907b82953bd1/2a0a7d80-7335-47c6-bc00-768375f53933/V24DVhu5E3wWUf1wYa2l859YPySTXNxCN94fpHHrhazFs1'
+        send_resolved: true
 
 # Email templates
 templates:

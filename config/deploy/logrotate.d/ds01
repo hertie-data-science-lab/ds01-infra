@@ -19,20 +19,7 @@
     endscript
 }
 
-# JSON Lines event logs (need special handling)
-/var/log/ds01/*.jsonl {
-    daily
-    rotate 30
-    compress
-    delaycompress
-    missingok
-    notifempty
-    create 0644 root root
-    dateext
-    dateformat -%Y%m%d
-}
-
-# GPU utilization history (can be larger)
+# GPU utilization history (can be larger - rotated separately)
 /var/log/ds01/gpu-utilization.jsonl {
     weekly
     rotate 12
@@ -40,7 +27,22 @@
     delaycompress
     missingok
     notifempty
-    create 0644 root root
+    copytruncate
+    dateext
+    dateformat -%Y%m%d
+}
+
+# JSON Lines event logs (daily rotation with copytruncate)
+# Uses events.jsonl specifically to avoid conflict with gpu-utilization.jsonl above
+/var/log/ds01/events.jsonl {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    maxsize 100M
     dateext
     dateformat -%Y%m%d
 }

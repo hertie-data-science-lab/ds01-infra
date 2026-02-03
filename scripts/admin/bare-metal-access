@@ -1,0 +1,564 @@
+#!/bin/bash
+# /opt/ds01-infra/scripts/admin/bare-metal-access
+# DS01 Bare Metal GPU Access Management
+#
+# Admin CLI for managing temporary and permanent bare metal GPU access via Linux video group.
+#
+# Usage:
+#   bare-metal-access grant <username> [duration|permanent]   Grant access (default: 24h)
+#   bare-metal-access revoke <username>                       Revoke access immediately
+#   bare-metal-access status [username]                       Show access status
+#   bare-metal-access list                                    List all users with access
+#   bare-metal-access --help                                  Show this help
+
+set -euo pipefail
+
+# Source DS01 standard init
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INFRA_ROOT="/opt/ds01-infra"
+LIB_DIR="$INFRA_ROOT/scripts/lib"
+
+if [ -f "$LIB_DIR/init.sh" ]; then
+    source "$LIB_DIR/init.sh"
+fi
+
+# Source event logging
+EVENTS_LIB="$LIB_DIR/ds01_events.sh"
+if [ -f "$EVENTS_LIB" ]; then
+    source "$EVENTS_LIB" 2>/dev/null || true
+fi
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+CONFIG_FILE="$INFRA_ROOT/config/resource-limits.yaml"
+STATE_DIR="/var/lib/ds01/bare-metal-grants"
+DEFAULT_DURATION="24h"
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+show_help() {
+    cat <<'EOF'
+bare-metal-access - Manage bare metal GPU access
+
+USAGE:
+  bare-metal-access grant <username> [duration|permanent]
+  bare-metal-access revoke <username>
+  bare-metal-access status [username]
+  bare-metal-access list
+  bare-metal-access --help
+
+SUBCOMMANDS:
+  grant <user> [duration]   Grant temporary bare metal GPU access
+                            Duration: Xh (hours), Xd (days), Xm (minutes)
+                            Default: 24h
+                            Special: "permanent" for permanent access
+
+  revoke <user>            Immediately revoke bare metal GPU access
+
+  status [user]            Show access status
+                           - If user specified: show that user's status
+                           - If no user and non-admin: show own status
+                           - If no user and admin: show all users with access
+
+  list                     Show all users with bare metal access (admin only)
+
+EXAMPLES:
+  # Grant 24h access (default)
+  sudo bare-metal-access grant alice
+
+  # Grant 7 days access
+  sudo bare-metal-access grant bob 7d
+
+  # Grant permanent access
+  sudo bare-metal-access grant charlie permanent
+
+  # Check own status
+  bare-metal-access status
+
+  # Check another user's status (admin)
+  sudo bare-metal-access status alice
+
+  # List all users with access (admin)
+  sudo bare-metal-access list
+
+  # Revoke access
+  sudo bare-metal-access revoke alice
+
+NOTES:
+  - grant/revoke require sudo
+  - status works without sudo for checking own status
+  - Access changes require user to start a new SSH session
+  - Temporary grants scheduled via 'at' command (requires atd)
+  - Permanent grants recorded but require manual revocation
+
+EOF
+}
+
+parse_duration() {
+    local duration="$1"
+
+    # Extract number and unit
+    if [[ "$duration" =~ ^([0-9]+)([mhd])$ ]]; then
+        local value="${BASH_REMATCH[1]}"
+        local unit="${BASH_REMATCH[2]}"
+
+        case "$unit" in
+            m) echo "${value} minutes" ;;
+            h) echo "${value} hours" ;;
+            d) echo "$((value * 24)) hours" ;;
+            *) echo "" ; return 1 ;;
+        esac
+    else
+        echo ""
+        return 1
+    fi
+}
+
+check_at_available() {
+    # Check if 'at' command exists
+    if ! command -v at &>/dev/null; then
+        echo "Error: 'at' command not available or atd not running." >&2
+        echo "Install with: sudo apt install -y at && sudo systemctl enable --now atd" >&2
+        return 1
+    fi
+
+    # Check if atd is running
+    if ! systemctl is-active --quiet atd 2>/dev/null; then
+        echo "Error: 'at' command not available or atd not running." >&2
+        echo "Install with: sudo apt install -y at && sudo systemctl enable --now atd" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+is_admin() {
+    local user="${1:-$(whoami)}"
+    local uid
+    uid=$(id -u "$user" 2>/dev/null || echo "1000")
+
+    # Root is admin
+    [ "$uid" -eq 0 ] && return 0
+
+    # Check ds01-admin group
+    groups "$user" 2>/dev/null | grep -qE '\bds01-admin\b'
+}
+
+get_exempt_users() {
+    # Parse resource-limits.yaml for exempt_users list
+    if [ ! -f "$CONFIG_FILE" ]; then
+        return 0
+    fi
+
+    python3 -c "
+import yaml
+import sys
+try:
+    with open('$CONFIG_FILE') as f:
+        config = yaml.safe_load(f)
+    exempt = config.get('bare_metal_access', {}).get('exempt_users', [])
+    for user in exempt:
+        print(user)
+except:
+    pass
+" 2>/dev/null || true
+}
+
+is_permanently_exempt() {
+    local user="$1"
+    get_exempt_users | grep -qx "$user"
+}
+
+# ============================================================================
+# Grant Access
+# ============================================================================
+
+grant_access() {
+    local username="$1"
+    local duration="${2:-$DEFAULT_DURATION}"
+
+    # Check if we need sudo
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "Error: grant requires sudo" >&2
+        echo "Run: sudo bare-metal-access grant $username $duration" >&2
+        exit 1
+    fi
+
+    # Verify user exists
+    if ! id "$username" &>/dev/null; then
+        echo "Error: User '$username' does not exist" >&2
+        exit 1
+    fi
+
+    # Handle permanent grants
+    if [ "$duration" = "permanent" ]; then
+        # Grant bare-metal access via state file
+        # (video group membership is handled separately by add-user-to-docker.sh)
+
+        # Create state directory
+        mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+        # Record grant metadata
+        cat > "$STATE_DIR/${username}.json" <<EOF
+{
+  "user": "$username",
+  "granted_by": "$(whoami)",
+  "granted_at": "$(date -Iseconds)",
+  "type": "permanent",
+  "duration": null,
+  "expires_at": null
+}
+EOF
+
+        # Log event
+        if command -v log_event &>/dev/null; then
+            log_event "access.grant" "$username" "bare-metal-access" \
+                type="permanent" granted_by="$(whoami)" || true
+        fi
+
+        # Notify via wall
+        echo "Permanent bare metal access granted to $username"
+        echo ""
+        echo "Note: User must start a new SSH session for access to take effect."
+        return 0
+    fi
+
+    # Temporary grant - check at availability
+    if ! check_at_available; then
+        exit 1
+    fi
+
+    # Parse duration
+    local at_time
+    at_time=$(parse_duration "$duration")
+    if [ -z "$at_time" ]; then
+        echo "Error: Invalid duration format: $duration" >&2
+        echo "Use: Xm (minutes), Xh (hours), Xd (days), or 'permanent'" >&2
+        exit 1
+    fi
+
+    # Grant bare-metal access via state file
+    # (video group membership is handled separately by add-user-to-docker.sh)
+
+    # Calculate expiry time
+    local expires_at
+    expires_at=$(date -Iseconds -d "now + $at_time")
+
+    # Create state directory
+    mkdir -p "$STATE_DIR" 2>/dev/null || true
+
+    # Record grant metadata
+    cat > "$STATE_DIR/${username}.json" <<EOF
+{
+  "user": "$username",
+  "granted_by": "$(whoami)",
+  "granted_at": "$(date -Iseconds)",
+  "type": "temporary",
+  "duration": "$duration",
+  "expires_at": "$expires_at"
+}
+EOF
+
+    # Schedule warning 1 hour before expiry (only if duration > 1h)
+    if [[ "$duration" =~ ^([0-9]+)([hd])$ ]]; then
+        local value="${BASH_REMATCH[1]}"
+        local unit="${BASH_REMATCH[2]}"
+
+        # Only schedule warning if duration > 1h
+        if [ "$unit" = "d" ] || [ "$unit" = "h" -a "$value" -gt 1 ]; then
+            echo "echo '
+╔══════════════════════════════════════════════════════════════╗
+║  Bare Metal GPU Access Expiring Soon                          ║
+╚══════════════════════════════════════════════════════════════╝
+
+User: $username
+Expires in: 1 hour
+
+Your bare metal GPU access will be revoked in 1 hour.
+Save your work and transition to container-based workflows.
+
+Need an extension? Raise a ticket:
+  https://github.com/hertie-data-science-lab/ds01-hub/issues
+' | wall" | at "now + $at_time - 1 hour" 2>/dev/null || true
+        fi
+    fi
+
+    # Schedule revocation - remove grant file (do NOT remove from video group)
+    echo "rm -f '$STATE_DIR/${username}.json' 2>/dev/null || true
+if command -v /opt/ds01-infra/scripts/lib/ds01_events.py &>/dev/null; then
+    /opt/ds01-infra/scripts/lib/ds01_events.py log 'access.revoke' 'user=$username' 'source=bare-metal-access' 'type=automatic' 'reason=expiry' 2>/dev/null || true
+fi" | at "now + $at_time" 2>/dev/null || {
+        echo "Error: Failed to schedule revocation via 'at' command" >&2
+        exit 1
+    }
+
+    # Log grant event
+    if command -v log_event &>/dev/null; then
+        log_event "access.grant" "$username" "bare-metal-access" \
+            type="temporary" duration="$duration" expires_at="$expires_at" granted_by="$(whoami)" || true
+    fi
+
+    echo "Temporary bare metal access granted to $username for $duration"
+    echo "Expires: $(date -d "$expires_at" '+%Y-%m-%d %H:%M:%S')"
+    echo ""
+    echo "Note: User must start a new SSH session for access to take effect."
+}
+
+# ============================================================================
+# Revoke Access
+# ============================================================================
+
+revoke_access() {
+    local username="$1"
+
+    # Check if we need sudo
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "Error: revoke requires sudo" >&2
+        echo "Run: sudo bare-metal-access revoke $username" >&2
+        exit 1
+    fi
+
+    # Verify user exists
+    if ! id "$username" &>/dev/null; then
+        echo "Error: User '$username' does not exist" >&2
+        exit 1
+    fi
+
+    # Revoke bare-metal access by removing state file
+    # (video group membership stays — it's needed for nvidia-smi / GPU allocator)
+
+    # Cancel pending at jobs for this user
+    for job_id in $(atq 2>/dev/null | awk '{print $1}'); do
+        if at -c "$job_id" 2>/dev/null | grep -q "$username"; then
+            atrm "$job_id" 2>/dev/null || true
+        fi
+    done
+
+    # Clean up state file
+    rm -f "$STATE_DIR/${username}.json" 2>/dev/null || true
+
+    # Log event
+    if command -v log_event &>/dev/null; then
+        log_event "access.revoke" "$username" "bare-metal-access" \
+            type="manual" revoked_by="$(whoami)" || true
+    fi
+
+    echo "Bare metal access revoked for $username"
+}
+
+# ============================================================================
+# Status Check
+# ============================================================================
+
+show_status() {
+    local username="${1:-}"
+
+    # If no username provided
+    if [ -z "$username" ]; then
+        # Non-admin: show own status
+        if ! is_admin; then
+            username="$(whoami)"
+        else
+            # Admin with no args: show all users
+            show_all_status
+            return 0
+        fi
+    else
+        # Username provided: check if we have permission
+        if [ "$username" != "$(whoami)" ] && ! is_admin; then
+            echo "Error: Permission denied. You can only check your own status." >&2
+            echo "Run without arguments to check your status: bare-metal-access status" >&2
+            exit 1
+        fi
+    fi
+
+    # Check if user exists
+    if ! id "$username" &>/dev/null; then
+        echo "Error: User '$username' does not exist" >&2
+        exit 1
+    fi
+
+    # Check if permanently exempt (config)
+    local is_exempt=false
+    if is_permanently_exempt "$username"; then
+        is_exempt=true
+    fi
+
+    # Check for grant file
+    local has_grant=false
+    if [ -f "$STATE_DIR/${username}.json" ]; then
+        has_grant=true
+    fi
+
+    echo ""
+    echo "Bare Metal GPU Access Status: $username"
+    echo "========================================"
+    echo ""
+
+    if [ "$is_exempt" = true ]; then
+        echo "Status: GRANTED (permanent)"
+        echo ""
+        echo "Type: Configured in resource-limits.yaml (exempt_users)"
+    elif [ "$has_grant" = true ]; then
+        echo "Status: GRANTED"
+        echo ""
+
+        # Read metadata
+        local grant_type
+        grant_type=$(python3 -c "import json; print(json.load(open('$STATE_DIR/${username}.json')).get('type', 'unknown'))" 2>/dev/null || echo "unknown")
+
+        if [ "$grant_type" = "permanent" ]; then
+            echo "Type: Permanent (granted via bare-metal-access)"
+            local granted_at
+            granted_at=$(python3 -c "import json; print(json.load(open('$STATE_DIR/${username}.json')).get('granted_at', 'unknown'))" 2>/dev/null || echo "unknown")
+            echo "Granted at: $granted_at"
+        else
+            echo "Type: Temporary"
+            local expires_at
+            expires_at=$(python3 -c "import json; print(json.load(open('$STATE_DIR/${username}.json')).get('expires_at', 'unknown'))" 2>/dev/null || echo "unknown")
+            echo "Expires at: $expires_at"
+
+            # Show time remaining
+            if [ "$expires_at" != "unknown" ]; then
+                local now
+                now=$(date +%s)
+                local expiry
+                expiry=$(date -d "$expires_at" +%s 2>/dev/null || echo "$now")
+                local remaining=$((expiry - now))
+
+                if [ $remaining -gt 0 ]; then
+                    local hours=$((remaining / 3600))
+                    local minutes=$(((remaining % 3600) / 60))
+                    echo "Time remaining: ${hours}h ${minutes}m"
+                else
+                    echo "Time remaining: EXPIRED (revocation pending)"
+                fi
+            fi
+        fi
+    else
+        echo "Status: DENIED"
+        echo ""
+        echo "You do not have bare metal GPU access."
+        echo "CUDA_VISIBLE_DEVICES is set to empty (GPU compute blocked on host)."
+        echo ""
+        echo "To use GPUs, create a container:"
+        echo "  container deploy my-project"
+        echo ""
+        echo "Need temporary access? Ask an admin:"
+        echo "  sudo bare-metal-access grant $username [duration]"
+    fi
+
+    echo ""
+}
+
+show_all_status() {
+    # Admin only - show all users with bare-metal grants or config exemptions
+    if ! is_admin; then
+        echo "Error: Permission denied. Admin access required." >&2
+        exit 1
+    fi
+
+    echo ""
+    echo "Users with Bare Metal GPU Access"
+    echo "================================="
+    echo ""
+
+    local found=false
+
+    printf "%-30s %-15s %-30s\n" "Username" "Type" "Expires"
+    printf "%-30s %-15s %-30s\n" "--------" "----" "-------"
+
+    # Show exempt users from config
+    local exempt_users
+    exempt_users=$(get_exempt_users)
+    for user in $exempt_users; do
+        printf "%-30s %-15s %-30s\n" "$user" "Config exempt" "Never"
+        found=true
+    done
+
+    # Show users with grant files
+    if [ -d "$STATE_DIR" ]; then
+        for grant_file in "$STATE_DIR"/*.json; do
+            [ -f "$grant_file" ] || continue
+            local user
+            user=$(basename "$grant_file" .json)
+
+            # Skip if already shown as exempt
+            if echo "$exempt_users" | grep -qx "$user"; then
+                continue
+            fi
+
+            local grant_type
+            grant_type=$(python3 -c "import json; print(json.load(open('$grant_file')).get('type', 'unknown'))" 2>/dev/null || echo "unknown")
+            local expires="N/A"
+
+            if [ "$grant_type" = "permanent" ]; then
+                expires="Never"
+            else
+                expires=$(python3 -c "import json; print(json.load(open('$grant_file')).get('expires_at', 'Unknown'))" 2>/dev/null || echo "Unknown")
+            fi
+
+            printf "%-30s %-15s %-30s\n" "$user" "$grant_type" "$expires"
+            found=true
+        done
+    fi
+
+    if [ "$found" = false ]; then
+        echo "No users currently have bare metal GPU access."
+    fi
+
+    echo ""
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+main() {
+    if [ $# -eq 0 ]; then
+        show_help
+        exit 1
+    fi
+
+    local subcommand="$1"
+    shift
+
+    case "$subcommand" in
+        grant)
+            if [ $# -lt 1 ]; then
+                echo "Error: grant requires a username" >&2
+                echo "Usage: bare-metal-access grant <username> [duration|permanent]" >&2
+                exit 1
+            fi
+            grant_access "$@"
+            ;;
+        revoke)
+            if [ $# -lt 1 ]; then
+                echo "Error: revoke requires a username" >&2
+                echo "Usage: bare-metal-access revoke <username>" >&2
+                exit 1
+            fi
+            revoke_access "$1"
+            ;;
+        status)
+            show_status "${1:-}"
+            ;;
+        list)
+            show_all_status
+            ;;
+        --help|-h|help)
+            show_help
+            ;;
+        *)
+            echo "Error: Unknown subcommand: $subcommand" >&2
+            echo "Run 'bare-metal-access --help' for usage" >&2
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

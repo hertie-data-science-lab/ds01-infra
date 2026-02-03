@@ -62,7 +62,7 @@ check_gpu_alerts() {
     fi
 
     # Get current GPU count
-    local current_gpus=$(python3 "$GPU_STATE_READER" user "$username" 2>/dev/null | grep -c "gpu_slot" || echo "0")
+    local current_gpus=$(python3 "$GPU_STATE_READER" user "$username" 2>/dev/null | grep -c "gpu_slot") || current_gpus=0
 
     # Calculate percentage
     local percent=0

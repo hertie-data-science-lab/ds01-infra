@@ -325,9 +325,9 @@ analyze_containers() {
     
     # Calculate total samples (from any log file)
     if [ -f "$GPU_LOG" ]; then
-        SAMPLE_COUNT=$(grep -c "GPU_METRICS_START" "$GPU_LOG" 2>/dev/null || echo 0)
+        SAMPLE_COUNT=$(grep -c "GPU_METRICS_START" "$GPU_LOG" 2>/dev/null) || SAMPLE_COUNT=0
     elif [ -f "$CPU_LOG" ]; then
-        SAMPLE_COUNT=$(grep -c "CPU_METRICS_START" "$CPU_LOG" 2>/dev/null || echo 0)
+        SAMPLE_COUNT=$(grep -c "CPU_METRICS_START" "$CPU_LOG" 2>/dev/null) || SAMPLE_COUNT=0
     else
         SAMPLE_COUNT=0
     fi

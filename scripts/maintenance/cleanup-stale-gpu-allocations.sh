@@ -17,6 +17,12 @@ GPU_ALLOCATOR="$INFRA_ROOT/scripts/docker/gpu_allocator_v2.py"
 LOG_DIR="/var/log/ds01"
 LOG_FILE="$LOG_DIR/gpu-stale-cleanup.log"
 
+# Source event logging library
+EVENTS_LIB="$INFRA_ROOT/scripts/lib/ds01_events.sh"
+if [ -f "$EVENTS_LIB" ]; then
+    source "$EVENTS_LIB"
+fi
+
 # Ensure log directory exists
 mkdir -p "$LOG_DIR"
 
@@ -45,7 +51,7 @@ if [ $EXITCODE -eq 0 ]; then
     done
 
     # Count releases from output
-    RELEASE_COUNT=$(echo "$OUTPUT" | grep "Released" | wc -l)
+    RELEASE_COUNT=$(echo "$OUTPUT" | grep -E "Removed|Released" | wc -l)
 
     # Default to 0 if empty
     if [ -z "$RELEASE_COUNT" ]; then
@@ -54,6 +60,25 @@ if [ $EXITCODE -eq 0 ]; then
 
     if [ "$RELEASE_COUNT" -gt 0 ]; then
         log "✓ Released $RELEASE_COUNT stale GPU allocation(s)"
+
+        # Parse container details from output and log each one
+        echo "$OUTPUT" | grep "✓ Removed" | while IFS= read -r line; do
+            # Extract container name (format: "✓ Removed container_name: reason")
+            container=$(echo "$line" | sed -n 's/^✓ Removed \([^:]*\):.*/\1/p')
+            if [ -n "$container" ] && command -v log_event &>/dev/null; then
+                # Try to get user from container metadata (via docker if still exists, or unknown)
+                username=$(docker inspect "$container" --format '{{index .Config.Labels "ds01.user"}}' 2>/dev/null || echo "unknown")
+                [ "$username" = "<no value>" ] && username="unknown"
+
+                # Get GPU UUID from output if present
+                gpu_uuid=$(echo "$line" | grep -oP 'GPU-[a-f0-9-]+|MIG-[a-f0-9-]+' || echo "unknown")
+
+                log_event "gpu.release" "$username" "cleanup-stale-gpu" \
+                    container="$container" \
+                    gpu_uuid="$gpu_uuid" \
+                    reason="hold_expired" || true
+            fi
+        done
     else
         log "✓ No stale allocations found"
     fi

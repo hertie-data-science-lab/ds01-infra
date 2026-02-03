@@ -19,6 +19,12 @@ LOG_FILE="$LOG_DIR/cleanup-stale-containers.log"
 # Source shared library for colors and utilities
 source "$INFRA_ROOT/scripts/lib/init.sh"
 
+# Source event logging library
+EVENTS_LIB="$INFRA_ROOT/scripts/lib/ds01_events.sh"
+if [ -f "$EVENTS_LIB" ]; then
+    source "$EVENTS_LIB"
+fi
+
 # Ensure log directory exists
 mkdir -p "$LOG_DIR"
 
@@ -108,6 +114,15 @@ while IFS= read -r container_tag; do
         if docker rm "$container_tag" &>/dev/null; then
             log "✓ Removed: $container_tag"
             logger -t ds01-cleanup "Removed stale container: $container_tag (user: $username, stopped: ${elapsed_seconds}s ago)"
+
+            # Log container.remove event (best-effort)
+            if command -v log_event &>/dev/null; then
+                log_event "container.remove" "$username" "cleanup-stale-containers" \
+                    container="$container_tag" \
+                    reason="hold_expired" \
+                    stopped_duration="${elapsed_hours}h" || true
+            fi
+
             ((REMOVED_COUNT += 1))
         else
             log "ERROR: Failed to remove $container_tag"

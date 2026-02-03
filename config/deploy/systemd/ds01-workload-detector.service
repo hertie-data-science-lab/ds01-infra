@@ -1,0 +1,20 @@
+[Unit]
+Description=DS01 Workload Detection Scanner
+Documentation=https://github.com/your-org/ds01-infra
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ds01-infra/scripts/monitoring/detect-workloads.py
+TimeoutSec=25s
+Nice=10
+IOSchedulingClass=idle
+
+# Environment
+Environment=PYTHONPATH=/opt/ds01-infra/scripts/lib
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ds01-workload-detector

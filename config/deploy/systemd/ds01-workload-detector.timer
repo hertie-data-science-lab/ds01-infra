@@ -1,0 +1,13 @@
+[Unit]
+Description=DS01 Workload Detection Timer
+Documentation=https://github.com/your-org/ds01-infra
+Requires=ds01-workload-detector.service
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

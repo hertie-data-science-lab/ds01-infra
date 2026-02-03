@@ -61,6 +61,7 @@ ds01.slice (root)
 - Docker wrapper (`/usr/local/bin/docker`) injects cgroup-parent automatically
 - OPA authorization currently parked (wrapper handles visibility filtering)
 - PAM scripts handle docker group and bashrc for new logins
+- `deploy.sh` sources `config/permissions-manifest.sh` for deterministic file permissions
 
 ---
 

@@ -448,7 +448,7 @@ if [ "$CONTAINER_STATUS" = "running" ] && [ "$FORCE" != "true" ]; then
     if [ -n "$IMAGE" ]; then
         # Detect new packages
         NEW_PACKAGES=$(detect_new_packages "$CONTAINER_TAG" "$IMAGE")
-        PKG_COUNT=$(echo "$NEW_PACKAGES" | grep -c . 2>/dev/null || echo 0)
+        PKG_COUNT=$(echo "$NEW_PACKAGES" | grep -c . 2>/dev/null) || PKG_COUNT=0
         # Fix: grep -c can include newline in output
         PKG_COUNT=$(echo "$PKG_COUNT" | tr -d '[:space:]')
 
