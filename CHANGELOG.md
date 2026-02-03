@@ -1,3 +1,15 @@
+# [1.3.0](https://github.com/hertie-data-science-lab/ds01-infra/compare/v1.2.0...v1.3.0) (2026-02-03)
+
+
+### Bug Fixes
+
+* lib directory permissions and gitignore updates ([4bdb90d](https://github.com/hertie-data-science-lab/ds01-infra/commit/4bdb90d7e0708b8ea8fc8210fc607ac3fa8b7aaa))
+
+
+### Features
+
+* GPU awareness layer and access control (Phases 1-3.1) ([a8a5506](https://github.com/hertie-data-science-lab/ds01-infra/commit/a8a550676be01c33ec6377d9bb98248824190151))
+
 # [1.2.0](https://github.com/hertie-data-science-lab/ds01-infra/compare/v1.1.0...v1.2.0) (2026-01-30)
 
 
