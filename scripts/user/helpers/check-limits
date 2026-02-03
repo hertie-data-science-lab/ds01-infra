@@ -27,11 +27,12 @@ get_limits() {
     python3 "$SCRIPT_DIR/docker/get_resource_limits.py" "$USERNAME" 2>/dev/null
 }
 
-# Get current GPU allocations (MIG-equivalent count)
+# Get current GPU allocations (GPU/MIG slot count for display)
 get_gpu_usage() {
     local count
-    # Use gpu-state-reader user-mig-total for accurate MIG-equivalent count
-    count=$(python3 "$SCRIPT_DIR/docker/gpu-state-reader.py" user-mig-total "$USERNAME" 2>/dev/null) || count=0
+    # Use gpu-state-reader user-gpu-count for display-appropriate count
+    # (counts GPU slots, not MIG-equivalents - so 1 full GPU = 1, not 4)
+    count=$(python3 "$SCRIPT_DIR/docker/gpu-state-reader.py" user-gpu-count "$USERNAME" 2>/dev/null) || count=0
     echo "${count:-0}"
 }
 
@@ -135,15 +136,40 @@ main() {
     local container_count=$(get_container_count)
     local running_count=$(get_running_count)
 
+    # Auto-detect MIG vs full GPU mode
+    local mig_count=$(nvidia-smi -L 2>/dev/null | grep -c "MIG") || mig_count=0
+    local phys_gpu_count=$(nvidia-smi -L 2>/dev/null | grep -c "^GPU") || phys_gpu_count=4
+    local gpu_unit="GPU"
+    local gpu_units="GPUs"
+    local is_mig_mode=false
+    local system_gpu_total=$phys_gpu_count
+    if [[ "$mig_count" -gt 0 ]]; then
+        gpu_unit="MIG partition"
+        gpu_units="MIG partitions"
+        is_mig_mode=true
+        system_gpu_total=$mig_count
+    fi
+
+    # Cap max_mig to system's actual GPU/MIG count for display
+    # (user's config limit may exceed hardware available)
+    if [[ "$max_mig" != "unlimited" ]] && [[ "$max_mig" -gt "$system_gpu_total" ]]; then
+        max_mig=$system_gpu_total
+    fi
+
     # Display group
     echo -e "Your group: ${BOLD}$group${NC}"
     echo ""
 
     # GPU Usage
     echo -e "${BOLD}GPU Allocation:${NC}"
+    if [[ "$is_mig_mode" == true ]]; then
+        echo -e "  ${DIM}Mode: MIG (Multi-Instance GPU)${NC}"
+    else
+        echo -e "  ${DIM}Mode: Full GPUs${NC}"
+    fi
     echo -e "  ${BOLD}Total limit:${NC}"
     if [[ "$max_mig" == "unlimited" ]]; then
-        echo -e "    Current: $gpu_count GPUs/MIGs"
+        echo -e "    Current: $gpu_count $gpu_units"
         echo -n "    "
         usage_bar "$gpu_count" "unlimited"
     else
@@ -152,16 +178,18 @@ main() {
         [[ $remaining_quota -lt 0 ]] && remaining_quota=0
         echo -n "    "
         usage_bar "$gpu_count" "$max_mig"
-        echo -e "    Remaining quota: ${BOLD}$remaining_quota${NC} MIG partition(s)"
+        echo -e "    Remaining quota: ${BOLD}$remaining_quota${NC} $gpu_units"
     fi
 
-    echo -e "  ${BOLD}Per container:${NC} up to $max_gpus_per_container MIG partition(s)"
+    echo -e "  ${BOLD}Per container:${NC} up to $max_gpus_per_container $gpu_units"
 
-    # Full GPU access
-    if [[ "$allow_full_gpu" == "True" || "$allow_full_gpu" == "true" ]]; then
-        echo -e "  Full GPU access: ${GREEN}✓ Allowed${NC}"
-    else
-        echo -e "  Full GPU access: ${YELLOW}✗ MIG instances only${NC}"
+    # Full GPU access (only relevant in MIG mode)
+    if [[ "$is_mig_mode" == true ]]; then
+        if [[ "$allow_full_gpu" == "True" || "$allow_full_gpu" == "true" ]]; then
+            echo -e "  Full GPU access: ${GREEN}✓ Allowed${NC}"
+        else
+            echo -e "  Full GPU access: ${YELLOW}✗ MIG instances only${NC}"
+        fi
     fi
     echo ""
 
@@ -250,15 +278,15 @@ main() {
         local gpu_percent=$((gpu_count * 100 / max_mig))
         if [[ $gpu_count -ge $max_mig ]]; then
             echo -e "${RED}⚠ GPU LIMIT REACHED${NC}"
-            echo "  You have allocated all $max_mig of your allowed GPUs."
-            echo "  To get more GPUs, stop or remove a container first:"
+            echo "  You have allocated all $max_mig of your allowed $gpu_units."
+            echo "  To get more, stop or remove a container first:"
             echo "    container-list           # See your containers"
             echo "    container-retire <name>  # Free GPU and remove container"
             echo ""
             warnings=$((warnings + 1))
         elif [[ $gpu_percent -ge $SOFT_LIMIT_THRESHOLD ]]; then
             echo -e "${YELLOW}ℹ GPU USAGE HIGH${NC} (${gpu_percent}%)"
-            echo "  You're using $gpu_count of $max_mig GPUs."
+            echo "  You're using $gpu_count of $max_mig $gpu_units."
             echo "  Consider retiring idle containers to free resources."
             echo ""
             soft_warnings=$((soft_warnings + 1))
@@ -285,7 +313,8 @@ main() {
         fi
     fi
 
-    if [[ "$allow_full_gpu" != "True" && "$allow_full_gpu" != "true" ]]; then
+    # Only show full GPU hint in MIG mode
+    if [[ "$is_mig_mode" == true ]] && [[ "$allow_full_gpu" != "True" && "$allow_full_gpu" != "true" ]]; then
         if [[ "$VERBOSE" == "--verbose" || "$VERBOSE" == "-v" ]]; then
             echo -e "${BLUE}ℹ FULL GPU ACCESS${NC}"
             echo "  Your group ($group) can only use MIG instances, not full GPUs."

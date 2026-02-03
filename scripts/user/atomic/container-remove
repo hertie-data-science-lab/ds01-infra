@@ -315,7 +315,7 @@ cleanup_container() {
         if [ -n "$image" ]; then
             # Detect new packages (this may take a moment)
             local new_packages=$(detect_new_packages "$container_tag" "$image")
-            local pkg_count=$(echo "$new_packages" | grep -c . 2>/dev/null || echo "0")
+            local pkg_count=$(echo "$new_packages" | grep -c . 2>/dev/null) || pkg_count=0
 
             # Only show prompt if new packages were detected
             if [ "$pkg_count" -gt 0 ]; then

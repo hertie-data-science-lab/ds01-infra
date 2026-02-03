@@ -17,7 +17,7 @@
 #   user-overrides.yaml (custom limits)
 #
 # 4-TIER GROUP MODEL:
-#   student    → MIG only, 32 CPUs, 32GB (default)
+#   student    → Full GPU (MIG disabled), 32 CPUs, 32GB (default)
 #   researcher → Full GPU access, 64 CPUs, 128GB (PhD students, staff)
 #   faculty    → Full GPU access, 64 CPUs, 128GB (professors)
 #   admin      → Unlimited (datasciencelab only)
@@ -66,7 +66,7 @@ groups:
   student:
     # Members: config/groups/student.members
     # Note: Users not in any group file default to 'student' via default_group
-    allow_full_gpu: false
+    allow_full_gpu: true            # MIG disabled on hardware — students need full GPU access
     max_mig_per_container: 3
 
   researcher:
@@ -224,6 +224,28 @@ monitoring:
   # Label that marks a container as protected infrastructure
   # Containers with ds01.protected=true are excluded from unmanaged detection
   infrastructure_label: "ds01.protected"
+
+# === Bare metal GPU access ===
+# Controls who can use GPUs directly on the host (outside containers)
+# See: config/deploy/profile.d/ds01-gpu-awareness.sh
+bare_metal_access:
+  exempt_users:                     # Users permanently exempt from CUDA_VISIBLE_DEVICES="" block
+    - datasciencelab
+  admin_group: ds01-admin           # Group with admin privileges for bare-metal-access CLI
+  default_grant_duration: 24h       # Default duration for temporary grants
+  state_dir: /var/lib/ds01/bare-metal-grants  # Grant state files (JSON, one per user)
+
+# === Access control ===
+# Docker wrapper user isolation and admin bypass settings
+# See: scripts/docker/docker-wrapper.sh
+access_control:
+  admin_users:                      # Users who bypass all isolation checks
+    - datasciencelab
+  admin_group: ds01-admin           # Group that bypasses all isolation checks
+  wrapper:
+    enforcement_mode: full          # disabled, monitoring, full
+    debug_level: 0                  # 0=off, 1=interceptions, 2=all invocations
+    unknown_commands: allow          # allow or deny unrecognised Docker commands
 
 # REMOVED SECTIONS:
 # - advanced: None of these settings are implemented

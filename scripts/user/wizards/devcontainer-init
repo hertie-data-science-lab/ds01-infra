@@ -594,7 +594,7 @@ esac
 # Check GPU quota if requesting GPU
 if [ "$GPU_MODE" != "none" ] && [ -f "$GPU_ALLOCATOR" ] && [ -f "$RESOURCE_PARSER" ]; then
     # Get current usage (simplified check)
-    CURRENT_USAGE=$(python3 "$GPU_ALLOCATOR" status 2>/dev/null | grep -c "$USERNAME" || echo "0")
+    CURRENT_USAGE=$(python3 "$GPU_ALLOCATOR" status 2>/dev/null | grep -c "$USERNAME") || CURRENT_USAGE=0
     MAX_ALLOWED=$(python3 "$RESOURCE_PARSER" "$USERNAME" --max-mig-instances 2>/dev/null || echo "2")
 
     if [ "$CURRENT_USAGE" -ge "$MAX_ALLOWED" ] 2>/dev/null; then

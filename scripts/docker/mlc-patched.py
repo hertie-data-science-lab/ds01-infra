@@ -2562,7 +2562,12 @@ def main():
             # Delete the container
             print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}deleting container ...{RESET}")
             docker_command_delete_container = f"docker container rm {selected_container_tag}"
-            subprocess.Popen(docker_command_delete_container, shell=True, text=True, stdout=subprocess.PIPE).wait()
+            exit_code = subprocess.Popen(docker_command_delete_container, shell=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait()
+
+            if exit_code != 0:
+                print(f"\n{ERROR}Failed to remove container {selected_container_name}.{RESET}")
+                print(f"{ERROR}The container may still be running or have dependent resources.{RESET}\n")
+                sys.exit(1)
 
             # Delete the container's image (only if --remove-image flag is set)
             if hasattr(args, 'remove_image') and args.remove_image:

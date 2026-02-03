@@ -182,6 +182,28 @@ show_bare_metal_warning() {
     echo ""
 }
 
+# Show bare metal access restricted message (for nvidia-* wrapper denials)
+show_bare_metal_restricted() {
+    echo ""
+    echo -e "${RED}+------------------------------------------------------------+${NC}"
+    echo -e "${RED}|${NC}  ${BOLD}Bare Metal GPU Access Restricted${NC}                         ${RED}|${NC}"
+    echo -e "${RED}+------------------------------------------------------------+${NC}"
+    echo ""
+    echo "  This server uses container-only GPU access by default."
+    echo ""
+    echo -e "  ${BOLD}To use GPUs, create a container:${NC}"
+    echo "    container deploy my-project"
+    echo ""
+    echo -e "  ${BOLD}Check your access status:${NC}"
+    echo "    bare-metal-access status"
+    echo ""
+    echo "  Need temporary access? Raise a ticket:"
+    echo "    https://github.com/hertie-data-science-lab/ds01-hub/issues"
+    echo ""
+    echo "  Note: Access changes require a new SSH session to take effect."
+    echo ""
+}
+
 # Show quota warning
 show_quota_warning() {
     local usage_percent="${1:-0}"
@@ -209,4 +231,4 @@ show_quota_warning() {
 }
 
 # Export functions
-export -f show_contact_info show_limit_error show_bare_metal_warning show_quota_warning
+export -f show_contact_info show_limit_error show_bare_metal_warning show_bare_metal_restricted show_quota_warning

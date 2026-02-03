@@ -1,0 +1,840 @@
+#!/bin/bash
+# /opt/ds01-infra/scripts/monitoring/ds01-workloads
+# DS01 Unified Workload Query Tool
+#
+# Queries the workload inventory file produced by detect-workloads.py
+# and presents results in multiple formats.
+#
+# Usage:
+#   ds01-workloads                      # Default compact table
+#   ds01-workloads --wide               # Wide table with additional columns
+#   ds01-workloads --by-user            # Group by user
+#   ds01-workloads --json               # Raw JSON output
+#   ds01-workloads --user alice         # Filter by user
+#   ds01-workloads --type ds01-managed  # Filter by type
+#   ds01-workloads --gpu-only           # Only GPU workloads
+
+set -e
+
+# Source shared library for paths and colours
+source /opt/ds01-infra/scripts/lib/init.sh
+
+# Configuration
+INVENTORY_FILE="/var/lib/ds01/workload-inventory.json"
+
+# ============================================================================
+# Helper Functions
+# ============================================================================
+
+# Check dependencies
+check_dependencies() {
+    if ! command -v jq &> /dev/null; then
+        echo -e "${RED}Error: jq is required but not installed${NC}"
+        echo "Install with: sudo apt-get install jq"
+        exit 1
+    fi
+}
+
+# Check if inventory file exists
+check_inventory() {
+    if [[ ! -f "$INVENTORY_FILE" ]]; then
+        echo -e "${YELLOW}No workload inventory found.${NC}"
+        echo ""
+        echo "The workload detector may not be running yet."
+        echo "Check status with: systemctl status ds01-workload-detector.timer"
+        echo ""
+        exit 0
+    fi
+}
+
+# Calculate age from ISO 8601 timestamp
+calculate_age() {
+    local timestamp="$1"
+    local now_epoch
+    local then_epoch
+    local diff
+
+    now_epoch=$(date +%s)
+    then_epoch=$(date -d "$timestamp" +%s 2>/dev/null || echo "$now_epoch")
+    diff=$((now_epoch - then_epoch))
+
+    if [[ $diff -lt 60 ]]; then
+        echo "${diff}s"
+    elif [[ $diff -lt 3600 ]]; then
+        echo "$((diff / 60))m"
+    elif [[ $diff -lt 86400 ]]; then
+        echo "$((diff / 3600))h"
+    else
+        echo "$((diff / 86400))d"
+    fi
+}
+
+# Format GPU devices for display
+format_gpu_devices() {
+    local devices="$1"
+    if [[ -z "$devices" || "$devices" == "[]" || "$devices" == "null" ]]; then
+        echo "-"
+    else
+        # Remove brackets and quotes, join with commas
+        echo "$devices" | jq -r 'join(", ")' 2>/dev/null || echo "$devices"
+    fi
+}
+
+# Colorize origin/type column
+colorize_type() {
+    local green=$'\033[0;32m'
+    local yellow=$'\033[1;33m'
+    local red=$'\033[0;31m'
+    local nc=$'\033[0m'
+    sed -E \
+        -e "s/ds01-managed/${green}ds01-managed${nc}/g" \
+        -e "s/devcontainer/${yellow}devcontainer${nc}/g" \
+        -e "s/compose/${yellow}compose${nc}/g" \
+        -e "s/raw-docker/${red}raw-docker${nc}/g" \
+        -e "s/host-process/${red}host-process${nc}/g"
+}
+
+# ============================================================================
+# Help Functions
+# ============================================================================
+
+cmd_help() {
+    cat << 'EOF'
+DS01 Workload Query Tool
+
+USAGE:
+    ds01-workloads [OPTIONS]
+
+DISPLAY MODES:
+    (default)           Compact table view
+    --wide, -w          Show additional columns (ID, Image, CPU%, Memory)
+    --by-user           Group workloads by user
+    --json              Raw JSON output (for scripting)
+
+FILTERS:
+    --user NAME         Filter by user
+    --type TYPE         Filter by type (ds01-managed, devcontainer, compose, raw-docker)
+    --gpu-only          Show only GPU workloads
+    --all               Include stopped/exited (default: running only)
+
+HELP:
+    --help, -h          Show this help
+    --info              Full reference with examples
+    --concepts          Educational content on workload detection
+    --guided            Interactive help
+
+EXAMPLES:
+    ds01-workloads                          # All running workloads
+    ds01-workloads --gpu-only               # GPU workloads only
+    ds01-workloads --user alice             # Alice's workloads
+    ds01-workloads --type raw-docker        # Unmanaged containers
+    ds01-workloads --wide --by-user         # Wide view grouped by user
+    ds01-workloads --json | jq .            # JSON output for scripting
+
+EOF
+}
+
+cmd_info() {
+    cat << 'EOF'
+DS01 Workload Query Tool - Full Reference
+
+DISPLAY MODES:
+
+  (default)
+      Compact table with essential columns:
+      TYPE | USER | GPU(S) | STATUS | AGE | NAME
+
+  --wide, -w
+      Add ID, IMAGE, CPU%, MEM columns
+      Live CPU/Memory stats shown for running containers only
+      Note: Fetching live stats adds ~1s overhead
+
+  --by-user
+      Group workloads under user headings
+      Shows workload count and GPU count per user
+      Can be combined with --wide
+
+  --json
+      Output raw inventory JSON
+      Suitable for piping to jq or other tools
+      Filters are applied before output
+
+FILTERS:
+
+  --user NAME
+      Show only workloads owned by this user
+      Example: --user alice
+
+  --type TYPE
+      Show only workloads of this type
+      Valid types: ds01-managed, devcontainer, compose, raw-docker
+      Example: --type raw-docker
+
+  --gpu-only
+      Show only workloads with GPU access
+      Includes both containers and host processes
+
+  --all
+      Include stopped/exited containers
+      Default: running containers only
+
+FILTER LOGIC:
+
+  Filters combine with AND logic.
+  Example: --user alice --gpu-only
+           → Alice's GPU workloads only
+
+OUTPUT COLUMNS:
+
+  TYPE       Origin classification (see --concepts)
+  USER       Owner username
+  GPU(S)     Allocated GPU devices (or "-" if none)
+  STATUS     Container status (running, exited, etc.) or "active" for host processes
+  AGE        Time since detection (e.g., "2h", "45m")
+  NAME       Container name or process command line
+  ID         Container ID (12 chars) or PID (--wide only)
+  IMAGE      Container image (--wide only)
+  CPU%       Live CPU usage (--wide only, running containers)
+  MEM        Live memory usage (--wide only, running containers)
+
+INVENTORY FILE:
+
+  Location: /var/lib/ds01/workload-inventory.json
+  Updated by: ds01-workload-detector.timer (every 30s)
+  Contents: All containers + host GPU processes
+
+RELATED COMMANDS:
+
+  systemctl status ds01-workload-detector.timer    # Check scanner status
+  ds01-events --type detection                     # Detection events
+
+EOF
+}
+
+cmd_concepts() {
+    cat << 'EOF'
+DS01 Workload Detection - Architecture and Concepts
+
+WHAT IS WORKLOAD DETECTION?
+
+  DS01's awareness layer detects ALL GPU workloads on the system,
+  regardless of how they were created. This provides visibility into:
+  - DS01-managed containers (via container deploy/launch)
+  - VS Code devcontainers
+  - Docker Compose services
+  - Direct `docker run` commands
+  - Bare-metal GPU processes (Python scripts, etc.)
+
+WHY DETECT EVERYTHING?
+
+  Full GPU control requires complete visibility. Users might:
+  - Launch containers outside DS01 workflows
+  - Run GPU scripts directly on host
+  - Use VS Code Remote Containers for development
+
+  Detection enables:
+  - Admin visibility into all GPU usage
+  - Future enforcement on unmanaged workloads
+  - Resource accounting and attribution
+
+CONTAINER CLASSIFICATION:
+
+  Containers are classified by origin using Docker labels:
+
+  1. ds01-managed
+     - Created via DS01 commands (container deploy, project-launch)
+     - Has ds01.managed=true label
+     - Subject to DS01 resource limits and enforcement
+
+  2. devcontainer
+     - VS Code Remote Containers
+     - Has devcontainer.* labels or name starts with "vsc-"
+     - Likely development environments
+
+  3. compose
+     - Docker Compose services
+     - Has com.docker.compose.project label
+     - Multi-container applications
+
+  4. raw-docker
+     - Direct docker run or API-created
+     - No recognisable labels
+     - Unknown origin
+
+HOST PROCESS DETECTION:
+
+  GPU processes running directly on host (not in containers) are detected via:
+  1. nvidia-smi --query-compute-apps (active GPU usage)
+  2. /proc/{pid}/cgroup (verify not containerised)
+  3. /proc/{pid}/status (owner attribution)
+
+  System processes excluded:
+  - nvidia-persistenced, dcgm, nvidia-smi, Xorg, etc.
+
+  Transient filtering:
+  - Processes must persist for 2 scans (60s) before appearing
+  - Prevents noise from brief nvidia-smi calls, etc.
+
+INVENTORY SEMANTICS:
+
+  The inventory is near-real-time (max 30s lag):
+  - Scanner runs every 30s via systemd timer
+  - Inventory reflects state at last scan
+  - New workloads appear within 60s (transient threshold)
+
+  Inventory includes ALL containers (running AND stopped):
+  - Provides lifecycle visibility
+  - Shows stopped GPU containers still holding resources
+
+WHY THIS MATTERS:
+
+  Phase 2 (Awareness) focuses on detection without enforcement.
+  Phase 3+ will use this data for:
+  - Automated labelling of unmanaged containers
+  - Policy enforcement on raw-docker containers
+  - Resource attribution and accounting
+
+RELATED FILES:
+
+  /opt/ds01-infra/scripts/monitoring/detect-workloads.py     Scanner
+  /var/lib/ds01/workload-inventory.json                      Inventory
+  /etc/systemd/system/ds01-workload-detector.timer          Scheduler
+  /var/log/ds01/events.jsonl                                 Events
+
+EOF
+}
+
+cmd_guided() {
+    echo -e "${BOLD}DS01 Workload Query - Guided Mode${NC}\n"
+
+    echo "What would you like to see?"
+    echo "  1) All GPU workloads"
+    echo "  2) Workloads for a specific user"
+    echo "  3) Unmanaged containers only (raw-docker)"
+    echo "  4) Host GPU processes only"
+    echo "  5) Export as JSON"
+    echo ""
+    read -rp "Select (1-5): " choice
+
+    case "$choice" in
+        1)
+            echo -e "\n${GREEN}Running:${NC} ds01-workloads --gpu-only"
+            exec "$0" --gpu-only
+            ;;
+        2)
+            read -rp "Username: " username
+            echo -e "\n${GREEN}Running:${NC} ds01-workloads --user $username"
+            exec "$0" --user "$username"
+            ;;
+        3)
+            echo -e "\n${GREEN}Running:${NC} ds01-workloads --type raw-docker"
+            exec "$0" --type raw-docker
+            ;;
+        4)
+            echo -e "\n${GREEN}Showing host GPU processes${NC}"
+            echo "(Note: Containers classified as 'host-process' don't exist - filtering host_processes)"
+            exec "$0" --json | jq -r '.host_processes | to_entries[] | .value'
+            ;;
+        5)
+            echo -e "\n${GREEN}Running:${NC} ds01-workloads --json"
+            exec "$0" --json
+            ;;
+        *)
+            echo "Invalid choice"
+            exit 1
+            ;;
+    esac
+}
+
+# ============================================================================
+# Query Functions
+# ============================================================================
+
+# Build jq filter expression
+build_jq_filter() {
+    local filters=()
+
+    # User filter
+    if [[ -n "$OPT_USER" ]]; then
+        filters+=("(.user == \"$OPT_USER\")")
+    fi
+
+    # Type filter (for containers only, host processes are always "host-process")
+    if [[ -n "$OPT_TYPE" ]]; then
+        filters+=("(.origin == \"$OPT_TYPE\")")
+    fi
+
+    # GPU filter
+    if [[ "$OPT_GPU_ONLY" == "true" ]]; then
+        filters+=("(.has_gpu == true or .gpu_memory_mb != null)")
+    fi
+
+    # Status filter (exclude stopped unless --all)
+    if [[ "$OPT_ALL" != "true" ]]; then
+        filters+=("(.status == \"running\" or .status == null)")
+    fi
+
+    # Combine with AND logic
+    if [[ ${#filters[@]} -eq 0 ]]; then
+        echo "true"
+    else
+        local combined
+        combined=$(IFS=" and "; echo "${filters[*]}")
+        echo "$combined"
+    fi
+}
+
+# Default compact table view
+cmd_default_table() {
+    check_inventory
+
+    local filter
+    filter=$(build_jq_filter)
+
+    # Extract and format data
+    local temp_data
+    temp_data=$(mktemp)
+
+    # Merge containers and host processes into unified stream
+    jq -r --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+        .containers // {} | to_entries[] | .value | select('"$filter"') |
+        {
+            type: .origin,
+            user: .user,
+            gpus: (if .gpu_devices | length > 0 then .gpu_devices | join(", ") else "-" end),
+            status: .status,
+            detected_at: (.detected_at // $now),
+            name: .name
+        } | @json
+    ' "$INVENTORY_FILE" > "$temp_data" 2>/dev/null || true
+
+    jq -r --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+        .host_processes // {} | to_entries[] | .value |
+        {
+            type: "host-process",
+            user: .user,
+            gpus: ((.gpu_memory_mb | tostring) + "MB"),
+            status: "active",
+            detected_at: (.detected_at // $now),
+            name: (.cmdline // "")
+        } | @json
+    ' "$INVENTORY_FILE" >> "$temp_data" 2>/dev/null || true
+
+    # Count results
+    local count
+    count=$(wc -l < "$temp_data")
+
+    if [[ $count -eq 0 ]]; then
+        echo "No workloads found"
+        rm -f "$temp_data"
+        exit 0
+    fi
+
+    # Print header
+    printf "${BOLD}%-16s %-20s %-14s %-10s %-6s %s${NC}\n" \
+        "TYPE" "USER" "GPU(S)" "STATUS" "AGE" "NAME"
+    printf "%-16s %-20s %-14s %-10s %-6s %s\n" \
+        "----------------" "--------------------" "--------------" "----------" "------" "------------------------------"
+
+    # Print rows with age calculation and colorization
+    while IFS= read -r line; do
+        local type user gpus status detected_at name age
+        type=$(echo "$line" | jq -r '.type')
+        user=$(echo "$line" | jq -r '.user' | cut -c1-20)
+        gpus=$(echo "$line" | jq -r '.gpus' | cut -c1-14)
+        status=$(echo "$line" | jq -r '.status')
+        detected_at=$(echo "$line" | jq -r '.detected_at')
+        name=$(echo "$line" | jq -r '.name' | cut -c1-30)
+
+        age=$(calculate_age "$detected_at")
+
+        printf "%-16s %-20s %-14s %-10s %-6s %s\n" \
+            "$type" "$user" "$gpus" "$status" "$age" "$name"
+    done < "$temp_data" | colorize_type
+
+    # Summary line
+    local container_count gpu_container_count process_count last_scan
+    container_count=$(jq -r '.containers // {} | length' "$INVENTORY_FILE")
+    gpu_container_count=$(jq -r '.containers // {} | to_entries[] | select(.value.has_gpu == true) | .key' "$INVENTORY_FILE" | wc -l)
+    process_count=$(jq -r '.host_processes // {} | length' "$INVENTORY_FILE")
+    last_scan=$(jq -r '.last_scan // "unknown"' "$INVENTORY_FILE")
+
+    echo ""
+    echo -e "${DIM}$container_count containers ($gpu_container_count with GPU), $process_count host GPU processes — last scan: $last_scan${NC}"
+
+    rm -f "$temp_data"
+}
+
+# Wide table view
+cmd_wide_table() {
+    check_inventory
+
+    local filter
+    filter=$(build_jq_filter)
+
+    # Get live docker stats for running containers (single call for efficiency)
+    local stats_file
+    stats_file=$(mktemp)
+
+    # Fetch stats only if we have running containers
+    if docker ps --format '{{.ID}}' 2>/dev/null | head -1 > /dev/null 2>&1; then
+        docker stats --no-stream --format '{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null > "$stats_file" || true
+    fi
+
+    # Extract and format data
+    local temp_data
+    temp_data=$(mktemp)
+
+    # Merge containers and host processes
+    jq -r --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+        .containers // {} | to_entries[] | .value | select('"$filter"') |
+        {
+            type: .origin,
+            user: .user,
+            gpus: (if .gpu_devices | length > 0 then .gpu_devices | join(", ") else "-" end),
+            status: .status,
+            detected_at: (.detected_at // $now),
+            id: .id,
+            name: .name,
+            image: .image,
+            is_container: true
+        } | @json
+    ' "$INVENTORY_FILE" > "$temp_data" 2>/dev/null || true
+
+    jq -r --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+        .host_processes // {} | to_entries[] | .value |
+        {
+            type: "host-process",
+            user: .user,
+            gpus: ((.gpu_memory_mb | tostring) + "MB"),
+            status: "active",
+            detected_at: (.detected_at // $now),
+            id: ("PID:" + (.pid | tostring)),
+            name: (.cmdline // ""),
+            image: "-",
+            is_container: false
+        } | @json
+    ' "$INVENTORY_FILE" >> "$temp_data" 2>/dev/null || true
+
+    # Count results
+    local count
+    count=$(wc -l < "$temp_data")
+
+    if [[ $count -eq 0 ]]; then
+        echo "No workloads found"
+        rm -f "$temp_data" "$stats_file"
+        exit 0
+    fi
+
+    # Print header
+    printf "${BOLD}%-16s %-20s %-14s %-10s %-6s %-13s %-24s %-24s %-7s %s${NC}\n" \
+        "TYPE" "USER" "GPU(S)" "STATUS" "AGE" "ID" "NAME" "IMAGE" "CPU%" "MEM"
+    printf "%-16s %-20s %-14s %-10s %-6s %-13s %-24s %-24s %-7s %s\n" \
+        "----------------" "--------------------" "--------------" "----------" "------" "-------------" "------------------------" "------------------------" "-------" "--------"
+
+    # Print rows
+    while IFS= read -r line; do
+        local type user gpus status detected_at id name image is_container age
+        type=$(echo "$line" | jq -r '.type')
+        user=$(echo "$line" | jq -r '.user' | cut -c1-20)
+        gpus=$(echo "$line" | jq -r '.gpus' | cut -c1-14)
+        status=$(echo "$line" | jq -r '.status')
+        detected_at=$(echo "$line" | jq -r '.detected_at')
+        id=$(echo "$line" | jq -r '.id' | cut -c1-13)
+        name=$(echo "$line" | jq -r '.name' | cut -c1-24)
+        image=$(echo "$line" | jq -r '.image' | cut -c1-24)
+        is_container=$(echo "$line" | jq -r '.is_container')
+
+        age=$(calculate_age "$detected_at")
+
+        # Lookup CPU/Memory if running container
+        local cpu_pct mem_usage
+        if [[ "$is_container" == "true" && "$status" == "running" ]]; then
+            cpu_pct=$(grep "^$id" "$stats_file" 2>/dev/null | cut -f2 || echo "-")
+            mem_usage=$(grep "^$id" "$stats_file" 2>/dev/null | cut -f3 | awk '{print $1}' || echo "-")
+        else
+            cpu_pct="-"
+            mem_usage="-"
+        fi
+
+        printf "%-16s %-20s %-14s %-10s %-6s %-13s %-24s %-24s %-7s %s\n" \
+            "$type" "$user" "$gpus" "$status" "$age" "$id" "$name" "$image" "$cpu_pct" "$mem_usage"
+    done < "$temp_data" | colorize_type
+
+    # Summary line
+    local container_count gpu_container_count process_count last_scan
+    container_count=$(jq -r '.containers // {} | length' "$INVENTORY_FILE")
+    gpu_container_count=$(jq -r '.containers // {} | to_entries[] | select(.value.has_gpu == true) | .key' "$INVENTORY_FILE" | wc -l)
+    process_count=$(jq -r '.host_processes // {} | length' "$INVENTORY_FILE")
+    last_scan=$(jq -r '.last_scan // "unknown"' "$INVENTORY_FILE")
+
+    echo ""
+    echo -e "${DIM}$container_count containers ($gpu_container_count with GPU), $process_count host GPU processes — last scan: $last_scan${NC}"
+
+    rm -f "$temp_data" "$stats_file"
+}
+
+# By-user view
+cmd_by_user() {
+    check_inventory
+
+    local filter
+    filter=$(build_jq_filter)
+
+    # Check for --wide flag to determine columns
+    local show_wide="$OPT_WIDE"
+
+    # Get live docker stats if wide mode
+    local stats_file
+    if [[ "$show_wide" == "true" ]]; then
+        stats_file=$(mktemp)
+        if docker ps --format '{{.ID}}' 2>/dev/null | head -1 > /dev/null 2>&1; then
+            docker stats --no-stream --format '{{.ID}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null > "$stats_file" || true
+        fi
+    fi
+
+    # Build user-grouped data structure
+    local users_file
+    users_file=$(mktemp)
+
+    # Get unique users and sort (unknown last)
+    jq -r '
+        [
+            (.containers // {} | to_entries[] | .value | select('"$filter"') | .user),
+            (.host_processes // {} | to_entries[] | .value | .user)
+        ] | unique | .[]
+    ' "$INVENTORY_FILE" 2>/dev/null | sort | grep -v "^unknown$" > "$users_file" || true
+
+    # Add unknown at end if exists
+    jq -r '
+        [
+            (.containers // {} | to_entries[] | .value | select('"$filter"') | .user),
+            (.host_processes // {} | to_entries[] | .value | .user)
+        ] | unique | .[]
+    ' "$INVENTORY_FILE" 2>/dev/null | grep "^unknown$" >> "$users_file" || true
+
+    local total_users
+    total_users=$(wc -l < "$users_file")
+
+    if [[ $total_users -eq 0 ]]; then
+        echo "No workloads found"
+        rm -f "$users_file"
+        [[ -n "$stats_file" ]] && rm -f "$stats_file"
+        exit 0
+    fi
+
+    # Process each user
+    while IFS= read -r username; do
+        # Count workloads and GPUs for this user
+        local workload_count gpu_count
+
+        workload_count=$(jq -r '
+            [
+                (.containers // {} | to_entries[] | .value | select('"$filter"' and .user == "'"$username"'")),
+                (.host_processes // {} | to_entries[] | .value | select(.user == "'"$username"'"))
+            ] | length
+        ' "$INVENTORY_FILE")
+
+        gpu_count=$(jq -r '
+            [
+                (.containers // {} | to_entries[] | .value | select('"$filter"' and .user == "'"$username"'" and .has_gpu == true) | .gpu_devices | length),
+                (.host_processes // {} | to_entries[] | .value | select(.user == "'"$username"'") | 1)
+            ] | add // 0
+        ' "$INVENTORY_FILE")
+
+        echo -e "\n${BOLD}${username}${NC} (${workload_count} workloads, ${gpu_count} GPUs)"
+
+        # Print header based on wide mode
+        if [[ "$show_wide" == "true" ]]; then
+            printf "  ${BOLD}%-16s %-14s %-10s %-6s %-13s %-24s %-24s %-7s %s${NC}\n" \
+                "TYPE" "GPU(S)" "STATUS" "AGE" "ID" "NAME" "IMAGE" "CPU%" "MEM"
+            printf "  %-16s %-14s %-10s %-6s %-13s %-24s %-24s %-7s %s\n" \
+                "----------------" "--------------" "----------" "------" "-------------" "------------------------" "------------------------" "-------" "--------"
+        else
+            printf "  ${BOLD}%-16s %-14s %-10s %-6s %s${NC}\n" \
+                "TYPE" "GPU(S)" "STATUS" "AGE" "NAME"
+            printf "  %-16s %-14s %-10s %-6s %s\n" \
+                "----------------" "--------------" "----------" "------" "------------------------------"
+        fi
+
+        # Extract workloads for this user
+        local temp_user_data
+        temp_user_data=$(mktemp)
+
+        jq -r --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg user "$username" '
+            .containers // {} | to_entries[] | .value | select('"$filter"' and .user == $user) |
+            {
+                type: .origin,
+                gpus: (if .gpu_devices | length > 0 then .gpu_devices | join(", ") else "-" end),
+                status: .status,
+                detected_at: (.detected_at // $now),
+                id: .id,
+                name: .name,
+                image: .image,
+                is_container: true
+            } | @json
+        ' "$INVENTORY_FILE" > "$temp_user_data" 2>/dev/null || true
+
+        jq -r --arg now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg user "$username" '
+            .host_processes // {} | to_entries[] | .value | select(.user == $user) |
+            {
+                type: "host-process",
+                gpus: ((.gpu_memory_mb | tostring) + "MB"),
+                status: "active",
+                detected_at: (.detected_at // $now),
+                id: ("PID:" + (.pid | tostring)),
+                name: (.cmdline // ""),
+                image: "-",
+                is_container: false
+            } | @json
+        ' "$INVENTORY_FILE" >> "$temp_user_data" 2>/dev/null || true
+
+        # Print workloads
+        while IFS= read -r line; do
+            local type gpus status detected_at id name image is_container age
+            type=$(echo "$line" | jq -r '.type')
+            gpus=$(echo "$line" | jq -r '.gpus')
+            status=$(echo "$line" | jq -r '.status')
+            detected_at=$(echo "$line" | jq -r '.detected_at')
+            age=$(calculate_age "$detected_at")
+
+            if [[ "$show_wide" == "true" ]]; then
+                id=$(echo "$line" | jq -r '.id' | cut -c1-13)
+                name=$(echo "$line" | jq -r '.name' | cut -c1-24)
+                image=$(echo "$line" | jq -r '.image' | cut -c1-24)
+                is_container=$(echo "$line" | jq -r '.is_container')
+
+                # Lookup CPU/Memory if running container
+                local cpu_pct mem_usage
+                if [[ "$is_container" == "true" && "$status" == "running" ]]; then
+                    cpu_pct=$(grep "^$id" "$stats_file" 2>/dev/null | cut -f2 || echo "-")
+                    mem_usage=$(grep "^$id" "$stats_file" 2>/dev/null | cut -f3 | awk '{print $1}' || echo "-")
+                else
+                    cpu_pct="-"
+                    mem_usage="-"
+                fi
+
+                printf "  %-16s %-14s %-10s %-6s %-13s %-24s %-24s %-7s %s\n" \
+                    "$type" "$gpus" "$status" "$age" "$id" "$name" "$image" "$cpu_pct" "$mem_usage"
+            else
+                name=$(echo "$line" | jq -r '.name' | cut -c1-30)
+                printf "  %-16s %-14s %-10s %-6s %s\n" \
+                    "$type" "$gpus" "$status" "$age" "$name"
+            fi
+        done < "$temp_user_data" | colorize_type
+
+        rm -f "$temp_user_data"
+
+    done < "$users_file"
+
+    # Overall summary
+    local container_count gpu_container_count process_count last_scan
+    container_count=$(jq -r '.containers // {} | length' "$INVENTORY_FILE")
+    gpu_container_count=$(jq -r '.containers // {} | to_entries[] | select(.value.has_gpu == true) | .key' "$INVENTORY_FILE" | wc -l)
+    process_count=$(jq -r '.host_processes // {} | length' "$INVENTORY_FILE")
+    last_scan=$(jq -r '.last_scan // "unknown"' "$INVENTORY_FILE")
+
+    echo ""
+    echo -e "${DIM}$container_count containers ($gpu_container_count with GPU), $process_count host GPU processes — last scan: $last_scan${NC}"
+
+    rm -f "$users_file"
+    [[ -n "$stats_file" ]] && rm -f "$stats_file"
+}
+
+# JSON output mode
+cmd_json() {
+    check_inventory
+
+    local filter
+    filter=$(build_jq_filter)
+
+    # Output filtered JSON
+    jq '{
+        last_scan: .last_scan,
+        containers: (.containers // {} | to_entries | map(select(.value | '"$filter"')) | from_entries),
+        host_processes: .host_processes
+    }' "$INVENTORY_FILE"
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+# Check dependencies first (before parsing args, so --help works)
+if [[ "$1" != "--help" && "$1" != "-h" && "$1" != "--info" && "$1" != "--concepts" && "$1" != "--guided" ]]; then
+    check_dependencies
+fi
+
+# Parse options
+OPT_WIDE="false"
+OPT_BY_USER="false"
+OPT_JSON="false"
+OPT_USER=""
+OPT_TYPE=""
+OPT_GPU_ONLY="false"
+OPT_ALL="false"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --wide|-w)
+            OPT_WIDE="true"
+            shift
+            ;;
+        --by-user)
+            OPT_BY_USER="true"
+            shift
+            ;;
+        --json)
+            OPT_JSON="true"
+            shift
+            ;;
+        --user)
+            OPT_USER="$2"
+            shift 2
+            ;;
+        --type)
+            OPT_TYPE="$2"
+            shift 2
+            ;;
+        --gpu-only)
+            OPT_GPU_ONLY="true"
+            shift
+            ;;
+        --all)
+            OPT_ALL="true"
+            shift
+            ;;
+        --help|-h)
+            cmd_help
+            exit 0
+            ;;
+        --info)
+            cmd_info
+            exit 0
+            ;;
+        --concepts)
+            cmd_concepts
+            exit 0
+            ;;
+        --guided)
+            cmd_guided
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Run 'ds01-workloads --help' for usage"
+            exit 1
+            ;;
+    esac
+done
+
+# Execute command based on mode
+if [[ "$OPT_JSON" == "true" ]]; then
+    cmd_json
+elif [[ "$OPT_BY_USER" == "true" ]]; then
+    cmd_by_user
+elif [[ "$OPT_WIDE" == "true" ]]; then
+    cmd_wide_table
+else
+    cmd_default_table
+fi

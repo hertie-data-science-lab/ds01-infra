@@ -62,13 +62,17 @@ services:
       - "ds01.protected=true"
       - "ds01.description=System metrics (CPU, memory, disk, network)"
 
+  # DCGM Exporter - restart lifecycle managed by systemd service
+  # See: config/deploy/systemd/ds01-dcgm-exporter.service
+  # docker-compose creates the container; systemd manages restarts
+  #
   # NVIDIA DCGM Exporter - Fast GPU metrics via native driver integration
   # Provides: utilization, memory, temperature, power, MIG metrics
   # Uses dcp-metrics-included.csv for MIG-compatible profiling metrics (GR_ENGINE_ACTIVE)
   dcgm-exporter:
     image: nvcr.io/nvidia/k8s/dcgm-exporter:3.3.0-3.2.0-ubuntu22.04
     container_name: ds01-dcgm-exporter
-    restart: unless-stopped
+    restart: "no"
     deploy:
       resources:
         reservations:
@@ -168,7 +172,7 @@ services:
 
   # Alertmanager - Alert routing and notifications
   alertmanager:
-    image: prom/alertmanager:v0.26.0
+    image: prom/alertmanager:v0.28.1
     container_name: ds01-alertmanager
     restart: unless-stopped
     ports:

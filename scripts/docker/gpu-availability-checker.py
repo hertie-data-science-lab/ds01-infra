@@ -25,6 +25,19 @@ class GPUAvailabilityChecker:
     def __init__(self):
         self.state_reader = GPUStateReader()
 
+    def _get_nvidia_smi_output(self) -> str:
+        """Get nvidia-smi -L output. Device permissions are 0666 so all users can query."""
+        try:
+            result = subprocess.run(
+                ["/usr/bin/nvidia-smi", "-L"],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            return result.stdout
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return ""
+
     def _get_all_mig_instances(self) -> Dict[str, Dict]:
         """
         Get all available MIG instances from nvidia-smi.
@@ -32,16 +45,13 @@ class GPUAvailabilityChecker:
         """
         mig_instances = {}
 
-        try:
-            result = subprocess.run(
-                ["nvidia-smi", "-L"],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+        nvidia_output = self._get_nvidia_smi_output()
+        if not nvidia_output:
+            return mig_instances
 
+        try:
             current_gpu = None
-            for line in result.stdout.split('\n'):
+            for line in nvidia_output.split('\n'):
                 # Match GPU line
                 gpu_match = re.match(r'GPU (\d+):', line)
                 if gpu_match:
@@ -63,8 +73,8 @@ class GPUAvailabilityChecker:
                         'device_id': device_id
                     }
 
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
+        except Exception as e:
+            print(f"Warning: MIG instance parsing error: {e}", file=sys.stderr)
 
         return mig_instances
 
@@ -75,15 +85,12 @@ class GPUAvailabilityChecker:
         """
         physical_gpus = {}
 
-        try:
-            result = subprocess.run(
-                ["nvidia-smi", "-L"],
-                capture_output=True,
-                text=True,
-                check=True
-            )
+        nvidia_output = self._get_nvidia_smi_output()
+        if not nvidia_output:
+            return physical_gpus
 
-            for line in result.stdout.split('\n'):
+        try:
+            for line in nvidia_output.split('\n'):
                 # Match GPU line: "GPU 0: NVIDIA A100 (UUID: GPU-xxx)"
                 gpu_match = re.match(r'GPU (\d+):\s+([^(]+)\s+\(UUID:\s+(GPU-[a-f0-9-]+)\)', line)
                 if gpu_match:
@@ -96,8 +103,8 @@ class GPUAvailabilityChecker:
                         'uuid': gpu_uuid
                     }
 
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            pass
+        except Exception as e:
+            print(f"Warning: Physical GPU parsing error: {e}", file=sys.stderr)
 
         return physical_gpus
 
@@ -148,26 +155,42 @@ class GPUAvailabilityChecker:
         """
         Get all available (unallocated) GPUs.
         Returns dict of GPU slots that are free.
+        Includes both MIG instances and full GPUs (when MIG is not configured on that GPU).
         """
-        # Get all MIG instances from hardware
-        all_migs = self._get_all_mig_instances()
+        try:
+            all_migs = self._get_all_mig_instances()
+            allocations = self.state_reader.get_all_allocations()
 
-        # Get current allocations from Docker
-        allocations = self.state_reader.get_all_allocations()
+            available = {}
 
-        # Find available = all - allocated
-        available = {}
-        for slot_id, mig_info in all_migs.items():
-            if slot_id not in allocations:
-                available[slot_id] = {
-                    'slot': slot_id,
-                    'uuid': mig_info['uuid'],
-                    'profile': mig_info['profile'],
-                    'physical_gpu': mig_info['physical_gpu'],
-                    'status': 'available'
-                }
+            # Available MIG instances
+            for slot_id, mig_info in all_migs.items():
+                if slot_id not in allocations:
+                    available[slot_id] = {
+                        'slot': slot_id,
+                        'uuid': mig_info['uuid'],
+                        'profile': mig_info['profile'],
+                        'physical_gpu': mig_info['physical_gpu'],
+                        'status': 'available'
+                    }
 
-        return available
+            # Full GPUs without MIG partitions
+            all_physical = self._get_physical_gpus()
+            for gpu_id, gpu_info in all_physical.items():
+                has_mig = any(all_migs[s]['physical_gpu'] == gpu_id for s in all_migs)
+                if not has_mig and gpu_id not in allocations:
+                    available[gpu_id] = {
+                        'slot': gpu_id,
+                        'uuid': gpu_info['uuid'],
+                        'profile': 'full-gpu',
+                        'physical_gpu': gpu_id,
+                        'status': 'available'
+                    }
+
+            return available
+        except Exception as e:
+            print(f"Error: GPU availability check failed: {e}", file=sys.stderr)
+            return {}  # Fail-open: return empty dict on error
 
     def get_user_available_gpus(self, username: str, max_gpus: int = None) -> Dict:
         """
@@ -229,134 +252,157 @@ class GPUAvailabilityChecker:
             Dict with 'gpu_slot', 'gpu_uuid', or error if none available
             For full GPUs, also includes 'mig_slots' list if it's a virtual full GPU
         """
-        if exclude_slots is None:
-            exclude_slots = []
+        try:
+            if exclude_slots is None:
+                exclude_slots = []
 
-        availability = self.get_user_available_gpus(username, max_gpus)
+            availability = self.get_user_available_gpus(username, max_gpus)
 
-        if not availability['can_allocate']:
-            return {
-                'success': False,
-                'error': availability['reason'],
-                'user_current': availability['user_current_count'],
-                'user_max': max_gpus
-            }
+            if not availability['can_allocate']:
+                return {
+                    'success': False,
+                    'error': availability['reason'],
+                    'user_current': availability['user_current_count'],
+                    'user_max': max_gpus
+                }
 
-        # If requiring full GPU, check full GPU availability first
-        if require_full_gpu:
-            full_gpus = self._get_full_gpus_available()
+            # If requiring full GPU, check full GPU availability first
+            if require_full_gpu:
+                full_gpus = self._get_full_gpus_available()
 
-            # Exclude already-reserved slots
+                # Exclude already-reserved slots
+                for slot in exclude_slots:
+                    full_gpus.pop(slot, None)
+                    # Also exclude virtual full GPUs whose MIG slots overlap
+                    for gpu_id, gpu_info in list(full_gpus.items()):
+                        if slot in gpu_info.get('mig_slots', []):
+                            full_gpus.pop(gpu_id, None)
+
+                if full_gpus:
+                    # Prefer real full GPUs over virtual full GPUs
+                    sorted_gpus = sorted(
+                        full_gpus.items(),
+                        key=lambda x: (0 if x[1]['type'] == 'full' else 1, x[0])
+                    )
+                    gpu_id, gpu_info = sorted_gpus[0]
+                    return {
+                        'success': True,
+                        'gpu_slot': gpu_id,
+                        'gpu_uuid': gpu_info['uuid'],
+                        'profile': gpu_info['profile'],
+                        'physical_gpu': gpu_info['physical_gpu'],
+                        'type': gpu_info['type'],
+                        'mig_slots': gpu_info.get('mig_slots', [])
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': 'No full GPUs available (all GPUs have allocated MIG instances)',
+                        'user_current': availability['user_current_count']
+                    }
+
+            available = availability['available_gpus']
+
+            # Exclude already-reserved slots (for multi-GPU allocation)
             for slot in exclude_slots:
-                full_gpus.pop(slot, None)
-                # Also exclude virtual full GPUs whose MIG slots overlap
-                for gpu_id, gpu_info in list(full_gpus.items()):
-                    if slot in gpu_info.get('mig_slots', []):
-                        full_gpus.pop(gpu_id, None)
+                available.pop(slot, None)
 
-            if full_gpus:
-                # Prefer real full GPUs over virtual full GPUs
-                sorted_gpus = sorted(
-                    full_gpus.items(),
-                    key=lambda x: (0 if x[1]['type'] == 'full' else 1, x[0])
-                )
-                gpu_id, gpu_info = sorted_gpus[0]
-                return {
-                    'success': True,
-                    'gpu_slot': gpu_id,
-                    'gpu_uuid': gpu_info['uuid'],
-                    'profile': gpu_info['profile'],
-                    'physical_gpu': gpu_info['physical_gpu'],
-                    'type': gpu_info['type'],
-                    'mig_slots': gpu_info.get('mig_slots', [])
-                }
-            else:
+            if not available:
                 return {
                     'success': False,
-                    'error': 'No full GPUs available (all GPUs have allocated MIG instances)',
+                    'error': 'No GPUs available (all allocated)',
                     'user_current': availability['user_current_count']
                 }
 
-        available = availability['available_gpus']
+            # Filter GPUs based on full GPU permissions
+            filtered_available = {}
+            for slot, info in available.items():
+                is_full = self._is_full_gpu(slot)
 
-        # Exclude already-reserved slots (for multi-GPU allocation)
-        for slot in exclude_slots:
-            available.pop(slot, None)
+                # If user is not allowed full GPUs, exclude them
+                if not allow_full_gpu and is_full:
+                    continue
 
-        if not available:
+                filtered_available[slot] = info
+
+            if not filtered_available:
+                if not allow_full_gpu:
+                    return {
+                        'success': False,
+                        'error': 'No MIG instances available (only full GPUs free, user not permitted)',
+                        'user_current': availability['user_current_count']
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': 'No GPUs available matching criteria',
+                        'user_current': availability['user_current_count']
+                    }
+
+            # Use least-allocated strategy with full GPU preference for permitted users
+            # Sort order depends on user's full GPU permission:
+            # - allow_full_gpu=True: Prefer full GPUs (better for vLLM, multi-process workloads)
+            # - allow_full_gpu=False: Prefer MIG instances (default for students)
+            def sort_key(slot):
+                is_mig = '.' in slot
+                # Full GPUs first if user requires OR is permitted to use them
+                if require_full_gpu or allow_full_gpu:
+                    return (is_mig, slot)  # Full GPUs first (is_mig=False sorts before True)
+                else:
+                    return (not is_mig, slot)  # MIG instances first
+
+            sorted_slots = sorted(filtered_available.keys(), key=sort_key)
+            gpu_slot = sorted_slots[0]
+            gpu_info = filtered_available[gpu_slot]
+
             return {
-                'success': False,
-                'error': 'No GPUs available (all allocated)',
-                'user_current': availability['user_current_count']
+                'success': True,
+                'gpu_slot': gpu_slot,
+                'gpu_uuid': gpu_info['uuid'],
+                'profile': gpu_info['profile'],
+                'physical_gpu': gpu_info['physical_gpu']
             }
-
-        # Filter GPUs based on full GPU permissions
-        filtered_available = {}
-        for slot, info in available.items():
-            is_full = self._is_full_gpu(slot)
-
-            # If user is not allowed full GPUs, exclude them
-            if not allow_full_gpu and is_full:
-                continue
-
-            filtered_available[slot] = info
-
-        if not filtered_available:
-            if not allow_full_gpu:
-                return {
-                    'success': False,
-                    'error': 'No MIG instances available (only full GPUs free, user not permitted)',
-                    'user_current': availability['user_current_count']
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': 'No GPUs available matching criteria',
-                    'user_current': availability['user_current_count']
-                }
-
-        # Use least-allocated strategy with full GPU preference for permitted users
-        # Sort order depends on user's full GPU permission:
-        # - allow_full_gpu=True: Prefer full GPUs (better for vLLM, multi-process workloads)
-        # - allow_full_gpu=False: Prefer MIG instances (default for students)
-        def sort_key(slot):
-            is_mig = '.' in slot
-            # Full GPUs first if user requires OR is permitted to use them
-            if require_full_gpu or allow_full_gpu:
-                return (is_mig, slot)  # Full GPUs first (is_mig=False sorts before True)
-            else:
-                return (not is_mig, slot)  # MIG instances first
-
-        sorted_slots = sorted(filtered_available.keys(), key=sort_key)
-        gpu_slot = sorted_slots[0]
-        gpu_info = filtered_available[gpu_slot]
-
-        return {
-            'success': True,
-            'gpu_slot': gpu_slot,
-            'gpu_uuid': gpu_info['uuid'],
-            'profile': gpu_info['profile'],
-            'physical_gpu': gpu_info['physical_gpu']
-        }
+        except Exception as e:
+            print(f"Error: GPU suggestion failed: {e}", file=sys.stderr)
+            return {'success': False, 'error': f'Internal error: {e}'}
 
     def get_allocation_summary(self) -> Dict:
         """Get summary of GPU allocation status."""
-        all_migs = self._get_all_mig_instances()
-        allocations = self.state_reader.get_all_allocations()
+        try:
+            all_migs = self._get_all_mig_instances()
+            allocations = self.state_reader.get_all_allocations()
+            all_physical = self._get_physical_gpus()
 
-        total = len(all_migs)
-        allocated = len(allocations)
-        available = total - allocated
+            full_gpu_slots = [
+                gpu_id for gpu_id in all_physical
+                if not any(all_migs[s]['physical_gpu'] == gpu_id for s in all_migs)
+            ]
 
-        return {
-            'total_gpus': total,
-            'allocated': allocated,
-            'available': available,
-            'utilization_percent': (allocated / total * 100) if total > 0 else 0,
-            'all_slots': list(all_migs.keys()),
-            'allocated_slots': list(allocations.keys()),
-            'available_slots': list(self.get_available_gpus().keys())
-        }
+            total = len(all_migs) + len(full_gpu_slots)
+            allocated = len(allocations)
+            available = total - allocated
+            all_slots = list(all_migs.keys()) + full_gpu_slots
+
+            return {
+                'total_gpus': total,
+                'allocated': allocated,
+                'available': available,
+                'utilization_percent': (allocated / total * 100) if total > 0 else 0,
+                'all_slots': all_slots,
+                'allocated_slots': list(allocations.keys()),
+                'available_slots': list(self.get_available_gpus().keys())
+            }
+        except Exception as e:
+            print(f"Error: GPU allocation summary failed: {e}", file=sys.stderr)
+            return {
+                'total_gpus': 0,
+                'allocated': 0,
+                'available': 0,
+                'utilization_percent': 0.0,
+                'all_slots': [],
+                'allocated_slots': [],
+                'available_slots': []
+            }
 
 
 def main():
