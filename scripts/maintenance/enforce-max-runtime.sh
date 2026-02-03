@@ -19,6 +19,12 @@ LOG_FILE="/var/log/ds01/runtime-enforcement.log"
 # Source shared library for colors and utilities
 source "$INFRA_ROOT/scripts/lib/init.sh"
 
+# Source event logging library
+EVENTS_LIB="$INFRA_ROOT/scripts/lib/ds01_events.sh"
+if [ -f "$EVENTS_LIB" ]; then
+    source "$EVENTS_LIB"
+fi
+
 # Create state and log directories
 mkdir -p "$STATE_DIR"
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -250,10 +256,22 @@ NOTIFEOF
     # Note: Container is stopped but NOT removed - will be removed by cleanup-stale-containers
     # after container_hold_after_stop timeout. GPU will be freed after gpu_hold_after_stop timeout.
 
+    # Get container type for logging
+    local container_type=$(get_container_type "$container")
+
     # Stop container (10 second grace period)
     if docker stop -t 10 "$container" &>/dev/null; then
         log_color "Stopped container: $container (max runtime exceeded: ${runtime_hours}h)" "$GREEN"
         logger -t ds01-maxruntime "Stopped container: $container (user: $username, runtime: ${runtime_hours}h)"
+
+        # Log maintenance.runtime_kill event (best-effort)
+        if command -v log_event &>/dev/null; then
+            log_event "maintenance.runtime_kill" "$username" "enforce-max-runtime" \
+                container="$container" \
+                runtime="${runtime_hours}h" \
+                max_runtime="configured_limit" \
+                container_type="$container_type" || true
+        fi
 
         # Container is now stopped:
         # - GPU will be freed by cleanup-stale-gpu-allocations after gpu_hold_after_stop timeout

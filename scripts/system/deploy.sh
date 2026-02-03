@@ -1,15 +1,20 @@
 #!/bin/bash
 # DS01 Infrastructure - Command Deployment
-# Copies all DS01 commands to /usr/local/bin (not symlinks)
+# Symlinks all DS01 commands to /usr/local/bin
 # Run with: sudo /opt/ds01-infra/scripts/system/deploy.sh
 #
-# Security: Copies files instead of symlinking to keep /opt/ds01-infra secure
-# This allows /opt/ds01-infra to have restrictive permissions (700) while
-# commands in /usr/local/bin remain accessible (755) to all users
+# Deployment: Uses symlinks so SCRIPT_DIR resolves to /opt/ds01-infra/scripts/
+# and co-located Python dependencies (gpu_allocator_v2.py, etc.) are found.
+# Requires /opt/ds01-infra/scripts/ to be world-readable (755).
 #
 # Usage: sudo deploy [--verbose|-v]
 
+# Self-bootstrap: if running as deployed copy, re-exec from source
 INFRA_ROOT="/opt/ds01-infra"
+SELF="$INFRA_ROOT/scripts/system/deploy.sh"
+if [ "$0" = "/usr/local/bin/deploy" ] || { [ "$(basename "$0")" = "deploy" ] && [ "$0" != "$SELF" ]; }; then
+    exec "$SELF" "$@"
+fi
 DEST_DIR="/usr/local/bin"
 
 # Subdirectory shortcuts
@@ -78,7 +83,7 @@ deploy_cmd() {
     fi
 
     rm -f "$DEST_DIR/$name" 2>/dev/null
-    if cp "$target" "$DEST_DIR/$name" && chmod 755 "$DEST_DIR/$name" 2>/dev/null; then
+    if ln -sf "$target" "$DEST_DIR/$name" 2>/dev/null; then
         CATEGORY_SUCCESS[$category]=$((${CATEGORY_SUCCESS[$category]:-0} + 1))
         ((TOTAL_SUCCESS++))
         $VERBOSE && echo -e "  ${GREEN}✓${NC} $name"
@@ -116,22 +121,13 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # ============================================================================
-# Set Permissions
+# Deterministic Permissions Manifest
 # ============================================================================
+# Sourced from config/permissions-manifest.sh — the single source of truth
+# for all DS01 file permissions. Edit that file to add/change permissions.
 
-echo -e "${DIM}Setting source permissions...${NC}"
-chmod 755 "$USER_ATOMIC"/* 2>/dev/null
-chmod 755 "$USER_ORCHESTRATORS"/* 2>/dev/null
-chmod 755 "$USER_WIZARDS"/* 2>/dev/null
-chmod 755 "$USER_HELPERS"/* 2>/dev/null
-chmod 755 "$USER_DISPATCHERS"/* 2>/dev/null
-chmod 755 "$INFRA_ROOT"/scripts/lib/*.sh "$INFRA_ROOT"/scripts/lib/*.py 2>/dev/null
-chmod 755 "$INFRA_ROOT"/scripts/docker/*.sh "$INFRA_ROOT"/scripts/docker/*.py 2>/dev/null
-chmod 755 "$INFRA_ROOT"/scripts/admin/* 2>/dev/null
-chmod 755 "$INFRA_ROOT"/scripts/monitoring/*.sh "$INFRA_ROOT"/scripts/monitoring/*.py 2>/dev/null
-chmod 755 "$INFRA_ROOT"/scripts/maintenance/*.sh 2>/dev/null
-chmod 755 "$INFRA_ROOT"/scripts/system/*.sh 2>/dev/null
-chmod 644 "$INFRA_ROOT"/config/*.yaml "$INFRA_ROOT"/config/*.yml 2>/dev/null
+source "$INFRA_ROOT/config/permissions-manifest.sh"
+
 echo ""
 
 # ============================================================================
@@ -220,6 +216,8 @@ deploy_cmd "$INFRA_ROOT/scripts/monitoring/mig-utilization-monitor.py" "ds01-mig
 deploy_cmd "$INFRA_ROOT/scripts/admin/ds01-users" "ds01-users" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/admin/ds01-logs" "ds01-logs" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/ds01-events" "ds01-events" "Admin"
+deploy_cmd "$INFRA_ROOT/scripts/monitoring/ds01-workloads" "ds01-workloads" "Admin"
+deploy_cmd "$INFRA_ROOT/scripts/monitoring/monitoring-status" "monitoring-status" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/admin/ds01-mig-partition" "ds01-mig-partition" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/admin/mig-configure" "mig-configure" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/who-owns-containers.sh" "ds01-who" "Admin"
@@ -238,6 +236,146 @@ deploy_cmd "$INFRA_ROOT/scripts/docker/docker-wrapper.sh" "docker" "Internal"
 deploy_cmd "$INFRA_ROOT/scripts/docker/mlc-create-wrapper.sh" "mlc-create" "Internal"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/mlc-stats-wrapper.sh" "mlc-stats" "Internal"
 
+# Note: mlc-create dependencies (gpu_allocator_v2.py, etc.) are found automatically
+# via SCRIPT_DIR resolution since deploy uses symlinks back to the repo.
+
+# ============================================================================
+# Deploy Access Control
+# ============================================================================
+
+echo ""
+echo -e "${BOLD}Deploying access control...${NC}"
+echo ""
+
+# --- Prerequisites: Ensure at command is available ---
+if ! command -v at &>/dev/null || ! systemctl is-active --quiet atd; then
+    echo -e "  ${DIM}Installing at scheduler (required for temporary grants)...${NC}"
+    apt-get install -y at &>/dev/null && systemctl enable --now atd &>/dev/null && \
+        echo -e "  ${GREEN}✓${NC} at/atd installed and active" || \
+        echo -e "  ${YELLOW}!${NC} WARNING: Failed to install at — temporary grants will not auto-revoke"
+fi
+
+# --- Deploy bare-metal-access admin CLI ---
+deploy_cmd "$INFRA_ROOT/scripts/admin/bare-metal-access" "bare-metal-access" "Access Control"
+
+# --- Deploy nvidia device permissions (0666 for GPU allocation chain) ---
+# modprobe.d: kernel module creates devices with correct perms on load/reboot
+MODPROBE_SRC="$INFRA_ROOT/config/deploy/modprobe.d/nvidia-permissions.conf"
+MODPROBE_DST="/etc/modprobe.d/nvidia-permissions.conf"
+if [ -f "$MODPROBE_SRC" ]; then
+    cp "$MODPROBE_SRC" "$MODPROBE_DST"
+    chmod 644 "$MODPROBE_DST"
+    echo -e "  ${GREEN}✓${NC} Deployed modprobe.d nvidia config (0666 on next module load)"
+fi
+# udev: belt-and-suspenders for device re-creation events
+UDEV_SRC="$INFRA_ROOT/config/deploy/udev/99-ds01-nvidia.rules"
+UDEV_DST="/etc/udev/rules.d/99-ds01-nvidia.rules"
+if [ -f "$UDEV_SRC" ]; then
+    cp "$UDEV_SRC" "$UDEV_DST"
+    chmod 644 "$UDEV_DST"
+    udevadm control --reload-rules 2>/dev/null || true
+fi
+# Immediate: fix current devices without waiting for reboot
+chmod 0666 /dev/nvidia[0-9]* /dev/nvidiactl /dev/nvidia-modeset /dev/nvidia-uvm /dev/nvidia-uvm-tools 2>/dev/null || true
+echo -e "  ${GREEN}✓${NC} Set nvidia devices to 0666"
+echo -e "  ${GREEN}✓${NC} Video group: managed by add-user-to-docker.sh (all docker users)"
+
+# --- Docker wrapper isolation ---
+# Docker wrapper defaults to enforcing mode (DS01_ISOLATION_MODE=full)
+# Set DS01_ISOLATION_MODE=monitoring in environment to switch to monitoring mode
+echo -e "  ${GREEN}✓${NC} Docker wrapper isolation: enforcing (default)"
+
+# --- Deploy profile.d scripts (644 — sourced, not executed) ---
+echo -e "${DIM}Deploying profile.d scripts...${NC}"
+
+# From config/deploy/profile.d/ (primary source)
+for script in "$INFRA_ROOT"/config/deploy/profile.d/ds01-*.sh; do
+    [ -f "$script" ] || continue
+    cp "$script" /etc/profile.d/"$(basename "$script")"
+    chmod 644 /etc/profile.d/"$(basename "$script")"
+done
+
+# From config/etc-mirrors/profile.d/ (additional scripts)
+for script in "$INFRA_ROOT"/config/etc-mirrors/profile.d/ds01-*.sh; do
+    [ -f "$script" ] || continue
+    name="$(basename "$script")"
+    # Don't overwrite if already deployed from primary source
+    if [ ! -f /etc/profile.d/"$name" ] || ! diff -q "$INFRA_ROOT/config/deploy/profile.d/$name" /etc/profile.d/"$name" &>/dev/null 2>&1; then
+        cp "$script" /etc/profile.d/"$name"
+        chmod 644 /etc/profile.d/"$name"
+    fi
+done
+
+echo -e "  ${GREEN}✓${NC} Profile.d scripts deployed (644)"
+
+# ============================================================================
+# Deploy Systemd Units
+# ============================================================================
+
+echo ""
+echo -e "${BOLD}Deploying systemd units...${NC}"
+echo ""
+
+# Ensure Python docker package is installed (required for workload detector)
+echo -e "${DIM}Checking Python docker package...${NC}"
+if ! python3 -c "import docker" 2>/dev/null; then
+    echo -e "  ${YELLOW}!${NC} Installing docker package..."
+    pip3 install docker >/dev/null 2>&1
+    if python3 -c "import docker" 2>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} Python docker package installed"
+    else
+        echo -e "  ${RED}✗${NC} Failed to install docker package"
+    fi
+else
+    echo -e "  ${GREEN}✓${NC} Python docker package already installed"
+fi
+
+# Ensure detect-workloads.py is executable
+if [ -f "$INFRA_ROOT/scripts/monitoring/detect-workloads.py" ]; then
+    chmod +x "$INFRA_ROOT/scripts/monitoring/detect-workloads.py"
+fi
+
+# Deploy workload detector systemd units
+if [ -f "$INFRA_ROOT/config/deploy/systemd/ds01-workload-detector.timer" ] && \
+   [ -f "$INFRA_ROOT/config/deploy/systemd/ds01-workload-detector.service" ]; then
+    echo -e "${DIM}Deploying workload detector units...${NC}"
+    cp "$INFRA_ROOT/config/deploy/systemd/ds01-workload-detector.timer" /etc/systemd/system/
+    cp "$INFRA_ROOT/config/deploy/systemd/ds01-workload-detector.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable ds01-workload-detector.timer >/dev/null 2>&1
+    systemctl start ds01-workload-detector.timer >/dev/null 2>&1
+
+    # Check timer status
+    if systemctl is-active --quiet ds01-workload-detector.timer; then
+        echo -e "  ${GREEN}✓${NC} Workload detector timer enabled and started"
+        # Show next trigger time
+        NEXT_RUN=$(systemctl status ds01-workload-detector.timer 2>/dev/null | grep "Trigger:" | sed 's/.*Trigger: //')
+        if [ -n "$NEXT_RUN" ]; then
+            echo -e "  ${DIM}  Next scan: $NEXT_RUN${NC}"
+        fi
+    else
+        echo -e "  ${YELLOW}!${NC} Workload detector timer not running (check systemctl status)"
+    fi
+else
+    echo -e "  ${DIM}Workload detector units not found (will be created in Phase 2)${NC}"
+fi
+
+# Deploy DCGM exporter systemd unit (manages restart lifecycle for docker-compose container)
+if [ -f "$INFRA_ROOT/config/deploy/systemd/ds01-dcgm-exporter.service" ]; then
+    echo -e "${DIM}Deploying DCGM exporter unit...${NC}"
+    cp "$INFRA_ROOT/config/deploy/systemd/ds01-dcgm-exporter.service" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable ds01-dcgm-exporter >/dev/null 2>&1
+
+    if systemctl is-active --quiet ds01-dcgm-exporter; then
+        echo -e "  ${GREEN}✓${NC} DCGM exporter service already running"
+    else
+        echo -e "  ${YELLOW}!${NC} DCGM exporter service enabled (start with: sudo systemctl start ds01-dcgm-exporter)"
+    fi
+else
+    echo -e "  ${DIM}DCGM exporter unit not found${NC}"
+fi
+
 # ============================================================================
 # Summary
 # ============================================================================
@@ -253,6 +391,7 @@ if ! $VERBOSE; then
     print_category "Help"
     print_category "Admin"
     print_category "Internal"
+    print_category "Access Control"
 fi
 
 echo ""
@@ -267,3 +406,4 @@ fi
 echo ""
 echo -e "${DIM}Run 'help' to see all available commands${NC}"
 echo ""
+

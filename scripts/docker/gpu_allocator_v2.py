@@ -46,6 +46,14 @@ except ImportError:
         sanitized = _re.sub(r'-+', '-', sanitized).strip('-')
         return sanitized
 
+# Import event logging (with safe fallback - allocator must work even if logging fails)
+try:
+    from ds01_events import log_event
+except ImportError:
+    # Fallback: no-op function if ds01_events not available
+    def log_event(*args, **kwargs) -> bool:
+        return False
+
 # Dynamic import for gpu-state-reader.py
 spec = importlib.util.spec_from_file_location('gpu_state_reader', str(SCRIPT_DIR / 'gpu-state-reader.py'))
 gpu_state_module = importlib.util.module_from_spec(spec)
@@ -60,6 +68,9 @@ GPUAvailabilityChecker = gpu_avail_module.GPUAvailabilityChecker
 
 
 class GPUAllocatorSmart:
+    # Safe defaults for fail-open when config loading fails
+    SAFE_DEFAULTS = {'max_mig_instances': 1, 'allow_full_gpu': False, 'priority': 10}
+
     def __init__(self, config_path="/opt/ds01-infra/config/resource-limits.yaml"):
         self.config_path = Path(config_path)
         self.config = self._load_config()
@@ -87,12 +98,36 @@ class GPUAllocatorSmart:
             self._lock_fd = None
 
     def _load_config(self) -> dict:
-        """Load YAML configuration"""
-        if not self.config_path.exists():
+        """Load YAML configuration and merge external group membership files."""
+        try:
+            if not self.config_path.exists():
+                return {}
+
+            with open(self.config_path) as f:
+                config = yaml.safe_load(f)
+        except (FileNotFoundError, yaml.YAMLError) as e:
+            print(f"Error: Config loading failed: {e}", file=sys.stderr)
             return {}
 
-        with open(self.config_path) as f:
-            return yaml.safe_load(f)
+        # Load group members from config/groups/{group}.members files
+        groups_dir = self.config_path.parent / "groups"
+        for group_name in (config.get('groups') or {}):
+            member_file = groups_dir / f"{group_name}.members"
+            try:
+                if member_file.exists():
+                    members = []
+                    with open(member_file) as f:
+                        for line in f:
+                            line = line.split('#')[0].strip()
+                            if line:
+                                members.append(line)
+                    if members:
+                        inline = config['groups'][group_name].get('members', [])
+                        config['groups'][group_name]['members'] = list(set(members + inline))
+            except (PermissionError, IOError):
+                pass  # Fall back to inline members if file unreadable
+
+        return config
 
     def _get_user_limits(self, username: str) -> Dict:
         """Get user's resource limits from config (merges defaults + group/override).
@@ -142,7 +177,8 @@ class GPUAllocatorSmart:
         # Fallback to defaults only
         base_limits = defaults.copy()
         base_limits['_group'] = 'default'
-        return base_limits
+        # Fail-open: if config failed to load or is empty, return safe defaults
+        return base_limits if base_limits else self.SAFE_DEFAULTS.copy()
 
     def _can_use_full_gpu(self, username: str) -> bool:
         """Check if user is allowed to use full (non-MIG) GPUs"""
@@ -278,6 +314,16 @@ class GPUAllocatorSmart:
                 group = limits.get('_group', 'default')
                 reason = f"FULL_GPU_NOT_ALLOWED (group={group}, allow_full_gpu=false)"
                 self._log_event("REJECTED", username, container, reason=reason)
+
+                # Log to centralized event system (best-effort)
+                log_event(
+                    "gpu.reject",
+                    user=username,
+                    source="gpu_allocator",
+                    container=container,
+                    reason=reason
+                )
+
                 return None, reason
 
             # Check user's current GPU count
@@ -287,6 +333,16 @@ class GPUAllocatorSmart:
             if current_count >= max_gpus:
                 reason = f"USER_AT_LIMIT ({current_count}/{max_gpus})"
                 self._log_event("REJECTED", username, container, reason=reason)
+
+                # Log to centralized event system (best-effort)
+                log_event(
+                    "gpu.reject",
+                    user=username,
+                    source="gpu_allocator",
+                    container=container,
+                    reason=reason
+                )
+
                 return None, reason
 
             # Find available GPU
@@ -300,6 +356,16 @@ class GPUAllocatorSmart:
             if not suggestion['success']:
                 reason = suggestion['error']
                 self._log_event("REJECTED", username, container, reason=reason)
+
+                # Log to centralized event system (best-effort)
+                log_event(
+                    "gpu.reject",
+                    user=username,
+                    source="gpu_allocator",
+                    container=container,
+                    reason=reason
+                )
+
                 return None, reason
 
             gpu_slot = suggestion['gpu_slot']
@@ -308,14 +374,37 @@ class GPUAllocatorSmart:
             if self._is_full_gpu(gpu_slot) and not allow_full:
                 reason = f"FULL_GPU_NOT_ALLOWED (got slot {gpu_slot}, user cannot use full GPUs)"
                 self._log_event("REJECTED", username, container, reason=reason)
+
+                # Log to centralized event system (best-effort)
+                log_event(
+                    "gpu.reject",
+                    user=username,
+                    source="gpu_allocator",
+                    container=container,
+                    reason=reason
+                )
+
                 return None, reason
 
-            # Log allocation
+            # Log allocation to legacy log
             reason = f"ALLOCATED (user has {current_count + 1}/{max_gpus} GPUs)"
             self._log_event("ALLOCATED", username, container, gpu_slot, reason)
 
+            # Log to centralized event system (best-effort, never blocks)
+            log_event(
+                "gpu.allocate",
+                user=username,
+                source="gpu_allocator",
+                container=container,
+                gpu_uuid=gpu_slot,
+                reason=reason
+            )
+
             return gpu_slot, "SUCCESS"
 
+        except Exception as e:
+            print(f"Error: GPU allocation failed: {e}", file=sys.stderr)
+            return None, f"INTERNAL_ERROR: {e}"
         finally:
             # Always release the lock
             self._release_lock()
@@ -489,20 +578,21 @@ class GPUAllocatorSmart:
         Get Docker-compatible device ID for a GPU slot.
         For MIG instances, returns MIG UUID. For full GPUs, returns GPU UUID.
         """
-        # Query nvidia-smi for the UUID
+        # Device permissions are 0666 so all users can query nvidia-smi directly
         try:
             result = subprocess.run(
-                ['nvidia-smi', '-L'],
+                ['/usr/bin/nvidia-smi', '-L'],
                 capture_output=True,
                 text=True,
                 check=True
             )
+            nvidia_output = result.stdout
 
             # Parse output to find UUID for this slot
             import re
             current_gpu = None
             current_gpu_uuid = None
-            for line in result.stdout.split('\n'):
+            for line in nvidia_output.split('\n'):
                 # Match full GPU line: "GPU 0: NVIDIA A100 (UUID: GPU-xxx)"
                 gpu_match = re.match(r'GPU (\d+):\s+[^(]+\(UUID:\s+(GPU-[a-f0-9-]+)\)', line)
                 if gpu_match:
@@ -552,9 +642,19 @@ class GPUAllocatorSmart:
         gpu_slot = container_gpu['gpu_slot']
         username = container_gpu['user']
 
-        # Log release
+        # Log release to legacy log
         reason = f"RELEASED (container removed/stopped)"
         self._log_event("RELEASED", username, container, gpu_slot, reason)
+
+        # Log to centralized event system (best-effort)
+        log_event(
+            "gpu.release",
+            user=username,
+            source="gpu_allocator",
+            container=container,
+            gpu_uuid=gpu_slot,
+            reason=reason
+        )
 
         return gpu_slot, "SUCCESS"
 
@@ -684,6 +784,9 @@ class GPUAllocatorSmart:
 
             return docker_id, "SUCCESS"
 
+        except Exception as e:
+            print(f"Error: External GPU allocation failed: {e}", file=sys.stderr)
+            return None, f"INTERNAL_ERROR: {e}"
         finally:
             self._release_lock()
 

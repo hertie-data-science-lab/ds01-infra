@@ -88,7 +88,7 @@ if command -v nvidia-smi &>/dev/null; then
 
     # MIG status
     if nvidia-smi -L | grep -q "MIG"; then
-        MIG_COUNT=$(nvidia-smi mig -lgi 2>/dev/null | grep -c "MIG" || echo "0")
+        MIG_COUNT=$(nvidia-smi mig -lgi 2>/dev/null | grep -c "MIG") || MIG_COUNT=0
         echo -e "  MIG Instances: ${GREEN}${MIG_COUNT}${NC} (enabled)"
     fi
     echo ""

@@ -1,181 +1,602 @@
 #!/bin/bash
 # /opt/ds01-infra/scripts/monitoring/ds01-events
-# DS01 Event Query Tool - Query centralized event logs
+# DS01 Event Query Tool - First-class admin query interface for event logs
 #
-# Usage:
-#   ds01-events              # Show last 20 events
-#   ds01-events tail 50      # Show last 50 events
-#   ds01-events user alice   # Events for user alice
-#   ds01-events type gpu     # Events matching type "gpu"
-#   ds01-events today        # Today's events
-#   ds01-events errors       # Failed/rejected events
-#   ds01-events json         # Raw JSON output
+# Provides powerful jq-based filtering, live streaming, summaries, and 4-tier help.
+# Replaces grep-based filtering with structured JSON queries.
 
 set -e
 
-EVENTS_FILE="/var/log/ds01/events.jsonl"
-EVENT_LOGGER="/opt/ds01-infra/scripts/docker/event-logger.py"
+# Source shared library for paths and colours
+source /opt/ds01-infra/scripts/lib/init.sh
 
-# Check if events file exists
-if [[ ! -f "$EVENTS_FILE" ]]; then
-    echo "No events logged yet ($EVENTS_FILE not found)"
-    exit 0
+# Configuration
+EVENTS_FILE="${DS01_LOG}/events.jsonl"
+
+# Check dependencies
+if ! command -v jq &> /dev/null; then
+    echo -e "${RED}Error: jq is required but not installed${NC}"
+    echo "Install with: sudo apt-get install jq"
+    exit 1
 fi
 
-# Format single event for display
-format_event() {
-    local json="$1"
-    local ts=$(echo "$json" | jq -r '.ts // "?"')
-    local event=$(echo "$json" | jq -r '.event // "?"')
-    local user=$(echo "$json" | jq -r '.user // ""')
-    local container=$(echo "$json" | jq -r '.container // ""')
-    local gpu=$(echo "$json" | jq -r '.gpu // ""')
-    local reason=$(echo "$json" | jq -r '.reason // .status // ""')
+# ============================================================================
+# Helper Functions
+# ============================================================================
 
-    # Build output line
-    local line="$ts $event"
-    [[ -n "$user" ]] && line="$line user=$user"
-    [[ -n "$container" ]] && line="$line container=$container"
-    [[ -n "$gpu" ]] && line="$line gpu=$gpu"
-    [[ -n "$reason" ]] && line="$line reason=$reason"
-
-    echo "$line"
+# Convert relative time to ISO 8601
+convert_time() {
+    local timespec="$1"
+    if date -d "$timespec" -Iseconds 2>/dev/null; then
+        return 0
+    else
+        echo "Error: Invalid time specification: $timespec" >&2
+        echo "Examples: '1 hour ago', 'today', 'yesterday', '2026-01-30T12:00:00Z'" >&2
+        return 1
+    fi
 }
 
-# Main command handling
-command="${1:-tail}"
-arg="${2:-20}"
+# Build jq filter from options
+build_jq_filter() {
+    local filters=()
 
-case "$command" in
-    tail|last)
-        # Show last N events
-        count="${arg:-20}"
-        echo -e "\nLast $count events:\n"
-        tail -n "$count" "$EVENTS_FILE" | while read -r line; do
-            format_event "$line"
-        done
-        ;;
+    # Handle both old (ts/event) and new (timestamp/event_type) schema
+    local jq_timestamp='(.timestamp // .ts)'
+    local jq_event_type='(.event_type // .event)'
 
-    user)
-        # Events for specific user
-        if [[ -z "$arg" ]]; then
-            echo "Usage: ds01-events user <username>"
+    # User filter
+    if [[ -n "$OPT_USER" ]]; then
+        filters+=("(.user == \"$OPT_USER\")")
+    fi
+
+    # Event type filter (prefix match)
+    if [[ -n "$OPT_TYPE" ]]; then
+        filters+=("($jq_event_type | startswith(\"$OPT_TYPE\"))")
+    fi
+
+    # Container filter
+    if [[ -n "$OPT_CONTAINER" ]]; then
+        filters+=("(.container == \"$OPT_CONTAINER\" or .details.container == \"$OPT_CONTAINER\")")
+    fi
+
+    # Time range filters
+    if [[ -n "$OPT_SINCE" ]]; then
+        local since_iso
+        since_iso=$(convert_time "$OPT_SINCE") || exit 1
+        filters+=("($jq_timestamp >= \"$since_iso\")")
+    fi
+
+    if [[ -n "$OPT_UNTIL" ]]; then
+        local until_iso
+        until_iso=$(convert_time "$OPT_UNTIL") || exit 1
+        filters+=("($jq_timestamp <= \"$until_iso\")")
+    fi
+
+    # Combine filters with AND logic
+    if [[ ${#filters[@]} -eq 0 ]]; then
+        echo "true"
+    else
+        local combined
+        combined=$(IFS=" and "; echo "${filters[*]}")
+        echo "$combined"
+    fi
+}
+
+# Format event for human-readable display
+format_event() {
+    jq -r '
+        # Handle both old and new schema
+        ((.timestamp // .ts) // "?") as $ts |
+        ((.event_type // .event) // "?") as $event |
+        (.user // "") as $user |
+        ((.container // .details.container) // "") as $container |
+
+        # Build details string (exclude envelope fields)
+        (. | to_entries | map(select(.key | IN("timestamp", "ts", "event_type", "event", "schema_version", "user", "source", "container") | not)) | map("\(.key)=\(.value)") | join(" ")) as $details_str |
+
+        # Format: TIMESTAMP | EVENT_TYPE | USER | CONTAINER | DETAILS
+        "\($ts) | \($event) | \($user) | \($container) | \($details_str)"
+    '
+}
+
+# Colorize event types
+colorize_event() {
+    sed -E \
+        -e "s/container\.[a-z]+/${BLUE}&${NC}/g" \
+        -e "s/gpu\.[a-z]+/${GREEN}&${NC}/g" \
+        -e "s/(reject|denied|fail|error|oom)/${RED}&${NC}/g" \
+        -e "s/maintenance\.[a-z]+/${YELLOW}&${NC}/g" \
+        -e "s/auth\.[a-z]+/${MAGENTA}&${NC}/g"
+}
+
+# ============================================================================
+# Command Handlers
+# ============================================================================
+
+cmd_help() {
+    cat << 'EOF'
+DS01 Event Query Tool
+
+USAGE:
+    ds01-events [OPTIONS]
+
+COMMON OPTIONS:
+    --limit N           Number of events to show (default: 50)
+    --all               Show all events (no limit)
+    --json              Machine-readable JSON output
+
+FILTERS (combine with AND logic):
+    --user USER         Filter by username
+    --type TYPE         Filter by event type (prefix match)
+    --container NAME    Filter by container name
+    --since TIMESPEC    Events after this time
+    --until TIMESPEC    Events before this time
+
+OTHER:
+    --follow            Live stream new events
+    --summary           Aggregate view (counts by type/user)
+    --help              Show this help
+    --info              Full reference with examples
+    --concepts          Architecture and schema explanation
+    --guided            Interactive walkthrough
+
+EXAMPLES:
+    ds01-events                              # Last 50 events
+    ds01-events --user alice --limit 20      # Alice's last 20 events
+    ds01-events --type gpu --since "1 hour ago"  # Recent GPU events
+    ds01-events --follow                     # Live stream
+    ds01-events --summary                    # Aggregate statistics
+
+TIME EXAMPLES:
+    --since "1 hour ago"    --since "today"    --since "2026-01-30T12:00:00Z"
+    --until "yesterday"     --until "now"      --until "2026-01-31"
+
+EOF
+}
+
+cmd_info() {
+    cat << 'EOF'
+DS01 Event Query Tool - Full Reference
+
+FILTERS:
+
+  --user USER
+      Filter by username (exact match)
+      Example: --user alice
+
+  --type TYPE
+      Filter by event type using prefix matching
+      Example: --type container       (matches container.create, container.stop, etc.)
+      Example: --type gpu.allocate    (matches only gpu.allocate)
+
+  --container NAME
+      Filter by container name (exact match)
+      Example: --container alice-jupyter
+
+  --since TIMESPEC
+      Show events after this time
+      Formats: ISO 8601, relative ("1 hour ago", "today", "yesterday")
+      Example: --since "2026-01-30T12:00:00Z"
+      Example: --since "1 hour ago"
+
+  --until TIMESPEC
+      Show events before this time (same formats as --since)
+
+OUTPUT OPTIONS:
+
+  --limit N
+      Show at most N events (default: 50)
+      Use --all to show all events
+
+  --all
+      Show all matching events (no limit)
+
+  --json
+      Output raw JSONL (one JSON object per line)
+      Useful for piping to other tools
+
+  --follow
+      Live stream new events (like tail -f)
+      Press Ctrl+C to stop
+
+  --summary
+      Show aggregate statistics:
+      - Total event count
+      - Counts by event type
+      - Counts by user
+      - Time distribution
+
+HELP TIERS:
+
+  --help              Quick reference (this screen)
+  --info              Full reference (detailed options)
+  --concepts          Architecture explanation
+  --guided            Interactive walkthrough
+
+FILTER LOGIC:
+
+  Multiple filters combine with AND logic.
+  Example: --user alice --type gpu --since "1 hour ago"
+           → Alice's GPU events from the last hour
+
+EVENT SCHEMA:
+
+  New schema (v1):
+      {"timestamp": "2026-01-30T14:30:00Z", "event_type": "container.create",
+       "user": "alice", "source": "docker-wrapper", "schema_version": "1",
+       "details": {"container": "proj", "image": "ds01/pytorch"}}
+
+  Old schema (backward compatible):
+      {"ts": "2026-01-30T14:30:00Z", "event": "container.created",
+       "user": "alice", "container": "proj"}
+
+  Both schemas are supported for querying.
+
+COMMON PATTERNS:
+
+  # Today's GPU allocations
+  ds01-events --type gpu.allocate --since today
+
+  # Failed/rejected events
+  ds01-events --type reject
+  ds01-events --type denied
+
+  # All events for a user
+  ds01-events --user alice --all
+
+  # Container lifecycle
+  ds01-events --container alice-jupyter --json
+
+  # Live monitoring
+  ds01-events --type gpu --follow
+
+EOF
+}
+
+cmd_concepts() {
+    cat << 'EOF'
+DS01 Event Logging - Architecture and Concepts
+
+WHAT ARE EVENTS?
+
+  Events are append-only audit records of DS01 system activity.
+  They provide:
+  - Historical audit trail
+  - Debugging information
+  - Dashboard/alert data
+  - Compliance records
+
+  Events are NOT:
+  - Source of truth (Docker labels are)
+  - Used for state recovery
+  - Critical for operation (system works if events.jsonl is lost)
+
+EVENT CATEGORIES:
+
+  container.*     Container lifecycle (create, start, stop, remove)
+  gpu.*           GPU allocation, release, rejection
+  auth.*          Authentication/authorization events
+  resource.*      Resource limit enforcement
+  maintenance.*   Automated cleanup and enforcement
+  monitoring.*    Health checks and metrics
+  config.*        Configuration changes
+  detection.*     Unmanaged workload detection
+
+SCHEMA EVOLUTION:
+
+  Schema version field supports evolution:
+  - v1 (current): timestamp, event_type, user, source, details, schema_version
+  - Future versions will increment schema_version
+
+  Old events (pre-v1) use: ts, event, user, container (flat structure)
+  This tool handles both schemas transparently.
+
+HOW EVENTS ARE GENERATED:
+
+  1. Python scripts:
+     from ds01_events import log_event
+     log_event('container.create', user='alice', container='proj')
+
+  2. Bash scripts:
+     source scripts/lib/ds01_events.sh
+     log_event container.start alice docker-wrapper
+
+  3. Event logger CLI:
+     python3 scripts/docker/event-logger.py log gpu.allocate user=alice gpu=0:1
+
+STORAGE AND ROTATION:
+
+  Location: /var/log/ds01/events.jsonl
+  Format: JSONL (one JSON object per line)
+  Rotation: Daily via logrotate (copytruncate)
+  Retention: 30 days (configurable in logrotate.d/ds01)
+
+NEVER-BLOCK GUARANTEE:
+
+  Event logging never crashes the system:
+  - Returns False on failure
+  - Warns to stderr
+  - Never raises exceptions
+  - Permission errors are non-fatal
+
+QUERYING:
+
+  This tool (ds01-events) provides:
+  - Structured jq-based filtering
+  - Live streaming (--follow)
+  - Aggregate summaries
+  - Human-readable and JSON output
+
+  Old grep-based queries still work but are less powerful.
+
+RELATED FILES:
+
+  /opt/ds01-infra/scripts/lib/ds01_events.py    Shared Python library
+  /opt/ds01-infra/scripts/lib/ds01_events.sh    Shared Bash wrapper
+  /opt/ds01-infra/scripts/docker/event-logger.py  CLI for logging
+  /opt/ds01-infra/scripts/monitoring/ds01-events   This query tool
+  /var/log/ds01/events.jsonl                     Event storage
+
+EOF
+}
+
+cmd_guided() {
+    echo -e "${BOLD}DS01 Event Query - Guided Mode${NC}\n"
+
+    echo "What would you like to find?"
+    echo "  1) Events for a specific user"
+    echo "  2) Events for a specific container"
+    echo "  3) GPU-related events"
+    echo "  4) Recent events (last hour/today)"
+    echo "  5) Failed/rejected events"
+    echo "  6) Live stream new events"
+    echo "  7) Aggregate summary"
+    echo ""
+    read -rp "Select (1-7): " choice
+
+    case "$choice" in
+        1)
+            read -rp "Username: " username
+            echo -e "\n${GREEN}Running:${NC} ds01-events --user $username --limit 20"
+            exec "$0" --user "$username" --limit 20
+            ;;
+        2)
+            read -rp "Container name: " container
+            echo -e "\n${GREEN}Running:${NC} ds01-events --container $container"
+            exec "$0" --container "$container"
+            ;;
+        3)
+            echo -e "\n${GREEN}Running:${NC} ds01-events --type gpu --limit 20"
+            exec "$0" --type gpu --limit 20
+            ;;
+        4)
+            echo "  a) Last hour"
+            echo "  b) Today"
+            echo "  c) Yesterday"
+            read -rp "Select (a-c): " time_choice
+            case "$time_choice" in
+                a) exec "$0" --since "1 hour ago" ;;
+                b) exec "$0" --since "today" ;;
+                c) exec "$0" --since "yesterday" --until "today" ;;
+                *) echo "Invalid choice"; exit 1 ;;
+            esac
+            ;;
+        5)
+            echo -e "\n${GREEN}Showing events matching: reject, denied, fail, error${NC}"
+            exec "$0" --json | grep -iE "(reject|denied|fail|error)" | jq '.'
+            ;;
+        6)
+            echo -e "\n${GREEN}Running:${NC} ds01-events --follow"
+            echo "Press Ctrl+C to stop"
+            exec "$0" --follow
+            ;;
+        7)
+            exec "$0" --summary
+            ;;
+        *)
+            echo "Invalid choice"
             exit 1
-        fi
-        echo -e "\nEvents for user '$arg':\n"
-        grep "\"user\":.*\"$arg\"" "$EVENTS_FILE" | tail -50 | while read -r line; do
-            format_event "$line"
-        done
-        ;;
+            ;;
+    esac
+}
 
-    type|event)
-        # Events matching type pattern
-        if [[ -z "$arg" ]]; then
-            echo "Usage: ds01-events type <pattern>"
+cmd_summary() {
+    if [[ ! -f "$EVENTS_FILE" ]]; then
+        echo "No events logged yet"
+        exit 0
+    fi
+
+    echo -e "${BOLD}DS01 Event Summary${NC}\n"
+
+    # Total count
+    local total
+    total=$(wc -l < "$EVENTS_FILE")
+    echo -e "${BOLD}Total events:${NC} $total\n"
+
+    # By event type
+    echo -e "${BOLD}By event type:${NC}"
+    jq -r '(.event_type // .event)' "$EVENTS_FILE" 2>/dev/null | \
+        sort | uniq -c | sort -rn | head -15 | \
+        awk '{printf "  %-6s %s\n", $1, $2}'
+    echo ""
+
+    # By user
+    echo -e "${BOLD}By user (top 10):${NC}"
+    jq -r '(.user // "system")' "$EVENTS_FILE" 2>/dev/null | \
+        sort | uniq -c | sort -rn | head -10 | \
+        awk '{printf "  %-6s %s\n", $1, $2}'
+    echo ""
+
+    # Time distribution (by day)
+    echo -e "${BOLD}By date (last 7 days):${NC}"
+    jq -r '((.timestamp // .ts) // "unknown") | split("T")[0]' "$EVENTS_FILE" 2>/dev/null | \
+        sort | uniq -c | tail -7 | \
+        awk '{printf "  %-6s %s\n", $1, $2}'
+}
+
+cmd_query() {
+    if [[ ! -f "$EVENTS_FILE" ]]; then
+        echo "No events logged yet"
+        exit 0
+    fi
+
+    # Build jq filter
+    local filter
+    filter=$(build_jq_filter)
+
+    # Determine limit
+    local limit_cmd=""
+    if [[ "$OPT_ALL" != "true" && -n "$OPT_LIMIT" ]]; then
+        limit_cmd="tail -n $OPT_LIMIT"
+    elif [[ "$OPT_ALL" != "true" ]]; then
+        limit_cmd="tail -n 50"  # Default limit
+    else
+        limit_cmd="cat"
+    fi
+
+    # Query events
+    if [[ "$OPT_JSON" == "true" ]]; then
+        # JSON output (raw JSONL)
+        jq -c "select($filter)" "$EVENTS_FILE" 2>/dev/null | $limit_cmd || true
+    else
+        # Human-readable table
+        local count
+        count=$(jq -c "select($filter)" "$EVENTS_FILE" 2>/dev/null | wc -l)
+
+        if [[ "$count" -eq 0 ]]; then
+            echo "No events found"
+            exit 0
+        fi
+
+        # Show header
+        echo -e "${BOLD}TIMESTAMP               | EVENT TYPE              | USER       | CONTAINER      | DETAILS${NC}"
+        echo "------------------------|-------------------------|------------|----------------|------------------"
+
+        # Show events with color
+        jq -c "select($filter)" "$EVENTS_FILE" 2>/dev/null | \
+            $limit_cmd | \
+            format_event | \
+            column -t -s '|' | \
+            colorize_event
+    fi
+}
+
+cmd_follow() {
+    if [[ ! -f "$EVENTS_FILE" ]]; then
+        echo "No events logged yet. Waiting for new events..."
+        echo "Press Ctrl+C to stop"
+        # Create file if it doesn't exist
+        touch "$EVENTS_FILE" 2>/dev/null || true
+    fi
+
+    echo -e "${BOLD}Live event stream (Press Ctrl+C to stop)${NC}\n"
+
+    # Build jq filter
+    local filter
+    filter=$(build_jq_filter)
+
+    # Follow events
+    if [[ "$OPT_JSON" == "true" ]]; then
+        tail -f "$EVENTS_FILE" | jq -c --unbuffered "select($filter)"
+    else
+        echo -e "${BOLD}TIMESTAMP               | EVENT TYPE              | USER       | CONTAINER      | DETAILS${NC}"
+        echo "------------------------|-------------------------|------------|----------------|------------------"
+        tail -f "$EVENTS_FILE" | \
+            jq -c --unbuffered "select($filter)" | \
+            format_event | \
+            while IFS= read -r line; do
+                echo "$line" | column -t -s '|' | colorize_event
+            done
+    fi
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+
+# Parse options
+OPT_USER=""
+OPT_TYPE=""
+OPT_CONTAINER=""
+OPT_SINCE=""
+OPT_UNTIL=""
+OPT_LIMIT=""
+OPT_ALL="false"
+OPT_JSON="false"
+OPT_FOLLOW="false"
+OPT_SUMMARY="false"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --user)
+            OPT_USER="$2"
+            shift 2
+            ;;
+        --type)
+            OPT_TYPE="$2"
+            shift 2
+            ;;
+        --container)
+            OPT_CONTAINER="$2"
+            shift 2
+            ;;
+        --since)
+            OPT_SINCE="$2"
+            shift 2
+            ;;
+        --until)
+            OPT_UNTIL="$2"
+            shift 2
+            ;;
+        --limit)
+            OPT_LIMIT="$2"
+            shift 2
+            ;;
+        --all)
+            OPT_ALL="true"
+            shift
+            ;;
+        --json)
+            OPT_JSON="true"
+            shift
+            ;;
+        --follow)
+            OPT_FOLLOW="true"
+            shift
+            ;;
+        --summary)
+            OPT_SUMMARY="true"
+            shift
+            ;;
+        --help|-h)
+            cmd_help
+            exit 0
+            ;;
+        --info)
+            cmd_info
+            exit 0
+            ;;
+        --concepts)
+            cmd_concepts
+            exit 0
+            ;;
+        --guided)
+            cmd_guided
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Run 'ds01-events --help' for usage"
             exit 1
-        fi
-        echo -e "\nEvents matching '$arg':\n"
-        grep "\"event\":.*\"$arg" "$EVENTS_FILE" | tail -50 | while read -r line; do
-            format_event "$line"
-        done
-        ;;
+            ;;
+    esac
+done
 
-    today)
-        # Today's events
-        today=$(date +%Y-%m-%d)
-        echo -e "\nEvents for $today:\n"
-        grep "\"ts\":.*\"$today" "$EVENTS_FILE" | while read -r line; do
-            format_event "$line"
-        done
-        ;;
-
-    errors|failures)
-        # Failed/rejected events
-        echo -e "\nError events:\n"
-        grep -E '(rejected|failed|error|warning)' "$EVENTS_FILE" | tail -50 | while read -r line; do
-            format_event "$line"
-        done
-        ;;
-
-    gpu)
-        # GPU-related events
-        echo -e "\nGPU events:\n"
-        grep '"event":"gpu\.' "$EVENTS_FILE" | tail -50 | while read -r line; do
-            format_event "$line"
-        done
-        ;;
-
-    container)
-        # Container-related events
-        echo -e "\nContainer events:\n"
-        grep '"event":"container\.' "$EVENTS_FILE" | tail -50 | while read -r line; do
-            format_event "$line"
-        done
-        ;;
-
-    health)
-        # Health check events
-        echo -e "\nHealth check events:\n"
-        grep '"event":"health\.' "$EVENTS_FILE" | tail -20 | while read -r line; do
-            format_event "$line"
-        done
-        ;;
-
-    json)
-        # Raw JSON output
-        count="${arg:-20}"
-        tail -n "$count" "$EVENTS_FILE"
-        ;;
-
-    count|stats)
-        # Event statistics
-        echo -e "\nEvent Statistics:\n"
-        total=$(wc -l < "$EVENTS_FILE")
-        echo "Total events: $total"
-        echo ""
-        echo "By type:"
-        jq -r '.event' "$EVENTS_FILE" 2>/dev/null | sort | uniq -c | sort -rn | head -10
-        echo ""
-        echo "By user (top 10):"
-        jq -r '.user // "system"' "$EVENTS_FILE" 2>/dev/null | sort | uniq -c | sort -rn | head -10
-        ;;
-
-    search)
-        # Free-form search
-        if [[ -z "$arg" ]]; then
-            echo "Usage: ds01-events search <pattern>"
-            exit 1
-        fi
-        echo -e "\nSearching for '$arg':\n"
-        grep -i "$arg" "$EVENTS_FILE" | tail -50 | while read -r line; do
-            format_event "$line"
-        done
-        ;;
-
-    help|--help|-h)
-        echo "DS01 Event Query Tool"
-        echo ""
-        echo "Usage: ds01-events <command> [args]"
-        echo ""
-        echo "Commands:"
-        echo "  tail [N]          Show last N events (default: 20)"
-        echo "  user <username>   Show events for a user"
-        echo "  type <pattern>    Show events matching type"
-        echo "  today             Show today's events"
-        echo "  errors            Show error/failure events"
-        echo "  gpu               Show GPU events"
-        echo "  container         Show container events"
-        echo "  health            Show health check events"
-        echo "  json [N]          Raw JSON output"
-        echo "  stats             Show event statistics"
-        echo "  search <pattern>  Free-form search"
-        echo ""
-        echo "Events file: $EVENTS_FILE"
-        ;;
-
-    *)
-        echo "Unknown command: $command"
-        echo "Run 'ds01-events help' for usage"
-        exit 1
-        ;;
-esac
+# Execute command
+if [[ "$OPT_SUMMARY" == "true" ]]; then
+    cmd_summary
+elif [[ "$OPT_FOLLOW" == "true" ]]; then
+    cmd_follow
+else
+    cmd_query
+fi

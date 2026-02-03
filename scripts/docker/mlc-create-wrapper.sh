@@ -434,8 +434,10 @@ else
                     ALLOC_CMD="$ALLOC_CMD --prefer-full"
                 fi
 
+                set +e
                 ALLOC_OUTPUT=$($ALLOC_CMD 2>&1)
                 ALLOC_EXIT=$?
+                set -e
 
                 if [ $ALLOC_EXIT -eq 0 ] && echo "$ALLOC_OUTPUT" | grep -q "✓ Allocated"; then
                     # Extract GPU slots and Docker IDs
@@ -482,8 +484,10 @@ else
                 # Single GPU allocation (original behavior)
                 log_info "Allocating GPU via gpu_allocator_v2.py (priority: $PRIORITY, max: $MAX_GPUS)..."
 
+                set +e
                 ALLOC_OUTPUT=$(python3 "$GPU_ALLOCATOR" allocate "$CURRENT_USER" "$CONTAINER_TAG" "$MAX_GPUS" "$PRIORITY" 2>&1)
                 ALLOC_EXIT=$?
+                set -e
 
                 if [ $ALLOC_EXIT -eq 0 ] && echo "$ALLOC_OUTPUT" | grep -q "✓ Allocated"; then
                     # Extract friendly GPU ID (for logging: "1.1", "2.0", etc.)

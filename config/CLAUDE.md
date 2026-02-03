@@ -7,6 +7,7 @@ Resource configuration and group management.
 | File | Purpose |
 |------|---------|
 | `resource-limits.yaml` | Central resource configuration |
+| `permissions-manifest.sh` | Deterministic file permissions (sourced by deploy.sh) |
 | `groups/*.members` | Group membership lists |
 | `deploy/` | Files to deploy TO /etc/ |
 | `etc-mirrors/` | Reference copies FROM /etc/ |
@@ -136,6 +137,20 @@ Files in `deploy/` are templates to copy TO system locations:
 - `deploy/logrotate.d/` → `/etc/logrotate.d/`
 - `deploy/profile.d/` → `/etc/profile.d/`
 - `deploy/systemd/` → `/etc/systemd/system/`
+
+## Permissions Manifest
+
+`permissions-manifest.sh` is the single source of truth for DS01 file permissions. Sourced by `deploy.sh` on every run to enforce deterministic permissions regardless of umask or git checkout state.
+
+| Category | Permission | Rationale |
+|----------|------------|-----------|
+| Scripts (`scripts/**/*.sh`, `*.py`) | 755 | World-executable |
+| Config (`config/*.yaml`, `groups/*.members`) | 644 | World-readable |
+| Shared libraries (`lib/*.so`) | 755 | Loadable via LD_PRELOAD |
+| State dirs (`/var/lib/ds01/`) | Per-policy | See manifest comments |
+| Event log (`events.jsonl`) | 664 root:docker | Group-writable for logging |
+
+**To add new paths:** Edit `config/permissions-manifest.sh` directly.
 
 ---
 

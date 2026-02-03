@@ -1,0 +1,21 @@
+#!/bin/bash
+# DS01 wrapper for NVIDIA ub-device-create
+# Ensures nvidia device files are created with 0660 root:video permissions
+# instead of the hardcoded 0666 root:root from the original binary.
+#
+# Deployed to /usr/sbin/ub-device-create (original moved to ub-device-create.original)
+# Since /sbin -> /usr/sbin, this intercepts calls from udev rules at /sbin/ub-device-create
+
+set -e
+
+# Call the original ub-device-create binary
+/usr/sbin/ub-device-create.original "$@"
+
+# Fix permissions on nvidia device files immediately after creation
+# Note: Use find to avoid glob expansion issues with directories
+find /dev -maxdepth 1 -name "nvidia*" ! -type d 2>/dev/null | while read -r dev; do
+    chgrp video "$dev" 2>/dev/null || true
+    chmod 0660 "$dev" 2>/dev/null || true
+done
+
+exit 0

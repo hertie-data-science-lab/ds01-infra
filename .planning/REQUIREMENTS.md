@@ -9,12 +9,12 @@ Requirements for Milestone 1: Full Visibility & Control. Each maps to roadmap ph
 
 ### Detection & Awareness
 
-- [ ] **DETECT-01**: System detects all GPU-using processes on host (not just containers) and attributes them to a user via /proc
-- [ ] **DETECT-02**: System detects containers launched via raw `docker run` (bypassing DS01 commands) and tracks them
-- [ ] **DETECT-03**: System detects VS Code dev containers and docker-compose containers and tracks them
-- [ ] **DETECT-04**: System provides real-time inventory of all GPU workloads regardless of launch method
-- [ ] **DETECT-05**: System handles containers created via Docker API (not CLI) that don't receive DS01 labels
-- [ ] **DETECT-06**: Single unified inventory of all GPU workloads (DS01-managed containers, unmanaged containers, host processes) queryable from one place
+- [x] **DETECT-01**: System detects all GPU-using processes on host (not just containers) and attributes them to a user via /proc
+- [x] **DETECT-02**: System detects containers launched via raw `docker run` (bypassing DS01 commands) and tracks them
+- [x] **DETECT-03**: System detects VS Code dev containers and docker-compose containers and tracks them
+- [x] **DETECT-04**: System provides real-time inventory of all GPU workloads regardless of launch method
+- [x] **DETECT-05**: System handles containers created via Docker API (not CLI) that don't receive DS01 labels
+- [x] **DETECT-06**: Single unified inventory of all GPU workloads (DS01-managed containers, unmanaged containers, host processes) queryable from one place
 
 ### Access Control
 
@@ -58,14 +58,14 @@ Requirements for Milestone 1: Full Visibility & Control. Each maps to roadmap ph
 
 ### Event Logging
 
-- [ ] **LOG-01**: Event log records all container lifecycle events (create, start, stop, remove)
-- [ ] **LOG-02**: Event log records GPU allocation and release events
-- [ ] **LOG-03**: Event log records unmanaged workload detection events
-- [ ] **LOG-04**: Events stored in structured format (JSON) queryable for audit
+- [x] **LOG-01**: Event log records all container lifecycle events (create, start, stop, remove)
+- [x] **LOG-02**: Event log records GPU allocation and release events
+- [x] **LOG-03**: Event log records unmanaged workload detection events
+- [x] **LOG-04**: Events stored in structured format (JSON) queryable for audit
 
 ### CI/CD Foundation
 
-- [ ] **CICD-01**: Automated semantic versioning through CI pipeline (robust, replaces current fragile commitizen setup)
+- [x] **CICD-01**: Automated semantic versioning through CI pipeline (robust, replaces current fragile commitizen setup)
 
 ### Bug Fixes
 
@@ -169,16 +169,16 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| LOG-01 | Phase 1 | Pending |
-| LOG-02 | Phase 1 | Pending |
-| LOG-03 | Phase 1 | Pending |
-| LOG-04 | Phase 1 | Pending |
-| DETECT-01 | Phase 2 | Pending |
-| DETECT-02 | Phase 2 | Pending |
-| DETECT-03 | Phase 2 | Pending |
-| DETECT-04 | Phase 2 | Pending |
-| DETECT-05 | Phase 2 | Pending |
-| DETECT-06 | Phase 2 | Pending |
+| LOG-01 | Phase 1 | Complete |
+| LOG-02 | Phase 1 | Complete |
+| LOG-03 | Phase 1 | Complete |
+| LOG-04 | Phase 1 | Complete |
+| DETECT-01 | Phase 2 | Complete |
+| DETECT-02 | Phase 2 | Complete |
+| DETECT-03 | Phase 2 | Complete |
+| DETECT-04 | Phase 2 | Complete |
+| DETECT-05 | Phase 2 | Complete |
+| DETECT-06 | Phase 2 | Complete |
 | ACCESS-01 | Phase 3 | Pending |
 | ACCESS-02 | Phase 3 | Pending |
 | ACCESS-03 | Phase 3 | Pending |
@@ -208,7 +208,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FIX-02 | Phase 9 | Pending |
 | FIX-03 | Phase 9 | Pending |
 | FIX-04 | Phase 9 | Pending |
-| CICD-01 | Phase 1 | Pending |
+| CICD-01 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 39 total

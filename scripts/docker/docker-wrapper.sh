@@ -3,6 +3,7 @@
 # DS01 Docker Wrapper - Universal Container Management
 #
 # Phase A+B+C: Cgroup injection + Owner labels + GPU allocation (Jan 2026)
+# Phase 03-02: Container isolation enforcement (Jan 2026)
 #
 # This wrapper intercepts Docker commands and:
 # - Injects per-user cgroup-parent for resource limits
@@ -10,6 +11,9 @@
 # - Intercepts GPU requests and routes through ds01 allocation
 # - Rewrites --gpus all to specific allocated device
 # - Enforces user GPU quotas
+# - Filters container lists (docker ps) to show only own containers
+# - Verifies ownership for all container-targeting operations
+# - Prevents cross-user container access
 #
 # Installation: Copy to /usr/local/bin/docker (takes precedence over /usr/bin/docker)
 #
@@ -17,6 +21,23 @@
 # - GPU containers are EPHEMERAL (idle timeout + max runtime enforced)
 # - Non-GPU containers can be PERMANENT (no restrictions)
 # - All containers are tracked regardless of launch method
+#
+# ACCESS CONTROL:
+# - Non-admin users can only see and manage their own containers
+# - Admin (root, datasciencelab, ds01-admin group) has full access
+# - Cross-user operations denied with helpful error message
+# - Unowned containers allowed (fail-open) with warning log
+# - Rate-limited denial logging (max 10/hour per user)
+#
+# FAIL-OPEN MODES:
+# - DS01_WRAPPER_BYPASS=1: Skip all wrapper logic (emergency)
+# - DS01_ISOLATION_MODE=disabled: No isolation enforcement
+# - DS01_ISOLATION_MODE=monitoring: Log denials but allow operations
+# - Unowned containers: Allow with warning (prevent blocking legacy containers)
+#
+# DEBUG MODES:
+# - DS01_WRAPPER_DEBUG=1: Log interceptions (denials, filtering, ownership checks)
+# - DS01_WRAPPER_DEBUG=2: Log all docker invocations
 #
 # How it works:
 # 1. Intercepts 'docker run' and 'docker create' commands
@@ -26,7 +47,9 @@
 # 5. Ensures user's slice exists (ds01-{group}-{user}.slice)
 # 6. Injects --cgroup-parent if not already specified
 # 7. Injects ownership and type labels
-# 8. Passes through to real Docker binary
+# 8. Filters container lists for non-admins
+# 9. Verifies ownership for container-targeting operations
+# 10. Passes through to real Docker binary
 
 # Real Docker binary
 REAL_DOCKER="/usr/bin/docker"
@@ -54,12 +77,21 @@ else
     }
 fi
 
+# Source event logging library
+EVENTS_LIB="$INFRA_ROOT/scripts/lib/ds01_events.sh"
+if [ -f "$EVENTS_LIB" ]; then
+    source "$EVENTS_LIB"
+fi
+
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || true
 
-# Log function (silent unless DEBUG_DS01_WRAPPER=1)
+# Log function (silent unless DS01_WRAPPER_DEBUG=1 or DEBUG_DS01_WRAPPER=1)
 log_debug() {
-    if [ "${DEBUG_DS01_WRAPPER:-0}" = "1" ]; then
+    local level="${DS01_WRAPPER_DEBUG:-${DEBUG_DS01_WRAPPER:-0}}"
+    # Level 1: Log interceptions (denials, filter injections, ownership checks)
+    # Level 2: Log all invocations (every docker command)
+    if [ "$level" -ge "1" ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE" 2>/dev/null || true
     fi
 }
@@ -466,30 +498,136 @@ ensure_user_slice() {
     fi
 }
 
-# Phase B: Container list filtering - DISABLED (Dec 2025)
+# Phase 03-02: Container isolation enforcement (Jan 2026)
 #
-# Previously filtered 'docker ps' to show only user's containers for non-admins.
-# This was removed because:
-# 1. It broke GPU state reader (couldn't see other users' GPU allocations)
-# 2. OPA policy already prevents operations on other users' containers
-# 3. Visibility != Access - seeing containers is harmless, OPA controls actions
-# 4. Simpler architecture = fewer bugs
-#
-# Access control is now handled entirely by OPA authorization plugin.
+# After OPA authz plugin proved non-viable, container isolation is now enforced
+# directly in the Docker wrapper:
+# 1. 'docker ps' filtered to show only user's containers (via label filter)
+# 2. All container-targeting operations verify ownership via ds01.user label
+# 3. Admin bypass for root/datasciencelab/ds01-admin group
+# 4. Rate-limited denial logging to prevent log flooding
+# 5. Fail-open for unowned containers (prevents blocking legacy workloads)
+# 6. Monitoring mode (DS01_ISOLATION_MODE=monitoring) for safe rollout
 
-# Check if user is an admin (root or ds01-admin group)
+# Check if user is an admin (root, datasciencelab, or ds01-admin group)
 is_admin() {
     # Root is always admin (needed for cron jobs running as root)
-    [ "$CURRENT_UID" -eq 0 ] && return 0
+    [[ "$CURRENT_UID" -eq 0 ]] && return 0
+    # datasciencelab is always admin
+    [[ "$CURRENT_USER" == "datasciencelab" ]] && return 0
     # Check ds01-admin group membership
     groups "$CURRENT_USER" 2>/dev/null | grep -qE '\bds01-admin\b'
 }
 
-# No longer filtering - all users see all containers
-# OPA handles access control for operations
+# Filter container list for non-admins
 filter_container_list() {
-    log_debug "Passing through container list (no filtering)"
-    exec "$REAL_DOCKER" "$@"
+    # Monitoring mode: log but don't filter
+    if [[ "${_MONITORING_ONLY:-false}" == "true" ]]; then
+        log_debug "MONITORING: would filter container list for user=$CURRENT_USER"
+        exec "$REAL_DOCKER" "$@"
+    fi
+
+    if is_admin; then
+        log_debug "Admin pass-through for container list"
+        exec "$REAL_DOCKER" "$@"
+    fi
+
+    # Non-admin: filter to show only own containers
+    # Inject --filter for ds01.user label
+    log_debug "Filtering container list for user=$CURRENT_USER"
+
+    # Build filtered args - insert filter before other args
+    local subcommand="$1"
+    shift
+    exec "$REAL_DOCKER" "$subcommand" --filter "label=ds01.user=$CURRENT_USER" "$@"
+}
+
+# Verify container ownership for operations
+verify_container_ownership() {
+    local container="$1"
+    local operation="$2"  # for logging
+
+    # Admin bypass
+    is_admin && return 0
+
+    # Get container owner from ds01.user label
+    local owner
+    owner=$("$REAL_DOCKER" inspect "$container" --format '{{index .Config.Labels "ds01.user"}}' 2>/dev/null || echo "")
+
+    # Fallback: check aime.mlc.USER label for pre-Phase-3 containers
+    if [[ -z "$owner" || "$owner" == "<no value>" ]]; then
+        owner=$("$REAL_DOCKER" inspect "$container" --format '{{index .Config.Labels "aime.mlc.USER"}}' 2>/dev/null || echo "")
+    fi
+
+    # No owner label at all - fail-open with warning
+    # FAIL-OPEN: Allow unowned containers to prevent blocking legitimate operations
+    if [[ -z "$owner" || "$owner" == "<no value>" ]]; then
+        log_debug "WARNING: Container $container has no owner label - allowing operation (fail-open)"
+        # Log warning event (best-effort)
+        if command -v log_event &>/dev/null; then
+            log_event "access.unowned_container" "$CURRENT_USER" "docker-wrapper" \
+                container="$container" operation="$operation" || true
+        fi
+        return 0
+    fi
+
+    # Check ownership
+    if [[ "$owner" != "$CURRENT_USER" ]]; then
+        # Monitoring mode: log but allow
+        if [[ "${_MONITORING_ONLY:-false}" == "true" ]]; then
+            logger -p auth.notice -t ds01-wrapper "MONITORING: would deny user=$CURRENT_USER operation=$operation container=$container owner=$owner" 2>/dev/null || true
+            log_debug "MONITORING: would deny user=$CURRENT_USER operation=$operation (container belongs to $owner)"
+            return 0
+        fi
+
+        echo "Permission denied: this container belongs to ${owner}" >&2
+        # Rate-limited denial logging
+        rate_limited_deny_log "$CURRENT_USER" "$operation $container" "container belongs to $owner"
+        return 1
+    fi
+
+    return 0
+}
+
+# Rate-limited denial logging (max 10 denials per user per hour)
+rate_limited_deny_log() {
+    local user="$1"
+    local command="$2"
+    local reason="$3"
+    local now
+    now=$(date +%s)
+    local state_file="/var/lib/ds01/rate-limits/deny-${user}.state"
+
+    mkdir -p /var/lib/ds01/rate-limits 2>/dev/null || true
+
+    local count=0
+    local timestamp=$now
+    if [[ -f "$state_file" ]]; then
+        read -r count timestamp < "$state_file" 2>/dev/null || true
+        # Reset if window expired (3600s = 1 hour)
+        if (( now - timestamp > 3600 )); then
+            count=0
+            timestamp=$now
+        fi
+    fi
+
+    # First denial always logged at warning level
+    if (( count == 0 )); then
+        logger -p auth.warning -t ds01-access "FIRST DENIAL: user=$user command=$command reason=$reason" 2>/dev/null || true
+    fi
+
+    # Check limit (max 10 per hour)
+    if (( count < 10 )); then
+        logger -p auth.notice -t ds01-access "DENIED: user=$user command=$command reason=$reason (${count}+1/10)" 2>/dev/null || true
+    fi
+
+    (echo "$((count + 1)) $timestamp" > "$state_file") 2>/dev/null || true
+
+    # Log event (best-effort)
+    if command -v log_event &>/dev/null; then
+        log_event "auth.denied" "$user" "docker-wrapper" \
+            command="$command" reason="$reason" || true
+    fi
 }
 
 # Check if a container is protected infrastructure
@@ -500,8 +638,57 @@ is_protected_container() {
     [[ "$is_protected" == "true" ]]
 }
 
+# Extract container target from args
+# Skips flags (args starting with -) and their values
+extract_container_target() {
+    local skip_next=false
+    for arg in "$@"; do
+        if $skip_next; then
+            skip_next=false
+            continue
+        fi
+        case "$arg" in
+            -*=*) continue ;;  # --flag=value
+            -*)
+                # Flags that take a value: skip next arg
+                case "$arg" in
+                    -e|-w|--env|--workdir|--user|-u|--name|--label|-l|--format|-f|--filter|--signal)
+                        skip_next=true ;;
+                esac
+                continue
+                ;;
+            *)
+                # First non-flag arg is the container
+                echo "$arg"
+                return 0
+                ;;
+        esac
+    done
+    return 1
+}
+
 # Main logic
 main() {
+    # Save original args for fail-open fallback
+    _ORIGINAL_ARGS=("$@")
+
+    # Emergency bypass - FAIL-OPEN for wrapper crashes or emergencies
+    if [[ "${DS01_WRAPPER_BYPASS:-0}" == "1" ]]; then
+        exec "$REAL_DOCKER" "$@"
+    fi
+
+    # Isolation mode: disabled | monitoring | full (default)
+    case "${DS01_ISOLATION_MODE:-full}" in
+        disabled) exec "$REAL_DOCKER" "$@" ;;
+        monitoring) _MONITORING_ONLY=true ;;
+        *) _MONITORING_ONLY=false ;;
+    esac
+
+    # Debug mode level 2: log all invocations
+    if [[ "${DS01_WRAPPER_DEBUG:-0}" -ge 2 ]]; then
+        log_debug "INVOCATION: docker $*"
+    fi
+
     # If no arguments, pass through
     if [ $# -eq 0 ]; then
         exec "$REAL_DOCKER"
@@ -510,33 +697,161 @@ main() {
     # Get the Docker subcommand
     local subcommand="$1"
 
-    # Protection: Prevent non-admins from stopping/removing infrastructure containers
-    if [[ "$subcommand" == "stop" || "$subcommand" == "rm" || "$subcommand" == "remove" || "$subcommand" == "kill" ]]; then
-        # Get the container name (last argument, or after flags)
-        local target="${@: -1}"
-        # Skip if target looks like a flag
-        if [[ "$target" != -* ]] && [ -n "$target" ]; then
-            if is_protected_container "$target"; then
-                if ! is_admin; then
-                    echo "Error: Container '$target' is protected infrastructure." >&2
-                    echo "Admin access required. Contact system administrator." >&2
-                    exit 1
-                fi
-                log_debug "Admin $CURRENT_USER allowed to $subcommand protected container: $target"
-            fi
-        fi
-    fi
-
-    # Phase B: Filter 'ps' command for non-admins
+    # ========================================================================
+    # CONTAINER LIST FILTERING (docker ps, docker container ls/list/ps)
+    # ========================================================================
     if [[ "$subcommand" == "ps" ]]; then
         filter_container_list "$@"
     fi
 
-    # Phase B: Filter 'container ls' or 'container list' for non-admins
-    if [[ "$subcommand" == "container" ]] && [[ "${2:-}" == "ls" || "${2:-}" == "list" ]]; then
-        filter_container_list "$@"
+    if [[ "$subcommand" == "container" ]]; then
+        local container_subcommand="${2:-}"
+        if [[ "$container_subcommand" == "ls" || "$container_subcommand" == "list" || "$container_subcommand" == "ps" ]]; then
+            filter_container_list "$@"
+        fi
     fi
 
+    # ========================================================================
+    # CONTAINER-TARGETING READ OPERATIONS (require ownership verification)
+    # ========================================================================
+    # exec, logs, inspect, stats, attach, top, port, diff, export, wait
+    if [[ "$subcommand" == "exec" || "$subcommand" == "logs" || "$subcommand" == "inspect" || \
+          "$subcommand" == "stats" || "$subcommand" == "attach" || "$subcommand" == "top" || \
+          "$subcommand" == "port" || "$subcommand" == "diff" || "$subcommand" == "export" || \
+          "$subcommand" == "wait" ]]; then
+        shift
+        local container
+        if container=$(extract_container_target "$@"); then
+            if ! verify_container_ownership "$container" "$subcommand"; then
+                exit 1
+            fi
+        fi
+        exec "$REAL_DOCKER" "$subcommand" "$@"
+    fi
+
+    # docker container <subcommand> — handle 'docker container exec', etc.
+    if [[ "$subcommand" == "container" ]]; then
+        local container_subcommand="${2:-}"
+        if [[ "$container_subcommand" == "exec" || "$container_subcommand" == "logs" || \
+              "$container_subcommand" == "inspect" || "$container_subcommand" == "stats" || \
+              "$container_subcommand" == "attach" || "$container_subcommand" == "top" || \
+              "$container_subcommand" == "port" || "$container_subcommand" == "diff" || \
+              "$container_subcommand" == "export" || "$container_subcommand" == "wait" ]]; then
+            shift 2
+            local container
+            if container=$(extract_container_target "$@"); then
+                if ! verify_container_ownership "$container" "$container_subcommand"; then
+                    exit 1
+                fi
+            fi
+            exec "$REAL_DOCKER" container "$container_subcommand" "$@"
+        fi
+    fi
+
+    # ========================================================================
+    # CONTAINER-TARGETING WRITE OPERATIONS (ownership + protected check)
+    # ========================================================================
+    # stop, start, restart, pause, unpause, kill, rm, remove, rename, update
+    if [[ "$subcommand" == "stop" || "$subcommand" == "start" || "$subcommand" == "restart" || \
+          "$subcommand" == "pause" || "$subcommand" == "unpause" || "$subcommand" == "kill" || \
+          "$subcommand" == "rm" || "$subcommand" == "remove" || "$subcommand" == "rename" || \
+          "$subcommand" == "update" ]]; then
+        shift
+        # Extract container targets (support multiple containers for stop/kill/rm)
+        local containers=()
+        local skip_next=false
+        for arg in "$@"; do
+            if $skip_next; then
+                skip_next=false
+                continue
+            fi
+            case "$arg" in
+                -*=*) continue ;;
+                -*)
+                    case "$arg" in
+                        -t|--time|--signal) skip_next=true ;;
+                    esac
+                    continue
+                    ;;
+                *) containers+=("$arg") ;;
+            esac
+        done
+
+        # Verify ownership and protected status for all containers
+        for container in "${containers[@]}"; do
+            # Protected container check
+            if is_protected_container "$container"; then
+                if ! is_admin; then
+                    echo "Error: Container '$container' is protected infrastructure." >&2
+                    echo "Admin access required. Contact system administrator." >&2
+                    exit 1
+                fi
+                log_debug "Admin $CURRENT_USER allowed to $subcommand protected container: $container"
+            fi
+
+            # Ownership verification
+            if ! verify_container_ownership "$container" "$subcommand"; then
+                exit 1
+            fi
+        done
+
+        exec "$REAL_DOCKER" "$subcommand" "$@"
+    fi
+
+    # docker container <subcommand> — handle 'docker container stop', etc.
+    if [[ "$subcommand" == "container" ]]; then
+        local container_subcommand="${2:-}"
+        if [[ "$container_subcommand" == "stop" || "$container_subcommand" == "start" || \
+              "$container_subcommand" == "restart" || "$container_subcommand" == "pause" || \
+              "$container_subcommand" == "unpause" || "$container_subcommand" == "kill" || \
+              "$container_subcommand" == "rm" || "$container_subcommand" == "remove" || \
+              "$container_subcommand" == "rename" || "$container_subcommand" == "update" ]]; then
+            shift 2
+            # Extract container targets
+            local containers=()
+            local skip_next=false
+            for arg in "$@"; do
+                if $skip_next; then
+                    skip_next=false
+                    continue
+                fi
+                case "$arg" in
+                    -*=*) continue ;;
+                    -*)
+                        case "$arg" in
+                            -t|--time|--signal) skip_next=true ;;
+                        esac
+                        continue
+                        ;;
+                    *) containers+=("$arg") ;;
+                esac
+            done
+
+            # Verify ownership and protected status for all containers
+            for container in "${containers[@]}"; do
+                # Protected container check
+                if is_protected_container "$container"; then
+                    if ! is_admin; then
+                        echo "Error: Container '$container' is protected infrastructure." >&2
+                        echo "Admin access required. Contact system administrator." >&2
+                        exit 1
+                    fi
+                    log_debug "Admin $CURRENT_USER allowed to $container_subcommand protected container: $container"
+                fi
+
+                # Ownership verification
+                if ! verify_container_ownership "$container" "$container_subcommand"; then
+                    exit 1
+                fi
+            done
+
+            exec "$REAL_DOCKER" container "$container_subcommand" "$@"
+        fi
+    fi
+
+    # ========================================================================
+    # CONTAINER CREATION (cgroup injection, label injection, GPU allocation)
+    # ========================================================================
     # Check if we need to inject for container creation
     if needs_cgroup_injection "$subcommand"; then
         log_debug "Intercepting '$subcommand' for user $CURRENT_USER"
@@ -568,11 +883,22 @@ main() {
             GPU_REQUESTED=true
             log_debug "GPU request detected"
 
-            # Check if this is already a ds01 container with explicit GPU allocation
-            # (ds01 containers handle their own allocation via mlc-wrapper)
+            # Check if GPU allocation should be skipped:
+            # 1. DS01 native containers (atomic/orchestration) handle their own allocation
+            # 2. Specific device UUID already set (e.g. mlc temp containers with pre-allocated GPU)
+            local gpu_value
+            gpu_value=$(get_gpu_request_value "$@")
+            local skip_gpu_alloc=false
+
             if [[ "$CONTAINER_TYPE" == "orchestration" ]] || [[ "$CONTAINER_TYPE" == "atomic" ]]; then
                 log_debug "DS01 native container - GPU allocation handled by ds01 layer"
-            else
+                skip_gpu_alloc=true
+            elif [[ "$gpu_value" == device=MIG-* ]] || [[ "$gpu_value" == device=GPU-* ]]; then
+                log_debug "Specific GPU device already set ($gpu_value) - skipping re-allocation"
+                skip_gpu_alloc=true
+            fi
+
+            if [[ "$skip_gpu_alloc" == "false" ]]; then
                 # External container requesting GPU - allocate through ds01
                 log_debug "External container requesting GPU - initiating allocation"
 
@@ -588,7 +914,14 @@ main() {
                 GPU_UUID=$(allocate_gpu_for_container "$effective_owner" "$CONTAINER_TYPE")
 
                 if [ -z "$GPU_UUID" ]; then
-                    # Allocation failed
+                    # Allocation failed - log auth denial
+                    if command -v log_event &>/dev/null; then
+                        log_event "auth.denied" "$effective_owner" "docker-wrapper" \
+                            reason="${GPU_ALLOC_ERROR}: ${GPU_ALLOC_DETAILS}" \
+                            container_type="$CONTAINER_TYPE" || true
+                    fi
+
+                    # Show error to user
                     show_gpu_error "$GPU_ALLOC_ERROR" "$GPU_ALLOC_DETAILS"
                     exit 1
                 fi
@@ -676,6 +1009,51 @@ main() {
 
         # Execute with injected args
         log_debug "Executing: $REAL_DOCKER $subcommand ${INJECT_ARGS[*]} ${FINAL_ARGS[*]}"
+
+        # Log container creation event (best-effort, never blocks)
+        # Extract container name from args for logging
+        local CONTAINER_NAME=""
+        local IMAGE_NAME=""
+        local skip_next=false
+        for arg in "${FINAL_ARGS[@]}"; do
+            if $skip_next; then
+                skip_next=false
+                continue
+            fi
+            case "$arg" in
+                --name)
+                    skip_next=true
+                    ;;
+                --name=*)
+                    CONTAINER_NAME="${arg#--name=}"
+                    ;;
+                *)
+                    # Last non-flag arg is typically the image
+                    if [[ "$arg" != -* ]] && [[ "$arg" != *=* ]]; then
+                        IMAGE_NAME="$arg"
+                    fi
+                    ;;
+            esac
+        done
+
+        # Determine effective owner for logging
+        local LOG_USER="$CURRENT_USER"
+        local devcontainer_owner
+        devcontainer_owner=$(get_devcontainer_owner "$@")
+        if [ -n "$devcontainer_owner" ]; then
+            LOG_USER="$devcontainer_owner"
+        fi
+
+        # Log event BEFORE docker exec (so we capture creation attempt)
+        # Using || true ensures this never blocks the operation
+        if command -v log_event &>/dev/null; then
+            log_event "container.create" "$LOG_USER" "docker-wrapper" \
+                container="${CONTAINER_NAME:-unknown}" \
+                image="${IMAGE_NAME:-unknown}" \
+                container_type="$CONTAINER_TYPE" \
+                gpu="${GPU_SLOT:-none}" || true
+        fi
+
         exec "$REAL_DOCKER" "$subcommand" "${INJECT_ARGS[@]}" "${FINAL_ARGS[@]}"
     else
         # Pass through unchanged

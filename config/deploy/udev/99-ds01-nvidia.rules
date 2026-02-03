@@ -1,0 +1,10 @@
+# DS01: Ensure nvidia devices are world-accessible (0666)
+# NVIDIA driver defaults vary by system — some create 0660 root:video.
+# GPU access control is enforced at Layer 1 (CUDA_VISIBLE_DEVICES) and
+# Layer 2 (Docker --gpus device mapping), NOT at device permission level.
+# See: .planning/phases/02.1-gpu-access-control-research/
+KERNEL=="nvidia[0-9]*", MODE="0666"
+KERNEL=="nvidiactl", MODE="0666"
+KERNEL=="nvidia-modeset", MODE="0666"
+KERNEL=="nvidia-uvm", MODE="0666"
+KERNEL=="nvidia-uvm-tools", MODE="0666"
