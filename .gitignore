@@ -48,9 +48,6 @@ htmlcov/
 *.out
 logs/*
 
-# Claude AI files
-.claude/
-
 # Binary directory
 bin/
 
