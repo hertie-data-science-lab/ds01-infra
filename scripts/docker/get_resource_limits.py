@@ -38,9 +38,9 @@ class ResourceLimitParser:
             # Try multiple default locations
             script_dir = Path(__file__).resolve().parent
             possible_paths = [
-                script_dir.parent.parent / "config" / "resource-limits.yaml",
-                Path("/opt/ds01-infra/config/resource-limits.yaml"),
-                script_dir / "../../config/resource-limits.yaml",
+                script_dir.parent.parent / "config" / "runtime" / "resource-limits.yaml",
+                Path("/opt/ds01-infra/config/runtime/resource-limits.yaml"),
+                script_dir / "../../config/runtime/resource-limits.yaml",
             ]
 
             for path in possible_paths:
@@ -64,7 +64,7 @@ class ResourceLimitParser:
             return yaml.safe_load(f)
 
     def _load_group_members(self, group_name):
-        """Load group members from config/groups/{group}.members file.
+        """Load group members from config/runtime/groups/{group}.members file.
 
         File format: One username per line, # comments ignored.
         Returns list of usernames or empty list if file doesn't exist or isn't readable.
@@ -88,7 +88,7 @@ class ResourceLimitParser:
             return []
 
     def _load_user_overrides(self):
-        """Load user overrides from config/user-overrides.yaml.
+        """Load user overrides from config/runtime/user-overrides.yaml.
 
         Returns dict of username -> override settings, or empty dict if file doesn't exist or isn't readable.
         """

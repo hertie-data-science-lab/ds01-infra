@@ -23,6 +23,7 @@ Shared libraries for bash and Python scripts.
 | File | Purpose |
 |------|---------|
 | `ds01_core.py` | Core utilities (duration parsing, container utils) |
+| `ds01_events.py` | Event logging with 4KB size limit enforcement |
 | `username_utils.py` | Python username sanitisation |
 
 ## Usage
@@ -56,6 +57,14 @@ from ds01_core import parse_duration, get_container_owner
 - `init.sh` must be sourced, not executed
 - Python libraries use `/opt/ds01-infra/scripts/lib` in sys.path
 - Dockerfile generator supports 4 phases: Framework → Jupyter → Data Science → Use Case
+
+## Phase 3.2 Improvements
+
+**Event logging (Plan 02):**
+- 4KB size limit enforcement (PIPE_BUF - 96 bytes overhead) preserves atomic write guarantee
+- Byte-level checking (UTF-8 encoded) not character length
+- Truncation with fail-open if event too large after truncation
+- Never blocks operations (best-effort logging)
 
 ---
 

@@ -171,15 +171,26 @@ def log_event(
         # Serialize to JSON
         event_json = json.dumps(event, separators=(',', ':'))
 
-        # Check size constraint (PIPE_BUF for atomic writes)
-        if len(event_json) > MAX_EVENT_SIZE:
+        # Enforce size constraint (PIPE_BUF for atomic writes)
+        # PIPE_BUF is 4096 bytes - we use 4000 to leave margin for newline
+        event_bytes = event_json.encode('utf-8')
+        if len(event_bytes) > MAX_EVENT_SIZE - 96:  # Reserve 96 bytes for overhead
             print(
-                f"Warning: Event too large ({len(event_json)} > {MAX_EVENT_SIZE} bytes), truncating details",
+                f"Warning: Event too large ({len(event_bytes)} bytes), truncating details",
                 file=sys.stderr
             )
             # Truncate details to fit
-            event["details"] = {"truncated": True, "original_size": len(event_json)}
+            event["details"] = {"truncated": True, "original_size": len(event_bytes)}
             event_json = json.dumps(event, separators=(',', ':'))
+            event_bytes = event_json.encode('utf-8')
+
+            # If still too large after truncation, fail-open (skip logging)
+            if len(event_bytes) > MAX_EVENT_SIZE - 96:
+                print(
+                    f"Warning: Event cannot be truncated below {MAX_EVENT_SIZE} bytes, skipping",
+                    file=sys.stderr
+                )
+                return False
 
         # Ensure parent directory exists
         EVENTS_FILE.parent.mkdir(parents=True, exist_ok=True)

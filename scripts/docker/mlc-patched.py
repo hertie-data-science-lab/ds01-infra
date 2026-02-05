@@ -1792,15 +1792,50 @@ def build_docker_create_command(
     return docker_cmd
 
 ###############################################################################################################################################################################################
+def validate_ds01_environment():
+    """
+    Validate DS01 environment prerequisites are in place.
+    Exits with error if critical files/directories missing.
+    """
+    REQUIRED_FILES = [
+        "/opt/ds01-infra/scripts/docker/gpu_allocator_v2.py",
+    ]
+
+    REQUIRED_DIRS = [
+        "/var/lib/ds01",
+        "/var/log/ds01",
+    ]
+
+    missing = []
+
+    for f in REQUIRED_FILES:
+        if not pathlib.Path(f).exists():
+            missing.append(f"File: {f}")
+
+    for d in REQUIRED_DIRS:
+        if not pathlib.Path(d).exists():
+            missing.append(f"Directory: {d}")
+
+    if missing:
+        print(f"{ERROR}ERROR: DS01 environment incomplete{RESET}", file=sys.stderr)
+        for item in missing:
+            print(f"  {ERROR}Missing: {item}{RESET}", file=sys.stderr)
+        print(f"\n{HINT}HINT: Run deploy.sh to set up DS01 infrastructure{RESET}\n", file=sys.stderr)
+        exit(1)
+
+###############################################################################################################################################################################################
 def main():
-    try: 
+    try:
+        # Validate DS01 environment before any operations
+        validate_ds01_environment()
+
         # Arguments parsing
         args = get_flags()
-           
+
         if not args.command:
             print(f"\nUse {INPUT}mlc -h{RESET} or {INPUT}mlc --help{RESET} to get more informations about the AIME MLC tool.\n")
-            
-   
+
+
         if args.command == 'create':
             
             # Set the file with frameworks, versions, gpu architectures and images

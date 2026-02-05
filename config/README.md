@@ -4,174 +4,242 @@ Central configuration for DS01 resource management.
 
 ## Overview
 
-DS01 configuration follows a **three-tier pattern**:
+DS01 configuration follows a **lifecycle-based hierarchy**:
 
-| Tier | Directory | Purpose |
-|------|-----------|---------|
-| **Source of Truth** | `config/` root | Active configuration that DS01 reads |
-| **Deploy Sources** | `config/deploy/` | Files to copy TO /etc/ (cron, systemd, etc.) |
-| **Reference Mirrors** | `config/*-mirrors/` | Copies FROM /etc/ for version control |
+| Directory | Purpose | Lifecycle | Examples |
+|-----------|---------|-----------|----------|
+| `runtime/` | Operational configs read during execution | Per-operation | resource-limits.yaml, groups/*.members |
+| `deploy/` | Files deployed TO /etc/ during installation | Install-time | systemd units, profile.d scripts |
+| `state/` | Documents persistent state structure | Runtime persistence | /var/lib/ds01 layout |
 
-### Source of Truth Files
-
-| File | Purpose |
-|------|---------|
-| `resource-limits.yaml` | Main config (defaults, group settings, policies) |
-| `groups/*.members` | Group member lists (one file per group) |
-| `user-overrides.yaml` | Per-user exceptions |
-
-Related files:
-- `scripts/lib/error-messages.sh` - User-facing error message templates
+**Key principle:** Clear separation between install-time configuration (deploy/), runtime configuration (runtime/), and persistent state (state/).
 
 ## Directory Structure
 
 ```
 config/
-├── resource-limits.yaml     # Source of truth: main configuration
-├── user-overrides.yaml      # Source of truth: per-user exceptions
-├── groups/                  # Source of truth: group membership
-│   ├── student.members      # Student group members
-│   ├── researcher.members   # Researcher group members
-│   └── admin.members        # Admin group members
-├── deploy/                  # Deploy sources (files to copy TO /etc/)
-│   ├── cron.d/              # Cron job definitions → /etc/cron.d/
-│   ├── logrotate.d/         # Log rotation configs → /etc/logrotate.d/
-│   ├── profile.d/           # Shell PATH configs → /etc/profile.d/
-│   ├── systemd/             # Service unit files → /etc/systemd/system/
-│   ├── docker/              # Docker daemon configs
-│   └── opa/                 # OPA policy files
-├── etc-mirrors/             # Reference mirrors (copies FROM /etc/)
-│   ├── profile.d/           # Mirror of /etc/profile.d/ds01-*
-│   ├── skel/                # Mirror of /etc/skel/.bashrc
-│   ├── sudoers.d/           # Mirror of /etc/sudoers.d/ds01-*
-│   ├── pam.d/               # Mirror of PAM configuration
-│   └── cron.d/              # Mirror of /etc/cron.d/ds01-*
-├── usr-mirrors/             # Reference mirrors (copies FROM /usr/)
-│   └── local/lib/           # Mirror of /usr/local/lib/
+├── variables.env            # Deploy-time variables
+├── runtime/                 # Runtime configuration (read by scripts)
+│   ├── resource-limits.yaml # Main config (defaults, groups, policies)
+│   ├── user-overrides.yaml  # Per-user exceptions
+│   ├── group-overrides.txt  # Group assignment overrides
+│   └── groups/              # Group membership lists
+│       ├── student.members
+│       ├── researcher.members
+│       ├── faculty.members
+│       └── admin.members
+├── deploy/                  # Install-time configs (deployed TO /etc/)
+│   ├── systemd/             # Service units → /etc/systemd/system/
+│   ├── profile.d/           # Environment scripts → /etc/profile.d/
+│   ├── sudoers.d/           # Sudo rules → /etc/sudoers.d/
+│   ├── cron.d/              # Cron jobs → /etc/cron.d/
+│   ├── logrotate.d/         # Log rotation → /etc/logrotate.d/
+│   ├── docker/              # Docker daemon config
+│   ├── modprobe.d/          # Kernel module config
+│   ├── udev/                # Udev rules
+│   └── wrappers/            # Binary wrappers → /usr/local/bin/
+├── state/                   # State directory documentation
+│   └── README.md            # Documents /var/lib/ds01 structure
+├── permissions-manifest.sh  # File permission definitions (sourced by deploy.sh)
+├── container-aliases.sh     # Docker command aliases
 └── README.md                # This file
 ```
 
-## Three-Tier Pattern Explained
+## Configuration Lifecycle
 
-### 1. Source of Truth (config/ root)
+### 1. Runtime Configuration (runtime/)
 
-These are the active configuration files that DS01 scripts read at runtime:
+**Read by:** Scripts during normal operation
+**When:** Every container creation, allocation, access check
+**Reloads:** Automatically (no restart needed)
 
+**Files:**
+- `resource-limits.yaml` - User limits, group settings, policies
+- `user-overrides.yaml` - Per-user exceptions
+- `group-overrides.txt` - Group assignment overrides
+- `groups/*.members` - Group membership lists
+
+**Usage:**
 ```bash
-# Scripts read these directly
+# Changes take effect immediately
 python3 scripts/docker/get_resource_limits.py alice
-# Reads: config/resource-limits.yaml, config/groups/*.members, config/user-overrides.yaml
+
+# Validate YAML syntax
+python3 -c "import yaml; yaml.safe_load(open('config/runtime/resource-limits.yaml'))"
 ```
 
-### 2. Deploy Sources (config/deploy/)
+### 2. Deploy-Time Configuration (deploy/)
 
-Files that need to be deployed to system directories. Use `deploy.sh` to copy them:
+**Deployed by:** `sudo deploy` (deploy.sh script)
+**When:** Installation, upgrades, config changes
+**Target:** System directories (/etc/, /usr/local/bin/)
 
+**Deployment:**
 ```bash
-# Deploy all config files to /etc/
-sudo /opt/ds01-infra/scripts/system/deploy.sh
+# Deploy all configs
+sudo deploy
 
-# Manual deployment example
-sudo cp config/deploy/cron.d/ds01-cleanup /etc/cron.d/ds01-cleanup
-sudo cp config/deploy/profile.d/ds01-path.sh /etc/profile.d/ds01-path.sh
+# Or manually
+sudo cp config/deploy/systemd/ds01-*.service /etc/systemd/system/
+sudo systemctl daemon-reload
 ```
 
-**Deploy directories:**
-- `cron.d/` - Scheduled tasks (cleanup, monitoring)
-- `logrotate.d/` - Log rotation rules
-- `profile.d/` - Shell PATH configuration
-- `systemd/` - Service definitions (proxy, monitors)
-- `docker/` - Docker daemon configuration
-- `opa/` - OPA authorization policies
+**Template support:**
+Files ending in `.template` are processed through envsubst with variables from `variables.env`.
 
-### 3. Reference Mirrors (*-mirrors/)
+### 3. Persistent State (state/)
 
-Copies of files FROM /etc/ and /usr/ for version control. These let you:
-- Track what's actually deployed on the system
-- Detect drift between repo and system
-- Restore system config from git
+**Location:** `/var/lib/ds01/`
+**Purpose:** Runtime state files (grants, rate-limits, workload inventory)
+**Documentation:** See [state/README.md](state/README.md)
 
-```bash
-# Update mirrors from live system
-cp /etc/profile.d/ds01-path.sh config/etc-mirrors/profile.d/
-cp /etc/skel/.bashrc config/etc-mirrors/skel/
+## Source of Truth Files
 
-# Check for drift
-diff config/deploy/profile.d/ds01-path.sh /etc/profile.d/ds01-path.sh
+### resource-limits.yaml
+**Location:** `config/runtime/resource-limits.yaml`
+**Purpose:** Main configuration for resource limits and policies
+
+**Key sections:**
+- `defaults` - Fallback limits for all users
+- `groups` - Group-based limit profiles
+- `gpu_allocation` - GPU/MIG configuration
+- `policies` - System-wide policies
+- `container_types` - External container settings
+- `bare_metal_access` - Host GPU access control
+- `access_control` - Docker wrapper settings
+
+**Priority order:** user_overrides > groups > defaults
+
+### groups/*.members
+**Location:** `config/runtime/groups/*.members`
+**Format:** One username per line, # for comments
+
+```
+# config/runtime/groups/researcher.members
+204214@hertie-school.lan          # Silke Kaiser (PhD)
+c.fusarbassini@hertie-school.lan  # Chiara Fusarbassini
 ```
 
-## Member File Format
-
-Group member files use a simple text format (one username per line):
-
-```
-# config/groups/researcher.members
-# ================================================
-# Researcher Group Members
-# ================================================
-# Format: One username per line matching /home/<username>
-# Comments start with #
-# ================================================
-
-204214@hertie-school.lan          # Silke Kaiser (student ID)
-c.fusarbassini@hertie-school.lan  # Chiara Fusarbassini (staff)
-```
-
-**Benefits of modular member files:**
-- Add comments to identify users
-- Easier to audit group membership
-- Git diffs show exactly who was added/removed
-- No YAML syntax errors from editing member lists
-
-## User Overrides File Format
-
-Per-user exceptions are in `config/user-overrides.yaml`:
+### user-overrides.yaml
+**Location:** `config/runtime/user-overrides.yaml`
+**Purpose:** Per-user exceptions to group limits
 
 ```yaml
-# config/user-overrides.yaml
-# Per-user resource limit overrides
-
 204214@hertie-school.lan:
-  idle_timeout: null               # No idle timeout
-  max_runtime: null                # No runtime limit
-  container_hold_after_stop: null  # Don't auto-remove
+  idle_timeout: null      # No timeout
+  max_runtime: null       # No runtime limit
   # Reason: Thesis work - approved 2025-XX-XX
-
-# h.baker@hertie-school.lan:
-#   max_mig_instances: 4
-#   allow_full_gpu: true
 ```
 
-## Main Config Structure (resource-limits.yaml)
+### group-overrides.txt
+**Location:** `config/runtime/group-overrides.txt`
+**Purpose:** Override automatic group classification
+**Format:** `username:group`
 
-```yaml
-defaults:                    # Fallback for all users
-  max_mig_instances: 1
-  max_cpus: 8
-  memory: "32g"
-  # ... more defaults
-
-groups:                      # Group-based limits (members in separate files)
-  student:
-    # Members: config/groups/student.members
-    allow_full_gpu: false
-    max_mig_per_container: 3
-
-  researcher:
-    # Members: config/groups/researcher.members
-    allow_full_gpu: true
-    max_mig_instances: 8
-    # ... group settings
-
-gpu_allocation:              # GPU/MIG configuration
-  mig_instances_per_gpu: 4
-
-policies:                    # System-wide policies
-  high_demand_threshold: 0.8
-  high_demand_idle_reduction: 0.5
+```
+204214@hertie-school.lan:researcher     # PhD student
+h.baker@hertie-school.lan:admin         # Admin account
 ```
 
-## Priority Order
+## Deploy Configuration
+
+### Profile.d Scripts
+**Source:** `config/deploy/profile.d/`
+**Target:** `/etc/profile.d/`
+**Purpose:** Environment setup for login shells
+
+**Key scripts:**
+- `ds01-gpu-awareness.sh` - CUDA_VISIBLE_DEVICES control
+- `ds01-docker-group.sh` - Auto-add users to docker group
+- `ds01-path.sh` - PATH configuration
+- `ds01-motd.sh` - Login messages
+- `ds01-warnings.sh` - Security warnings
+- `ds01-home-enforce.sh` - Home directory enforcement
+
+### Systemd Units
+**Source:** `config/deploy/systemd/`
+**Target:** `/etc/systemd/system/`
+
+**Services:**
+- `ds01-workload-detector.timer/service` - GPU workload detection (60s)
+- `ds01-container-owner-tracker.service` - Container ownership tracking
+- `ds01-dcgm-exporter.service` - DCGM metrics exporter
+- `ds01-exporter.service` - Node exporter
+
+### Sudoers Rules
+**Source:** `config/deploy/sudoers.d/`
+**Target:** `/etc/sudoers.d/`
+**Permissions:** 440 (read-only by sudo)
+
+**Files:**
+- `ds01-docker-group` - Allow docker group addition
+- `ds01-user-slice` - Allow user slice creation
+
+### Cron Jobs
+**Source:** `config/deploy/cron.d/`
+**Target:** `/etc/cron.d/`
+
+**Jobs:**
+- `ds01-maintenance` - Cleanup and maintenance tasks
+
+### Logrotate Rules
+**Source:** `config/deploy/logrotate.d/`
+**Target:** `/etc/logrotate.d/`
+
+**Files:**
+- `ds01` - DS01 log rotation (copytruncate for JSONL)
+
+## Variables (variables.env)
+
+**Purpose:** Deploy-time variables for template generation and environment-specific values
+
+**Current variables:**
+```bash
+INFRA_ROOT="/opt/ds01-infra"
+STATE_DIR="/var/lib/ds01"
+LOG_DIR="/var/log/ds01"
+DS01_ADMIN_GROUP="ds01-admin"
+DOCKER_GROUP="docker"
+```
+
+**Sourced by:** deploy.sh during deployment
+
+**Template usage:**
+```bash
+# In template file (*.template)
+export INFRA_ROOT="${INFRA_ROOT}"
+
+# Processed by fill_config_template() function
+# Variables substituted via envsubst
+```
+
+## Generative Config Pipeline
+
+**Function:** `fill_config_template()` in deploy.sh
+
+**Usage:**
+1. Create template file: `config/deploy/profile.d/example.sh.template`
+2. Use variable syntax: `${INFRA_ROOT}`, `${STATE_DIR}`
+3. Deploy.sh automatically processes `.template` files
+4. Validates no unsubstituted variables remain
+
+**Example template:**
+```bash
+# example.sh.template
+export PATH="${INFRA_ROOT}/scripts/user/dispatchers:$PATH"
+export DS01_STATE="${STATE_DIR}"
+```
+
+**Validation:**
+```bash
+# Automatic during deploy.sh
+# - Sources variables.env
+# - Runs envsubst on template
+# - Checks for ${VAR} patterns in output
+# - Warns if unsubstituted variables found
+```
+
+## Configuration Priority
 
 Limits resolved with this precedence (highest to lowest):
 1. **user_overrides.<username>** - Explicit per-user settings
@@ -185,14 +253,13 @@ defaults:
   memory: "32g"
 
 groups:
-  researchers:
-    members: [alice]
-    max_mig_instances: 2    # Alice inherits this
-    memory: "64g"           # Alice inherits this
+  researcher:
+    max_mig_instances: 2
+    memory: "64g"
 
 user_overrides:
   alice:
-    max_mig_instances: 3    # Alice gets this (overrides group)
+    max_mig_instances: 3
     # memory: "64g" inherited from group
 ```
 
@@ -201,242 +268,78 @@ user_overrides:
 - memory: "64g" (from group)
 - Everything else from defaults
 
-## Configuration Fields
+## Common Operations
 
-### Resource Limits
+### Modify User Limits
 
-**max_mig_instances** - Maximum GPUs/MIG instances (total across all containers)
-```yaml
-max_mig_instances: 2        # Max 2 GPUs total
-max_mig_instances: null     # Unlimited (admin only)
+**Add user to group:**
+```bash
+# Edit group member file
+nano config/runtime/groups/researcher.members
+# Add line: username@domain
+
+# Test
+python3 scripts/docker/get_resource_limits.py username@domain
+
+# No restart needed - changes immediate
 ```
 
-**max_mig_per_container** - Maximum MIG-equivalents per single container
-```yaml
-max_mig_per_container: 1    # 1 MIG per container (default for students)
-max_mig_per_container: 4    # 4 MIGs per container (= 1 full GPU)
-max_mig_per_container: null # Unlimited (admin only)
+**Add user override:**
+```bash
+# Edit overrides file
+nano config/runtime/user-overrides.yaml
+
+# Add:
+username@domain:
+  max_mig_instances: 4
+  idle_timeout: null
+  # Reason: Special project
+
+# Test
+python3 scripts/docker/get_resource_limits.py username@domain
 ```
 
-**allow_full_gpu** - Can user request full GPUs (vs MIG partitions only)
-```yaml
-allow_full_gpu: false       # Students: MIG only
-allow_full_gpu: true        # Researchers/admins: can use full GPUs
-```
+### Modify Group Limits
 
-**mig_instances_per_gpu** - How many MIGs equal one full GPU (in gpu_allocation section)
-```yaml
-gpu_allocation:
-  mig_instances_per_gpu: 4  # 1 full GPU = 4 MIG-equivalents
-```
+```bash
+# Edit resource limits
+nano config/runtime/resource-limits.yaml
 
-**max_cpus** - CPU cores per container
-```yaml
-max_cpus: 16                # 16 CPU cores
-```
-
-**memory** - RAM per container
-```yaml
-memory: "64g"               # 64 GB RAM
-memory: "128g"
-```
-
-**shm_size** - Shared memory (for PyTorch dataloader, etc.)
-```yaml
-shm_size: "16g"             # 16 GB shared memory
-```
-
-**max_containers_per_user** - Simultaneous containers
-```yaml
-max_containers_per_user: 3  # Max 3 containers running
-```
-
-### Lifecycle Policies
-
-**idle_timeout** - Auto-stop after idle time
-```yaml
-idle_timeout: "48h"         # Stop if idle (CPU < 1%) for 48 hours
-idle_timeout: "72h"         # 3 days
-idle_timeout: null          # Never auto-stop
-```
-
-**max_runtime** - Maximum container runtime
-```yaml
-max_runtime: "168h"         # Stop after 7 days running
-max_runtime: null           # No limit
-```
-
-**gpu_hold_after_stop** - Hold GPU after container stops
-```yaml
-gpu_hold_after_stop: "24h"  # Hold GPU for 24h after stop
-gpu_hold_after_stop: null   # Hold indefinitely
-gpu_hold_after_stop: "0h"   # Release immediately
-```
-
-**container_hold_after_stop** - Keep container after stop
-```yaml
-container_hold_after_stop: "12h"  # Remove 12h after stop
-container_hold_after_stop: null   # Never auto-remove
-container_hold_after_stop: "0h"   # Remove immediately
-```
-
-### Priority & Scheduling
-
-**priority** - GPU allocation priority (1-100)
-```yaml
-priority: 10               # Student priority
-priority: 50               # Researcher priority
-priority: 100              # Admin priority
-```
-
-Higher priority users get:
-- First choice of available GPUs
-- Preference in allocation conflicts
-
-### Documentation
-
-**reason** - Justification for user override
-```yaml
-user_overrides:
-  special_user:
-    max_mig_instances: 3
-    reason: "Thesis work - approved 2025-11-21 by Prof. Smith"
-```
-
-## Complete Example
-
-```yaml
-# Default settings for all users
-defaults:
-  max_mig_instances: 1
-  max_cpus: 8
-  memory: "32g"
-  shm_size: "8g"
-  max_containers_per_user: 3
-  idle_timeout: "48h"
-  max_runtime: "168h"
-  gpu_hold_after_stop: "24h"
-  container_hold_after_stop: "12h"
-  priority: 10
-
-# Group-based limits
+# Change group settings
 groups:
-  students:
-    members: [alice, bob, charlie]
-    max_mig_instances: 1
-    max_cpus: 8
-    memory: "32g"
-    idle_timeout: "48h"
-    priority: 10
+  researcher:
+    max_mig_instances: 3  # Changed from 2
+    memory: "96g"         # Changed from 64g
 
-  researchers:
-    members: [diana, eve, frank]
-    max_mig_instances: 2
-    max_cpus: 16
-    memory: "64g"
-    shm_size: "16g"
-    idle_timeout: "72h"
-    gpu_hold_after_stop: "48h"
-    priority: 50
+# Validate
+python3 -c "import yaml; yaml.safe_load(open('config/runtime/resource-limits.yaml'))"
 
-  admin:
-    members: [grace]
-    max_mig_instances: null       # Unlimited
-    max_cpus: 32
-    memory: "128g"
-    shm_size: "32g"
-    idle_timeout: null            # Never auto-stop
-    max_runtime: null
-    gpu_hold_after_stop: null     # Hold indefinitely
-    container_hold_after_stop: null
-    priority: 90
-
-# Per-user exceptions
-user_overrides:
-  henry:                          # Thesis student
-    max_mig_instances: 3
-    memory: "96g"
-    idle_timeout: "168h"          # 1 week
-    gpu_hold_after_stop: "72h"    # 3 days
-    priority: 100
-    reason: "Thesis work - large model training - approved 2025-11-21"
-
-  isabel:                         # Short job user
-    idle_timeout: "24h"           # Short idle timeout
-    gpu_hold_after_stop: "1h"     # Release GPU quickly
-    container_hold_after_stop: "1h"
-    reason: "Quick experiments - resource sharing"
-
-# GPU/MIG configuration
-gpu_allocation:
-  enable_mig: true
-  mig_profile: "2g.20gb"          # 3 instances per A100
-
-# System policies
-policies:
-  allow_multi_container: true
-  enforce_resource_limits: true
-  log_allocations: true
+# No restart needed
 ```
 
-## Special Values
-
-**null** - Disables limit/timeout
-```yaml
-max_mig_instances: null     # Unlimited GPUs
-idle_timeout: null          # Never auto-stop
-gpu_hold_after_stop: null   # Hold indefinitely
-```
-
-**"0h"** - Immediate action
-```yaml
-gpu_hold_after_stop: "0h"   # Release GPU immediately on stop
-container_hold_after_stop: "0h"  # Remove container immediately on stop
-```
-
-## Time Format
-
-Use hours with "h" suffix:
-- `"1h"` = 1 hour
-- `"24h"` = 1 day
-- `"48h"` = 2 days
-- `"168h"` = 1 week
-
-## MIG Configuration
-
-**enable_mig** - Enable MIG tracking
-```yaml
-gpu_allocation:
-  enable_mig: true
-```
-
-**mig_profile** - MIG instance type
-```yaml
-gpu_allocation:
-  mig_profile: "2g.20gb"    # 3 instances per A100 80GB
-  # Other options: "1g.10gb", "3g.40gb", "7g.80gb"
-```
-
-**MIG GPU IDs:**
-- Physical GPU + instance: `"0:0"`, `"0:1"`, `"0:2"`
-- Allocated independently
-
-**Check MIG instances:**
-```bash
-nvidia-smi mig -lgi
-```
-
-## Testing Configuration
-
-### Validate YAML Syntax
+### Deploy Configuration Changes
 
 ```bash
-python3 -c "import yaml; yaml.safe_load(open('config/resource-limits.yaml'))"
-# No output = valid YAML
+# After modifying deploy/ files
+sudo deploy
+
+# View verbose output
+sudo deploy --verbose
+
+# Check specific deployments
+ls -l /etc/profile.d/ds01-*
+ls -l /etc/systemd/system/ds01-*
 ```
 
-### Test User Limits
+### Validate Configuration
 
+**YAML syntax:**
+```bash
+python3 -c "import yaml; yaml.safe_load(open('config/runtime/resource-limits.yaml'))"
+# No output = valid
+```
+
+**User limits:**
 ```bash
 # Check specific user
 python3 scripts/docker/get_resource_limits.py alice
@@ -448,463 +351,93 @@ for user in alice bob charlie; do
 done
 ```
 
-### Test Priority Resolution
-
+**Template generation:**
 ```bash
-# Should show: user_override > group > defaults
-python3 scripts/docker/get_resource_limits.py alice --verbose
+# Manual test
+source config/variables.env
+envsubst < config/deploy/profile.d/example.sh.template
 ```
 
-### Test Docker Args
+## Migration Notes (Phase 3.2-03)
 
-```bash
-# Get Docker-compatible arguments
-python3 scripts/docker/get_resource_limits.py alice --docker-args
-```
+**Changed:**
+- `config/resource-limits.yaml` → `config/runtime/resource-limits.yaml`
+- `config/groups/` → `config/runtime/groups/`
+- `config/user-overrides.yaml` → `config/runtime/user-overrides.yaml`
+- `config/group-overrides.txt` → `config/runtime/group-overrides.txt`
+- `config/etc-mirrors/profile.d/` → Consolidated into `config/deploy/profile.d/`
+- `config/etc-mirrors/sudoers.d/` → Consolidated into `config/deploy/sudoers.d/`
 
-## Common Patterns
+**Removed:**
+- `config/etc-mirrors/` - Marked deprecated, absorbed into deploy/
 
-### Student Group
+**Added:**
+- `config/variables.env` - Deploy-time variables
+- `config/runtime/` - Runtime configuration hierarchy
+- `config/state/` - State documentation
+- `fill_config_template()` function in deploy.sh
+- YAML validation in deploy.sh
 
-```yaml
-students:
-  members: [alice, bob, charlie]
-  max_mig_instances: 1        # 1 GPU max
-  max_cpus: 8                 # 8 cores
-  memory: "32g"               # 32 GB
-  idle_timeout: "48h"         # Stop after 2 days idle
-  gpu_hold_after_stop: "12h"  # Release GPU in 12h
-  priority: 10                # Low priority
-```
-
-### Researcher Group
-
-```yaml
-researchers:
-  members: [diana, eve]
-  max_mig_instances: 2        # 2 GPUs
-  max_cpus: 16                # 16 cores
-  memory: "64g"               # 64 GB
-  shm_size: "16g"             # Larger shared memory
-  idle_timeout: "72h"         # Stop after 3 days
-  gpu_hold_after_stop: "48h"  # Hold GPU 2 days
-  priority: 50                # Medium priority
-```
-
-### Admin/Power User
-
-```yaml
-admin:
-  members: [grace]
-  max_mig_instances: null     # Unlimited GPUs
-  max_cpus: 32                # 32 cores
-  memory: "128g"              # 128 GB
-  idle_timeout: null          # Never auto-stop
-  max_runtime: null           # No runtime limit
-  gpu_hold_after_stop: null   # Hold GPU indefinitely
-  priority: 90                # High priority
-```
-
-### Thesis Student (Override)
-
-```yaml
-user_overrides:
-  henry:
-    max_mig_instances: 3      # Special allocation
-    memory: "96g"
-    idle_timeout: "168h"      # 1 week
-    priority: 100             # Highest priority
-    reason: "Thesis work - large model training - approved 2025-11-21"
-```
-
-### Quick Job User (Override)
-
-```yaml
-user_overrides:
-  isabel:
-    idle_timeout: "24h"             # Short idle
-    gpu_hold_after_stop: "1h"       # Quick release
-    container_hold_after_stop: "1h" # Fast cleanup
-    reason: "Quick experiments - resource sharing optimization"
-```
-
-## Modifying Configuration
-
-### Add New User to a Group
-
-1. **Add to group member file:**
-```bash
-# Edit the appropriate member file
-nano config/groups/researcher.members
-```
-
-```
-# Add line to file:
-newuser@hertie-school.lan    # New User Name
-```
-
-2. **Test:**
-```bash
-python3 scripts/docker/get_resource_limits.py newuser@hertie-school.lan
-```
-
-3. **No restart needed** - changes take effect immediately
-
-### Change Group Limits
-
-1. **Modify group settings in resource-limits.yaml:**
-```yaml
-groups:
-  researcher:
-    max_mig_instances: 3  # Changed from 2
-    memory: "96g"         # Changed from 64g
-```
-
-2. **Update systemd slices:**
-```bash
-sudo scripts/system/setup-resource-slices.sh
-sudo systemctl daemon-reload
-```
-
-3. **Test:**
-```bash
-python3 scripts/docker/get_resource_limits.py diana@hertie-school.lan
-```
-
-### Add User Override
-
-1. **Add override to user-overrides.yaml:**
-```yaml
-# config/user-overrides.yaml
-newspecial@hertie-school.lan:
-  max_mig_instances: 4
-  priority: 100
-  # Reason: Special project - approved by PI
-```
-
-2. **Test:**
-```bash
-python3 scripts/docker/get_resource_limits.py newspecial@hertie-school.lan
-```
+**Script updates:**
+- `scripts/docker/get_resource_limits.py` - Updated paths to runtime/
+- `config/deploy/profile.d/ds01-gpu-awareness.sh` - Updated resource-limits.yaml path
+- `scripts/system/deploy.sh` - Removed etc-mirrors loop, added validation
 
 ## Troubleshooting
 
-### User Gets Wrong Limits
+### Config File Not Found
 
-**Check user exists in config:**
 ```bash
-grep username config/resource-limits.yaml
-```
+# Check file location
+ls -l config/runtime/resource-limits.yaml
 
-**Check priority resolution:**
-```bash
-python3 scripts/docker/get_resource_limits.py username --verbose
+# Verify script paths
+grep "resource-limits.yaml" scripts/docker/get_resource_limits.py
 ```
-
-**Common issues:**
-- Typo in username
-- User not in any group
-- Group missing from `groups` section
-- YAML syntax error
 
 ### YAML Syntax Error
 
-**Validate:**
 ```bash
-python3 -c "import yaml; yaml.safe_load(open('config/resource-limits.yaml'))"
-```
+# Validate and see error
+python3 -c "import yaml; yaml.safe_load(open('config/runtime/resource-limits.yaml'))"
 
-**Common errors:**
-- Incorrect indentation (use spaces, not tabs)
-- Missing colon after key
-- Unquoted strings with special characters
-- Inconsistent list format
-
-**Fix:**
-```yaml
-# Wrong
-groups:
-students:  # Missing indent
-  members: [alice, bob]
-
-# Correct
-groups:
-  students:  # Proper indent
-    members: [alice, bob]
+# Common issues:
+# - Incorrect indentation (use spaces, not tabs)
+# - Missing colon after key
+# - Unquoted special characters
 ```
 
 ### Changes Not Applied
 
-**Resource limits:** Take effect immediately (no restart)
+**Runtime configs:** Take effect immediately (no restart)
 ```bash
 python3 scripts/docker/get_resource_limits.py username
 ```
 
-**Systemd slices:** Need update
+**Deploy configs:** Need deploy.sh run
 ```bash
-sudo scripts/system/setup-resource-slices.sh
-sudo systemctl daemon-reload
+sudo deploy
+sudo systemctl daemon-reload  # If systemd units changed
 ```
 
-## System Configuration Mirrors
-
-DS01 tracks system configuration files in git for version control and reproducibility.
-
-### profile.d - Shell PATH Configuration
-
-**File:** `/opt/ds01-infra/config/etc-mirrors/profile.d/ds01-path.sh`
-**Deploy to:** `/etc/profile.d/ds01-path.sh`
-
-**Purpose:** System-wide PATH configuration for login shells
-
-**Deployment:**
-```bash
-sudo cp /opt/ds01-infra/config/etc-mirrors/profile.d/ds01-path.sh /etc/profile.d/ds01-path.sh
-sudo chmod 644 /etc/profile.d/ds01-path.sh
-```
-
-### skel - New User Template
-
-**File:** `/opt/ds01-infra/config/etc-mirrors/skel/.bashrc`
-**Deploy to:** `/etc/skel/.bashrc`
-
-**Purpose:** Template bashrc for new users with DS01 PATH configuration
-
-**Deployment:**
-```bash
-sudo cp /opt/ds01-infra/config/etc-mirrors/skel/.bashrc /etc/skel/.bashrc
-sudo chmod 644 /etc/skel/.bashrc
-```
-
-**Maintenance:** When Ubuntu updates `/etc/skel/.bashrc`, merge DS01 additions
-
-### sudoers.d - Privileged Operations
-
-**File:** `/opt/ds01-infra/config/etc-mirrors/sudoers.d/ds01-user-management`
-**Deploy to:** `/etc/sudoers.d/ds01-user-management`
-
-**Purpose:** Allow docker group members to:
-- Create their own systemd user slices (for container cgroups)
-- Add users to the docker group (for first-time setup)
-
-**Deployment:**
-```bash
-sudo cp /opt/ds01-infra/config/etc-mirrors/sudoers.d/ds01-user-management /etc/sudoers.d/ds01-user-management
-sudo chmod 440 /etc/sudoers.d/ds01-user-management
-```
-
-### pam.d - First-Login Docker Group
-
-**File:** `/opt/ds01-infra/config/etc-mirrors/pam.d/ds01-docker-group`
-**Deploy to:** Append to `/etc/pam.d/common-session`
-
-**Purpose:** Auto-add users to docker group on first login
-
-**Deployment:**
-```bash
-# Add this line to /etc/pam.d/common-session:
-session optional pam_exec.so /opt/ds01-infra/scripts/system/pam-add-docker-group.sh
-```
-
-### cron.d - Scheduled Tasks
-
-**File:** `/opt/ds01-infra/config/etc-mirrors/cron.d/ds01-docker-group`
-**Deploy to:** `/etc/cron.d/ds01-docker-group`
-
-**Purpose:** Hourly scan to add new users to docker group
-
-**Deployment:**
-```bash
-sudo cp /opt/ds01-infra/config/etc-mirrors/cron.d/ds01-docker-group /etc/cron.d/ds01-docker-group
-sudo chmod 644 /etc/cron.d/ds01-docker-group
-```
-
-## Permissions & Security
-
-### Directory Structure Permissions
-
-DS01 infrastructure uses restrictive permissions to limit user access:
-
-```
-/opt/ds01-infra/                    # 751 (owner rwx, docker group r-x, others --x)
-├── scripts/                         # 751
-│   ├── *.sh, *.py                  # 750 (owner rwx, docker group r-x, others ---)
-│   └── lib/                        # 751
-│       ├── username-utils.sh       # 640 (owner rw, docker group r, others ---)
-│       └── username_utils.py       # 640
-├── config/                          # 751
-│   └── resource-limits.yaml        # 640
-└── aime-ml-containers/             # 751
-    └── *.py, *.repo                # 640
-```
-
-**Key Principles:**
-- **Directories:** `751` = owner can do anything, docker group can read/traverse, others can only traverse (no listing)
-- **Scripts:** `750` = owner can execute, docker group can read (needed to run), others cannot access
-- **Config files:** `640` = owner read/write, docker group read-only, others no access
-
-**Group Ownership:** All DS01 files owned by `datasciencelab:docker`
-
-### User Access Model
-
-Users must be in the `docker` group to:
-- Read/execute DS01 scripts
-- Run Docker commands
-- Deploy containers
-
-**Docker Group Auto-Assignment:**
-
-| Method | When | Description |
-|--------|------|-------------|
-| PAM session | Every login | Auto-adds on first login |
-| Cron job | Hourly | Scans /home for missing users |
-| user-setup | On demand | Wizard requests access |
-
-### Systemd Slice Permissions
-
-Users can create their own cgroup slices via sudo:
+### Template Variables Not Substituted
 
 ```bash
-# Allowed by /etc/sudoers.d/ds01-user-management
-sudo /opt/ds01-infra/scripts/system/create-user-slice.sh <group> <username>
-```
+# Check variables.env exists and is sourced
+ls -l config/variables.env
+source config/variables.env
+echo $INFRA_ROOT
 
-**Security:** Script only creates slices under `ds01-*.slice` hierarchy
+# Check template syntax
+grep '\${' config/deploy/profile.d/*.template
 
-### Log File Permissions
-
-```
-/var/log/ds01/
-├── gpu-allocator.lock              # 666 (all users can acquire lock)
-├── gpu-allocations.log             # 644 (root writes, all read)
-├── docker-group-additions.log      # 644
-└── events.jsonl                    # 644
-```
-
-## User Identifier Format for Group Membership
-
-When adding users to `groups.*.members` or `user_overrides`, you must use the **exact format
-that matches their home directory** at `/home/<username>`.
-
-### Identifier Formats by User Type
-
-| User Type | Home Dir Format | Config Format | Example |
-|-----------|-----------------|---------------|---------|
-| **Staff/Faculty** | `/home/firstname.lastname@domain` | `firstname.lastname@domain` | `h.baker@hertie-school.lan` |
-| **Students** | `/home/studentID@domain` | `studentID@domain` | `204214@hertie-school.lan` |
-| **System/Local** | `/home/shortname` | `shortname` | `datasciencelab` |
-
-### Why This Matters
-
-The system captures the username via `os.getlogin()` at container creation time, which returns
-the format the user actually logged in as. This is stored in the `ds01.user` container label
-and matched against the config.
-
-### How to Find a User's Correct Format
-
-```bash
-# Check their home directory
-ls -la /home/ | grep -i "username"
-
-# Get their UID to confirm identity
-id "username@hertie-school.lan"
-
-# Test config matching
-python3 scripts/docker/get_resource_limits.py "username@hertie-school.lan"
-```
-
-### Common Mistakes
-
-**Wrong:** Using a different LDAP alias that doesn't match the login format
-```yaml
-# WRONG - s.kaiser is a different LDAP entry, never logged in
-members: [s.kaiser@hertie-school.lan]
-
-# CORRECT - 204214 is how the user actually logs in
-members: [204214@hertie-school.lan]
-```
-
-**Tip:** Always verify with `ls /home/` to see what format the user actually uses.
-
-### Example Configuration
-
-```yaml
-groups:
-  researcher:
-    # Staff use name format, students use ID format
-    members:
-      - 204214@hertie-school.lan         # Student (Silke Kaiser)
-      - c.fusarbassini@hertie-school.lan # Staff (Chiara)
-      - h.baker@hertie-school.lan        # Staff (H. Baker)
-
-  admin:
-    members:
-      - datasciencelab                   # System account (no domain)
-
-user_overrides:
-  204214@hertie-school.lan:              # Must match /home/204214@hertie-school.lan
-    idle_timeout: null
-```
-
----
-
-## LDAP/SSSD Username Support
-
-DS01 supports LDAP/SSSD usernames containing special characters (e.g., `h.baker@hertie-school.lan`).
-
-### Username Sanitization
-
-Usernames are sanitized for systemd slice compatibility:
-
-| Original | Sanitized |
-|----------|-----------|
-| `h.baker@hertie-school.lan` | `h-baker-at-hertie-school-lan` |
-| `john.doe` | `john-doe` |
-| `alice` | `alice` (unchanged) |
-
-**Sanitization rules:**
-- `@` → `-at-`
-- `.` → `-`
-- Other special chars → `-`
-- Multiple hyphens collapsed
-- Leading/trailing hyphens trimmed
-
-### Config Lookup Behavior
-
-YAML config supports **both** original and sanitized usernames:
-
-```yaml
-user_overrides:
-  # Either format works:
-  h.baker@hertie-school.lan:    # Original format (recommended)
-    max_mig_instances: 2
-
-  # OR
-  h-baker-at-hertie-school-lan: # Sanitized format (also works)
-    max_mig_instances: 2
-```
-
-The system tries original username first, then falls back to sanitized form.
-
-### Sanitization Library
-
-**Bash:** `/opt/ds01-infra/scripts/lib/username-utils.sh`
-```bash
-source /opt/ds01-infra/scripts/lib/username-utils.sh
-sanitize_username_for_slice "h.baker@hertie-school.lan"
-# Output: h-baker-at-hertie-school-lan
-```
-
-**Python:** `/opt/ds01-infra/scripts/lib/username_utils.py`
-```python
-from username_utils import sanitize_username_for_slice
-sanitize_username_for_slice("h.baker@hertie-school.lan")
-# Output: 'h-baker-at-hertie-school-lan'
+# Run deploy with verbose
+sudo deploy --verbose
 ```
 
 ## Related Documentation
 
-- [Root README](../README.md) - System overview
+- [state/README.md](state/README.md) - Persistent state structure
+- [runtime/groups/README.md](runtime/groups/README.md) - Group membership format
 - [scripts/docker/README.md](../scripts/docker/README.md) - How limits are enforced
-- [scripts/system/README.md](../scripts/system/README.md) - Systemd slice configuration
-- [scripts/maintenance/README.md](../scripts/maintenance/README.md) - Lifecycle automation
+- [scripts/system/README.md](../scripts/system/README.md) - Deployment internals

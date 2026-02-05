@@ -62,6 +62,38 @@ fi
 # Helper Functions
 # ============================================================================
 
+# Source deploy-time variables
+if [ -f "$INFRA_ROOT/config/variables.env" ]; then
+    source "$INFRA_ROOT/config/variables.env"
+fi
+
+# Generative config pipeline: fill template with variables
+# Usage: fill_config_template <template_file> <output_file>
+fill_config_template() {
+    local template_file=$1
+    local output_file=$2
+
+    if [ ! -f "$template_file" ]; then
+        echo -e "  ${RED}✗${NC} Template not found: $template_file"
+        return 1
+    fi
+
+    # Use envsubst to substitute variables
+    if ! envsubst < "$template_file" > "$output_file" 2>/dev/null; then
+        echo -e "  ${RED}✗${NC} Failed to process template: $template_file"
+        return 1
+    fi
+
+    # Validate: check for unsubstituted variables
+    if grep -q '\${[A-Z_][A-Z0-9_]*}' "$output_file"; then
+        echo -e "  ${YELLOW}!${NC} WARNING: Unsubstituted variables in $output_file"
+        grep -o '\${[A-Z_][A-Z0-9_]*}' "$output_file" | sort -u | sed 's/^/    /'
+        return 1
+    fi
+
+    return 0
+}
+
 # Counters for each category
 declare -A CATEGORY_SUCCESS
 declare -A CATEGORY_FAIL
@@ -118,6 +150,34 @@ print_category() {
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BOLD}DS01 Infrastructure - Command Deployment${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
+
+# ============================================================================
+# Validate Critical Configuration Files
+# ============================================================================
+# Validate YAML syntax before deploying to prevent broken config deployment
+
+validate_yaml() {
+    local yaml_file="$1"
+    local name="$2"
+
+    if [ ! -f "$yaml_file" ]; then
+        echo -e "${RED}ERROR: $name not found at $yaml_file${NC}"
+        exit 1
+    fi
+
+    if ! python3 -c "import yaml; yaml.safe_load(open('$yaml_file'))" 2>/dev/null; then
+        echo -e "${RED}ERROR: Invalid YAML in $name${NC}"
+        echo -e "${YELLOW}Path: $yaml_file${NC}"
+        echo ""
+        python3 -c "import yaml; yaml.safe_load(open('$yaml_file'))"  # Show error
+        exit 1
+    fi
+}
+
+echo -e "${BOLD}Validating configuration files...${NC}"
+validate_yaml "$INFRA_ROOT/config/resource-limits.yaml" "resource-limits.yaml"
+echo -e "${GREEN}✓${NC} resource-limits.yaml"
 echo ""
 
 # ============================================================================
@@ -288,25 +348,61 @@ echo -e "  ${GREEN}✓${NC} Docker wrapper isolation: enforcing (default)"
 # --- Deploy profile.d scripts (644 — sourced, not executed) ---
 echo -e "${DIM}Deploying profile.d scripts...${NC}"
 
-# From config/deploy/profile.d/ (primary source)
+# From config/deploy/profile.d/ (single source of truth)
 for script in "$INFRA_ROOT"/config/deploy/profile.d/ds01-*.sh; do
     [ -f "$script" ] || continue
-    cp "$script" /etc/profile.d/"$(basename "$script")"
-    chmod 644 /etc/profile.d/"$(basename "$script")"
-done
-
-# From config/etc-mirrors/profile.d/ (additional scripts)
-for script in "$INFRA_ROOT"/config/etc-mirrors/profile.d/ds01-*.sh; do
-    [ -f "$script" ] || continue
     name="$(basename "$script")"
-    # Don't overwrite if already deployed from primary source
-    if [ ! -f /etc/profile.d/"$name" ] || ! diff -q "$INFRA_ROOT/config/deploy/profile.d/$name" /etc/profile.d/"$name" &>/dev/null 2>&1; then
+
+    # Check if template file (ends with .template)
+    if [[ "$name" == *.template ]]; then
+        # Generate from template
+        output_name="${name%.template}"
+        if fill_config_template "$script" "/etc/profile.d/$output_name"; then
+            chmod 644 "/etc/profile.d/$output_name"
+            echo -e "  ${GREEN}✓${NC} Generated $output_name from template"
+        fi
+    else
+        # Direct copy
         cp "$script" /etc/profile.d/"$name"
         chmod 644 /etc/profile.d/"$name"
     fi
 done
 
 echo -e "  ${GREEN}✓${NC} Profile.d scripts deployed (644)"
+
+# --- Deploy sudoers.d files (440 — read by sudo) ---
+echo -e "${DIM}Deploying sudoers.d files...${NC}"
+
+for sudoers_file in "$INFRA_ROOT"/config/deploy/sudoers.d/ds01-*; do
+    [ -f "$sudoers_file" ] || continue
+    name="$(basename "$sudoers_file")"
+    cp "$sudoers_file" /etc/sudoers.d/"$name"
+    chmod 440 /etc/sudoers.d/"$name"
+done
+
+echo -e "  ${GREEN}✓${NC} Sudoers.d files deployed (440)"
+
+# ============================================================================
+# Validate Runtime Configuration
+# ============================================================================
+
+echo ""
+echo -e "${BOLD}Validating runtime configuration...${NC}"
+echo ""
+
+# --- YAML validation for resource-limits.yaml ---
+echo -e "${DIM}Validating resource-limits.yaml...${NC}"
+if [ -f "$INFRA_ROOT/config/runtime/resource-limits.yaml" ]; then
+    if python3 -c "import yaml; yaml.safe_load(open('$INFRA_ROOT/config/runtime/resource-limits.yaml'))" 2>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} resource-limits.yaml is valid YAML"
+    else
+        echo -e "  ${RED}✗${NC} resource-limits.yaml has YAML syntax errors"
+        python3 -c "import yaml; yaml.safe_load(open('$INFRA_ROOT/config/runtime/resource-limits.yaml'))" 2>&1 | head -5 | sed 's/^/    /'
+        echo -e "  ${YELLOW}!${NC} Fix YAML errors before deployment"
+    fi
+else
+    echo -e "  ${YELLOW}!${NC} resource-limits.yaml not found"
+fi
 
 # ============================================================================
 # Deploy Systemd Units

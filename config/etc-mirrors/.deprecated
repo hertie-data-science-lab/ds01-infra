@@ -1,0 +1,21 @@
+# This directory is DEPRECATED as of Phase 3.2-03
+
+The etc-mirrors/ directory was used to store reference copies of files FROM /etc/.
+This created confusion and duplication with config/deploy/.
+
+## Migration (Phase 3.2-03)
+
+- **profile.d/** → Consolidated into config/deploy/profile.d/
+- **sudoers.d/** → Consolidated into config/deploy/sudoers.d/
+- **systemd/**, **cron.d/**, **logrotate.d/** → Reviewed for overlaps, deploy/ is source of truth
+
+## New Structure
+
+- `config/deploy/` - Files to deploy TO /etc/ (source of truth)
+- `config/runtime/` - Operational configs read during execution
+- `config/state/` - Documents /var/lib/ds01 structure
+
+## Remaining Files
+
+Files in this directory after Phase 3.2-03 are retained for reference only but are NOT deployed.
+For deploy sources, see config/deploy/.

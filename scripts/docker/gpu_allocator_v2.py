@@ -17,6 +17,7 @@ import yaml
 import subprocess
 import importlib.util
 import fcntl
+import signal
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Tuple
@@ -85,10 +86,41 @@ class GPUAllocatorSmart:
         # Lock file for preventing race conditions
         self.lock_file = self.log_dir / "gpu-allocator.lock"
 
-    def _acquire_lock(self):
-        """Acquire exclusive lock for GPU allocation operations"""
-        self._lock_fd = open(self.lock_file, 'w')
-        fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
+    def _timeout_handler(self, signum, frame):
+        """Signal handler for lock timeout"""
+        raise TimeoutError("GPU allocator lock acquisition timeout")
+
+    def _acquire_lock(self, timeout=5):
+        """Acquire exclusive lock for GPU allocation operations with timeout.
+
+        Args:
+            timeout: Lock acquisition timeout in seconds (default: 5)
+
+        Returns:
+            bool: True if lock acquired, False if timeout (fail-open)
+        """
+        # Set up timeout signal handler
+        signal.signal(signal.SIGALRM, self._timeout_handler)
+        signal.alarm(timeout)
+
+        try:
+            self._lock_fd = open(self.lock_file, 'w')
+            fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
+            signal.alarm(0)  # Cancel alarm on success
+            return True
+        except TimeoutError:
+            signal.alarm(0)  # Cancel alarm
+            # Fail-open: log error but continue without lock
+            log_event(
+                "gpu.allocation.lock_timeout",
+                source="gpu_allocator",
+                error=f"{timeout}s timeout exceeded",
+                severity="warning"
+            )
+            print(f"Warning: GPU allocator lock timeout ({timeout}s), continuing without lock",
+                  file=sys.stderr)
+            self._lock_fd = None
+            return False
 
     def _release_lock(self):
         """Release the exclusive lock"""

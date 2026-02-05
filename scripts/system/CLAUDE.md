@@ -63,6 +63,20 @@ ds01.slice (root)
 - PAM scripts handle docker group and bashrc for new logins
 - `deploy.sh` sources `config/permissions-manifest.sh` for deterministic file permissions
 
+## Phase 3.2 Improvements
+
+**deploy.sh enhancements (Plans 02, 03):**
+- YAML validation: Pre-deployment validation prevents broken resource-limits.yaml from reaching production
+- Generative config pipeline: `fill_config_template()` function supports template-based configuration
+- Config consolidation: Single deployment source (config/deploy/), lifecycle-based hierarchy
+- Template pattern: Auto-processes *.template files with variable substitution (envsubst)
+
+**Config structure:**
+- `config/deploy/` - Install-time files (TO /etc/)
+- `config/runtime/` - Operational configs (read by scripts)
+- `config/state/` - Documentation of persistent state structure
+- `config/variables.env` - Deploy-time variables for template generation
+
 ---
 
 **Parent:** [/CLAUDE.md](../../CLAUDE.md) | **Related:** [README.md](README.md)
