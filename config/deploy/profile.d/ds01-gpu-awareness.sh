@@ -32,7 +32,7 @@ unset _ds01_grant_file
 
 # Check permanently exempt users from config (fast grep, no python)
 _ds01_user="$(whoami)"
-if grep -qx "  - ${_ds01_user}" /opt/ds01-infra/config/resource-limits.yaml 2>/dev/null; then
+if grep -qx "  - ${_ds01_user}" /opt/ds01-infra/config/runtime/resource-limits.yaml 2>/dev/null; then
     unset _ds01_user
     return 0
 fi

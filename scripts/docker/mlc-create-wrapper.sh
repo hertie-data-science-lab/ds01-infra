@@ -21,7 +21,6 @@ INFRA_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 CONFIG_FILE="$INFRA_ROOT/config/resource-limits.yaml"
 RESOURCE_PARSER="$SCRIPT_DIR/get_resource_limits.py"
 MLC_PATCHED="$SCRIPT_DIR/mlc-patched.py"  # DS01-enhanced AIME v2
-ORIGINAL_MLC="$INFRA_ROOT/aime-ml-containers/mlc-create"  # Fallback for v1
 
 # Source username sanitization library for LDAP/SSSD support
 source "$INFRA_ROOT/scripts/lib/username-utils.sh"

@@ -17,7 +17,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2.1: GPU Access Control Research** - Research HPC/data centre GPU access patterns, redesign bare metal restriction based on industry practice (INSERTED)
 - [ ] **Phase 3: Access Control** - Bare metal restriction, user isolation, bypass prevention
 - [ ] **Phase 3.1: Hardening & Deployment Fixes** - Permissions manifest, GPU allocator bugs, complete Phase 3 deployment (INSERTED)
-- [ ] **Phase 4: Comprehensive Resource Enforcement** - CPU, memory, IO, disk limits via cgroup v2
+- [ ] **Phase 3.2: Architecture Audit & Code Quality** - Validate Phases 1–3.1 against HPC/industry standards, refactor, dead code removal (INSERTED)
+- [ ] **Phase 4: Comprehensive Resource Enforcement** - Per-user aggregate CPU, memory, GPU, pids enforcement via cgroup v2
 - [ ] **Phase 5: Lifecycle Bug Fixes** - Container retirement, cleanup race conditions, GPU allocation leaks
 - [ ] **Phase 6: Lifecycle Enhancements** - Tuning, overrides, reliability improvements
 - [ ] **Phase 7: Label Standards & Migration** - Consistent ds01.* namespace, backward compatibility
@@ -132,21 +133,44 @@ Plans:
 - [ ] 03.1-03-PLAN.md — Bare metal deployment: udev removal, video group restriction, nvidia wrappers, enforcing mode
 - [ ] 03.1-04-PLAN.md — End-to-end validation script + human verification checkpoint
 
+### Phase 3.2: Architecture Audit & Code Quality (INSERTED)
+**Goal**: Validate all Phases 1–3.1 architecture and design decisions against SLURM/Kubernetes/HPC industry standards. Secondary: dead code removal, refactoring, and simplification applying Occam's Razor. Architecture validation takes priority over code polish.
+**Depends on**: Phase 3.1
+**Requirements**: Cross-cutting (architecture validation of all prior work)
+**Success Criteria** (what must be TRUE):
+  1. Every architectural decision from Phases 1–3.1 validated against SLURM/K8s/HPC best practices with pass/fail verdict
+  2. Critical and high severity code quality issues identified and fixed
+  3. Dead code removed, confirmed duplicate logic consolidated
+  4. Planning documents (ROADMAP.md, STATE.md) reflect current reality
+  5. Structured backlog of deferred items produced with severity and suggested phase
+  6. Architecture documentation updated to reflect post-audit state
+**Plans**: 4 plans
+
+Plans:
+- [x] 03.2-01-PLAN.md — Comprehensive audit: architecture validation, code quality review, planning doc assessment
+- [x] 03.2-02-PLAN.md — Code refactoring: fix Critical+High issues, dead code removal
+- [x] 03.2-03-PLAN.md — Config consolidation: SSOT hierarchy (deploy/runtime/state), generative templates
+- [x] 03.2-04-PLAN.md — Architecture documentation updates, STATE.md/ROADMAP.md sync, deferred backlog capture
+
 ### Phase 4: Comprehensive Resource Enforcement
-**Goal**: CPU, memory, IO, and disk limits enforced per user across complete resource spectrum via cgroup v2.
+**Goal**: Per-user aggregate CPU, memory, GPU, and pids limits enforced via systemd cgroup v2 user slices. Existing per-container limits kept as second layer. Login quota display. Unified GPU quota in resource framework. (IO and disk deferred — infrastructure prerequisites not met.)
 **Depends on**: Phase 2
-**Requirements**: ENFORCE-01, ENFORCE-02, ENFORCE-03, ENFORCE-04, ENFORCE-05, ENFORCE-06
+**Requirements**: ENFORCE-01, ENFORCE-02, ENFORCE-05, ENFORCE-06 (ENFORCE-03 IO and ENFORCE-04 disk deferred)
 **Success Criteria** (what must be TRUE):
   1. CPU limits enforced per user via systemd cgroup slices (measurable via cgroup stats)
   2. Memory limits enforced per user via systemd cgroup slices (containers OOM-killed when exceeded)
-  3. IO bandwidth limits enforced per user (read/write) via cgroup v2 controllers
-  4. Disk usage limits enforced per user via XFS project quotas or equivalent
-  5. GPU allocation limits enforced for all container types (not just DS01-managed)
-  6. Resource limits configurable per user and per group via existing resource-limits.yaml
-**Plans**: TBD
+  3. GPU allocation limits enforced for all container types (not just DS01-managed)
+  4. Resource limits configurable per user and per group via existing resource-limits.yaml
+  5. Users see quota summary at SSH login
+  6. PSI monitoring collects resource pressure metrics per user
+**Plans**: 5 plans
 
 Plans:
-- [ ] 04-01: TBD during planning
+- [ ] 04-01-PLAN.md — Config extension (aggregate section) and systemd slice drop-in generator
+- [ ] 04-02-PLAN.md — Docker wrapper cgroup driver verification and aggregate quota enforcement
+- [ ] 04-03-PLAN.md — GPU quota unification into aggregate resource framework
+- [ ] 04-04-PLAN.md — Login quota greeting and check-limits extension
+- [ ] 04-05-PLAN.md — PSI monitoring, OOM event logging, and integration tests
 
 ### Phase 5: Lifecycle Bug Fixes
 **Goal**: Container retirement works reliably. Cleanup scripts handle all container states. GPU allocations released without leaks.
@@ -239,7 +263,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → **2.1** → 3 → **3.1** → 4 → 5 → 6 → 7 → 8 → 9 → 10
+Phases execute in numeric order: 1 → 2 → **2.1** → 3 → **3.1** → **3.2** → 4 → 5 → 6 → 7 → 8 → 9 → 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -247,8 +271,9 @@ Phases execute in numeric order: 1 → 2 → **2.1** → 3 → **3.1** → 4 →
 | 2. Awareness Layer | 3/3 | ✓ Complete | 2026-01-30 |
 | 2.1. GPU Access Control Research | 2/2 | ✓ Complete | 2026-01-31 |
 | 3. Access Control | 2/3 | Code complete (03-03 → 3.1) | - |
-| 3.1. Access Control Completion & Hardening | 0/TBD | **Next** | - |
-| 4. Comprehensive Resource Enforcement | 0/TBD | Not started | - |
+| 3.1. Access Control Completion & Hardening | 3/3 | ✓ Complete | 2026-02-01 |
+| 3.2. Architecture Audit & Code Quality | 4/4 | ✓ Complete | 2026-02-05 |
+| 4. Comprehensive Resource Enforcement | 0/5 | **Next** | - |
 | 5. Lifecycle Bug Fixes | 0/TBD | Not started | - |
 | 6. Lifecycle Enhancements | 0/TBD | Not started | - |
 | 7. Label Standards & Migration | 0/TBD | Not started | - |
