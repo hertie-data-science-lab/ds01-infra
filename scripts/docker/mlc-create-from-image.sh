@@ -73,7 +73,7 @@ log_info "User namespace: $USER_ID:$GROUP_ID"
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 INFRA_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 RESOURCE_PARSER="$INFRA_ROOT/scripts/docker/get_resource_limits.py"
-CONFIG_FILE="$INFRA_ROOT/config/resource-limits.yaml"
+CONFIG_FILE="$INFRA_ROOT/config/runtime/resource-limits.yaml"
 
 if [ -f "$RESOURCE_PARSER" ] && [ -f "$CONFIG_FILE" ]; then
     RESOURCE_LIMITS=$(python3 "$RESOURCE_PARSER" "$USERNAME" --docker-args 2>/dev/null)

@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="/opt/ds01-infra/config/resource-limits.yaml"
+CONFIG_FILE="/opt/ds01-infra/config/runtime/resource-limits.yaml"
 
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
@@ -84,6 +84,21 @@ done
 systemctl daemon-reload
 
 echo ""
+echo "=== Generating Per-User Aggregate Limits ==="
+echo ""
+
+# Generate aggregate limit drop-ins for all existing users
+# Uses generate-user-slice-limits.py if available
+GENERATOR="$SCRIPT_DIR/generate-user-slice-limits.py"
+if [ -x "$GENERATOR" ]; then
+    python3 "$GENERATOR" --verbose
+    echo ""
+else
+    echo "Note: generate-user-slice-limits.py not found, skipping aggregate limit generation"
+    echo "Run: sudo python3 $GENERATOR"
+    echo ""
+fi
+
 echo "=== Slice Hierarchy Created ==="
 echo ""
 echo "Group slices created. Per-user slices will be created automatically"

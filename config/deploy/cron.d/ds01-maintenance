@@ -42,6 +42,14 @@ INFRA_ROOT=/opt/ds01-infra
 30 * * * * root $INFRA_ROOT/scripts/maintenance/cleanup-stale-containers.sh >> /var/log/ds01/container-cleanup.log 2>&1
 
 # ============================================================================
+# Permissions Drift Fix (every 15 minutes)
+# ============================================================================
+
+# Re-enforce file permissions in case editing sessions (umask 0077) break them.
+# Runs the permissions manifest via a bash subshell with the required variables.
+*/15 * * * * root bash -c 'IR=/opt/ds01-infra; INFRA_ROOT=$IR USER_ATOMIC=$IR/scripts/user/atomic USER_ORCHESTRATORS=$IR/scripts/user/orchestrators USER_WIZARDS=$IR/scripts/user/wizards USER_HELPERS=$IR/scripts/user/helpers USER_DISPATCHERS=$IR/scripts/user/dispatchers DIM="" NC="" source $IR/config/permissions-manifest.sh' >> /var/log/ds01/permissions-fix.log 2>&1
+
+# ============================================================================
 # State Validation (runs daily at 2am)
 # ============================================================================
 

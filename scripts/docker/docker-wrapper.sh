@@ -56,7 +56,7 @@ REAL_DOCKER="/usr/bin/docker"
 
 # DS01 paths
 INFRA_ROOT="/opt/ds01-infra"
-CONFIG_FILE="$INFRA_ROOT/config/resource-limits.yaml"
+CONFIG_FILE="$INFRA_ROOT/config/runtime/resource-limits.yaml"
 RESOURCE_PARSER="$INFRA_ROOT/scripts/docker/get_resource_limits.py"
 GPU_ALLOCATOR="$INFRA_ROOT/scripts/docker/gpu_allocator_v2.py"
 CREATE_SLICE="$INFRA_ROOT/scripts/system/create-user-slice.sh"
@@ -498,6 +498,190 @@ ensure_user_slice() {
     fi
 }
 
+# Check aggregate resource quota before container creation
+# Returns 0 (allow) or 1 (deny)
+# FAIL-OPEN: Infrastructure errors never block container creation
+check_aggregate_quota() {
+    local user="$1"
+
+    # Admin bypass - check early
+    if is_admin; then
+        log_debug "Admin bypass: no aggregate quota check for $user"
+        return 0
+    fi
+
+    # Get aggregate limits for this user
+    local aggregate_limits
+    aggregate_limits=$(python3 "$RESOURCE_PARSER" "$user" --aggregate 2>/dev/null)
+    local limits_exit=$?
+
+    # FAIL-OPEN: If we can't read limits, allow (infrastructure issue)
+    if [ $limits_exit -ne 0 ]; then
+        log_debug "FAIL-OPEN: Could not read aggregate limits for $user (allowing)"
+        return 0
+    fi
+
+    # Check if limits are null (admin/unconfigured)
+    if [ "$aggregate_limits" = "null" ] || [ -z "$aggregate_limits" ]; then
+        log_debug "No aggregate limits for $user (unlimited or admin)"
+        return 0
+    fi
+
+    # Parse aggregate limits JSON
+    local memory_max cpu_quota tasks_max
+    memory_max=$(echo "$aggregate_limits" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('memory_max', ''))" 2>/dev/null)
+    cpu_quota=$(echo "$aggregate_limits" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('cpu_quota', ''))" 2>/dev/null)
+    tasks_max=$(echo "$aggregate_limits" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('tasks_max', ''))" 2>/dev/null)
+
+    # Get sanitized username for cgroup path
+    local sanitized_user
+    sanitized_user=$(sanitize_username_for_slice "$user")
+    local group
+    group=$(get_user_group "$user")
+
+    # Build cgroup path
+    local cgroup_path="/sys/fs/cgroup/ds01.slice/ds01-${group}-${sanitized_user}.slice"
+
+    # FAIL-OPEN: If cgroup doesn't exist yet, allow (will be created)
+    if [ ! -d "$cgroup_path" ]; then
+        log_debug "FAIL-OPEN: Cgroup not found at $cgroup_path (allowing, will be created)"
+        return 0
+    fi
+
+    # Extract requested container memory from Docker args
+    # Look for --memory or --memory= flag
+    local requested_memory_bytes=0
+    local prev_arg=""
+    for arg in "${_ORIGINAL_ARGS[@]}"; do
+        case "$arg" in
+            --memory=*)
+                requested_memory_bytes=$(echo "${arg#--memory=}" | python3 -c "
+import sys
+size_str = sys.stdin.read().strip()
+# Parse Docker memory format (e.g., '32g', '2048m', '1073741824')
+multipliers = {'k': 1024, 'm': 1024**2, 'g': 1024**3, 't': 1024**4}
+if size_str[-1].lower() in multipliers:
+    print(int(float(size_str[:-1]) * multipliers[size_str[-1].lower()]))
+else:
+    print(size_str)
+" 2>/dev/null)
+                ;;
+            --memory)
+                prev_arg="--memory"
+                ;;
+            *)
+                if [ "$prev_arg" = "--memory" ]; then
+                    requested_memory_bytes=$(echo "$arg" | python3 -c "
+import sys
+size_str = sys.stdin.read().strip()
+multipliers = {'k': 1024, 'm': 1024**2, 'g': 1024**3, 't': 1024**4}
+if size_str[-1].lower() in multipliers:
+    print(int(float(size_str[:-1]) * multipliers[size_str[-1].lower()]))
+else:
+    print(size_str)
+" 2>/dev/null)
+                    prev_arg=""
+                else
+                    prev_arg=""
+                fi
+                ;;
+        esac
+    done
+
+    # If no --memory specified, use per-container default from user's config
+    if [ "$requested_memory_bytes" -eq 0 ]; then
+        local user_limits
+        user_limits=$(python3 "$RESOURCE_PARSER" "$user" 2>/dev/null | grep "RAM:" | awk '{print $2}' || echo "32g")
+        requested_memory_bytes=$(echo "$user_limits" | python3 -c "
+import sys
+size_str = sys.stdin.read().strip()
+multipliers = {'k': 1024, 'm': 1024**2, 'g': 1024**3, 't': 1024**4}
+if size_str and size_str[-1].lower() in multipliers:
+    print(int(float(size_str[:-1]) * multipliers[size_str[-1].lower()]))
+else:
+    print(34359738368)  # 32G default
+" 2>/dev/null)
+    fi
+
+    # Check memory usage
+    if [ -n "$memory_max" ] && [ -f "$cgroup_path/memory.current" ]; then
+        local current_memory
+        current_memory=$(cat "$cgroup_path/memory.current" 2>/dev/null || echo "0")
+
+        # FAIL-OPEN: If we can't read current memory, allow
+        if [ -z "$current_memory" ] || [ "$current_memory" = "0" ]; then
+            log_debug "FAIL-OPEN: Could not read memory.current (allowing)"
+        else
+            # Convert memory_max to bytes (format: "96G")
+            local memory_max_bytes
+            memory_max_bytes=$(echo "$memory_max" | python3 -c "
+import sys
+size_str = sys.stdin.read().strip()
+multipliers = {'K': 1024, 'M': 1024**2, 'G': 1024**3, 'T': 1024**4}
+if size_str[-1].upper() in multipliers:
+    print(int(float(size_str[:-1]) * multipliers[size_str[-1].upper()]))
+else:
+    print(size_str)
+" 2>/dev/null)
+
+            # Check if adding this container would exceed limit
+            local projected_memory=$((current_memory + requested_memory_bytes))
+            if [ "$projected_memory" -gt "$memory_max_bytes" ]; then
+                # Convert to human-readable
+                local current_gb=$((current_memory / 1024 / 1024 / 1024))
+                local requested_gb=$((requested_memory_bytes / 1024 / 1024 / 1024))
+                local limit_gb=$(echo "$memory_max" | sed 's/G//')
+
+                echo "" >&2
+                echo "┌─────────────────────────────────────────────────────────────────┐" >&2
+                echo "│  DS01 Aggregate Memory Quota Exceeded                           │" >&2
+                echo "├─────────────────────────────────────────────────────────────────┤" >&2
+                echo "│                                                                  │" >&2
+                printf "│  Current usage:    %3dG                                          │\n" "$current_gb" >&2
+                printf "│  Requested:        %3dG                                          │\n" "$requested_gb" >&2
+                printf "│  Your limit:       %3dG                                          │\n" "$limit_gb" >&2
+                echo "│                                                                  │" >&2
+                echo "│  This container would exceed your aggregate memory quota.        │" >&2
+                echo "│                                                                  │" >&2
+                echo "│  To free up quota:                                               │" >&2
+                echo "│    • Stop a running container: docker stop <name>                │" >&2
+                echo "│    • Check your containers: docker ps                            │" >&2
+                echo "│    • Check your limits: check-limits                             │" >&2
+                echo "│                                                                  │" >&2
+                echo "└─────────────────────────────────────────────────────────────────┘" >&2
+                echo "" >&2
+
+                # Log denial event
+                if command -v log_event &>/dev/null; then
+                    log_event "quota.memory_exceeded" "$user" "docker-wrapper" \
+                        current_gb="$current_gb" requested_gb="$requested_gb" limit_gb="$limit_gb" || true
+                fi
+
+                return 1
+            fi
+        fi
+    fi
+
+    # Check pids (soft check - warn at 90%)
+    if [ -n "$tasks_max" ] && [ -f "$cgroup_path/pids.current" ]; then
+        local current_pids
+        current_pids=$(cat "$cgroup_path/pids.current" 2>/dev/null || echo "0")
+
+        if [ -n "$current_pids" ] && [ "$current_pids" -gt 0 ]; then
+            local threshold=$((tasks_max * 90 / 100))
+            if [ "$current_pids" -gt "$threshold" ]; then
+                echo "WARNING: You are using $current_pids pids (limit: $tasks_max)" >&2
+                echo "Consider reducing the number of processes in your containers." >&2
+                log_debug "WARNING: User $user near pids limit ($current_pids/$tasks_max)"
+            fi
+        fi
+    fi
+
+    # CPU quota is enforced by systemd kernel-level, no pre-check needed
+    log_debug "Aggregate quota check passed for $user"
+    return 0
+}
+
 # Phase 03-02: Container isolation enforcement (Jan 2026)
 #
 # After OPA authz plugin proved non-viable, container isolation is now enforced
@@ -868,6 +1052,12 @@ main() {
         # Ensure the slice exists
         ensure_user_slice "$USER_GROUP" "$CURRENT_USER"
         log_debug "Ensured slice: $SLICE_NAME"
+
+        # Check aggregate resource quota (memory, pids)
+        # This check runs BEFORE GPU allocation to fail fast on quota issues
+        if ! check_aggregate_quota "$CURRENT_USER"; then
+            exit 1
+        fi
 
         # Detect container type
         local CONTAINER_TYPE

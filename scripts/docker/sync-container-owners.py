@@ -30,7 +30,7 @@ OUTPUT_DIR = Path("/var/lib/ds01/opa")
 OUTPUT_FILE = OUTPUT_DIR / "container-owners.json"
 LOCK_FILE = OUTPUT_DIR / "container-owners.lock"
 ADMIN_CACHE_FILE = OUTPUT_DIR / "admin-users.json"
-RESOURCE_LIMITS = Path("/opt/ds01-infra/config/resource-limits.yaml")
+RESOURCE_LIMITS = Path("/opt/ds01-infra/config/runtime/resource-limits.yaml")
 WATCH_INTERVAL = 5  # seconds between updates in watch mode
 DOCKER_BIN = "/usr/bin/docker"
 

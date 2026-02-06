@@ -59,6 +59,11 @@ defaults:
 
 default_group: student
 
+# === Enforcement settings ===
+enforcement:
+  aggregate_limits: true           # Enable per-user aggregate enforcement via systemd slices
+  cgroup_driver: systemd           # Required Docker cgroup driver (must match /etc/docker/daemon.json)
+
 # === Group definitions ===
 # Member lists are maintained in config/groups/{group}.members files
 # File format: one username per line, # comments allowed
@@ -68,6 +73,13 @@ groups:
     # Note: Users not in any group file default to 'student' via default_group
     allow_full_gpu: true            # MIG disabled on hardware — students need full GPU access
     max_mig_per_container: 3
+    # Per-user aggregate limits (systemd slice enforcement)
+    aggregate:
+      cpu_quota: "9600%"            # 32 CPUs × 3 containers = 96 CPUs (systemd format: 100% = 1 CPU)
+      memory_max: "96G"             # 32GB × 3 = 96GB
+      memory_high: "86G"            # 90% of 96GB (soft limit, triggers throttling)
+      tasks_max: 12288              # 4096 × 3
+      gpu_limit: 3                  # Max GPU/MIG slots across all containers (matches max_mig_instances)
 
   researcher:
     # Members: config/groups/researcher.members
@@ -83,6 +95,13 @@ groups:
     idle_timeout: 1h
     max_tasks: 65536                # High for parallel workloads
     max_containers_per_user: 5
+    # Per-user aggregate limits (systemd slice enforcement)
+    aggregate:
+      cpu_quota: "24000%"           # 48 CPUs × 5 containers = 240 CPUs
+      memory_max: "320G"            # 64GB × 5 = 320GB
+      memory_high: "288G"           # 90% of 320GB (soft limit)
+      tasks_max: 327680             # 65536 × 5
+      gpu_limit: 6                  # Max GPU/MIG slots across all containers (matches max_mig_instances)
     # TODO-NOT-IMPLEMENTED: Storage quotas
     # storage_workspace: 500G
     # storage_data: 1T
@@ -101,6 +120,13 @@ groups:
     idle_timeout: 2h                # Longer idle timeout (teaching demos, etc.)
     max_tasks: 65536
     max_containers_per_user: 5
+    # Per-user aggregate limits (systemd slice enforcement)
+    aggregate:
+      cpu_quota: "32000%"           # 64 CPUs × 5 containers = 320 CPUs
+      memory_max: "640G"            # 128GB × 5 = 640GB
+      memory_high: "576G"           # 90% of 640GB (soft limit)
+      tasks_max: 327680             # 65536 × 5
+      gpu_limit: 8                  # Max GPU/MIG slots across all containers (matches max_mig_instances)
     # TODO-NOT-IMPLEMENTED: Storage quotas
     # storage_workspace: 1T
     # storage_data: 2T
@@ -119,6 +145,7 @@ groups:
     gpu_hold_after_stop: 1h         # Hold GPU for 1h after stop
     max_containers_per_user: 10
     max_tasks: null
+    # NOTE: No aggregate section — admin users have no aggregate cap
     # TODO-NOT-IMPLEMENTED: Storage quotas
     # storage_workspace: 2T
     # storage_data: 5T

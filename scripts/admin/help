@@ -174,7 +174,7 @@ ${BOLD}MIG Instances:${NC}
 
 ${BOLD}Resource Quotas:${NC}
   Your resource limits are defined in:
-  /opt/ds01-infra/config/resource-limits.yaml
+  /opt/ds01-infra/config/runtime/resource-limits.yaml
 
   Contact admin to request changes.
 

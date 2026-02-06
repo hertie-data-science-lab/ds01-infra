@@ -67,11 +67,20 @@ EOF
 # Reload systemd
 systemctl daemon-reload
 
+# Apply aggregate resource limits from resource-limits.yaml
+# Uses generate-user-slice-limits.py with --user flag for fast single-user update
+# Falls back gracefully if generator not deployed yet
+if [ -x "$SCRIPT_DIR/generate-user-slice-limits.py" ]; then
+    python3 "$SCRIPT_DIR/generate-user-slice-limits.py" --user "$USERNAME" 2>/dev/null || true
+fi
+
 # Note: We don't set resource limits at the user level.
 # Resource limits are enforced at:
 # 1. Group level (via parent slice)
 # 2. Container level (via docker update)
+# 3. Per-user aggregate (via drop-in files, Phase 4)
 #
-# User slices are purely for monitoring/tracking purposes.
+# User slices are primarily for monitoring/tracking, but now also
+# enforce aggregate limits via drop-in configurations.
 
 exit 0

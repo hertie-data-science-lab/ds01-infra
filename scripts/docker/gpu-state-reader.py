@@ -44,7 +44,7 @@ INFRASTRUCTURE_LABEL = "ds01.protected"
 
 
 class GPUStateReader:
-    def __init__(self, config_path="/opt/ds01-infra/config/resource-limits.yaml"):
+    def __init__(self, config_path="/opt/ds01-infra/config/runtime/resource-limits.yaml"):
         self._mig_uuid_to_slot_cache = None
         self.config_path = config_path
         self._config = None

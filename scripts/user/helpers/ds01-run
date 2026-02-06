@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-CONFIG_FILE="/opt/ds01-infra/config/resource-limits.yaml"
+CONFIG_FILE="/opt/ds01-infra/config/runtime/resource-limits.yaml"
 CURRENT_USER=$(whoami)
 
 # Colors

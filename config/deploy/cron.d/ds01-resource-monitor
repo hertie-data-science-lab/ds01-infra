@@ -1,0 +1,17 @@
+# DS01 Resource Monitoring Cron Job
+# /opt/ds01-infra/config/deploy/cron.d/ds01-resource-monitor
+#
+# Install: sudo cp /opt/ds01-infra/config/deploy/cron.d/ds01-resource-monitor /etc/cron.d/
+#
+# Collects PSI metrics and resource stats per user slice every minute
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+INFRA_ROOT=/opt/ds01-infra
+
+# ============================================================================
+# Resource Stats Collection (Every Minute)
+# ============================================================================
+
+# Collect PSI metrics, memory/CPU/pid usage, and detect OOM events
+* * * * * root $INFRA_ROOT/scripts/monitoring/collect-resource-stats.sh >> /var/log/ds01/resource-monitor.log 2>&1
