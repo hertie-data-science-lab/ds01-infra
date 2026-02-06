@@ -17,7 +17,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 INFRA_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-CONFIG_FILE="$INFRA_ROOT/config/resource-limits.yaml"
+CONFIG_FILE="$INFRA_ROOT/config/runtime/resource-limits.yaml"
 STATE_DIR="/var/lib/ds01/container-states"
 LOG_FILE="/var/log/ds01/idle-cleanup.log"
 

@@ -35,15 +35,23 @@ chmod 755 "$INFRA_ROOT"/scripts/docker/*.sh "$INFRA_ROOT"/scripts/docker/*.py 2>
 chmod 755 "$INFRA_ROOT"/scripts/admin/* 2>/dev/null
 chmod 755 "$INFRA_ROOT"/scripts/monitoring/*.sh "$INFRA_ROOT"/scripts/monitoring/*.py 2>/dev/null
 chmod 755 "$INFRA_ROOT"/scripts/maintenance/*.sh 2>/dev/null
-chmod 755 "$INFRA_ROOT"/scripts/system/*.sh 2>/dev/null
+chmod 755 "$INFRA_ROOT"/scripts/system/*.sh "$INFRA_ROOT"/scripts/system/*.py 2>/dev/null
 chmod 755 "$INFRA_ROOT"/scripts/user/ds01-login-check 2>/dev/null
 
 # =============================================================================
-# Configuration Files (644)
+# Configuration Files (644) and Directories (755)
 # =============================================================================
 
+# Config directories must be traversable
+chmod 755 "$INFRA_ROOT"/config/runtime 2>/dev/null
+chmod 755 "$INFRA_ROOT"/config/runtime/groups 2>/dev/null
+
+# Config files must be world-readable
 chmod 644 "$INFRA_ROOT"/config/*.yaml "$INFRA_ROOT"/config/*.yml 2>/dev/null
-chmod 644 "$INFRA_ROOT"/config/groups/*.members 2>/dev/null
+chmod 644 "$INFRA_ROOT"/config/*.env 2>/dev/null
+chmod 644 "$INFRA_ROOT"/config/runtime/*.yaml "$INFRA_ROOT"/config/runtime/*.yml 2>/dev/null
+chmod 644 "$INFRA_ROOT"/config/runtime/*.txt 2>/dev/null
+chmod 644 "$INFRA_ROOT"/config/runtime/groups/*.members 2>/dev/null
 
 # =============================================================================
 # Shared Libraries (755)

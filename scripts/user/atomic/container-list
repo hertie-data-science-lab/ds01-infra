@@ -215,16 +215,22 @@ show_simple() {
         local image=$(docker inspect --format "{{.Config.Image}}" "$full_name" 2>/dev/null | cut -d: -f1)
         local uptime=$(format_uptime "$status")
 
-        # Detect container type
+        # Detect container type from ds01.container_type label (set by docker-wrapper)
         local container_type=$(docker inspect --format "{{index .Config.Labels \"ds01.container_type\"}}" "$full_name" 2>/dev/null)
-        local devcontainer_label=$(docker inspect --format "{{index .Config.Labels \"devcontainer.local_folder\"}}" "$full_name" 2>/dev/null)
-
-        # Determine type: explicit label > devcontainer detection > default ds01
         if [ -z "$container_type" ] || [ "$container_type" = "<no value>" ]; then
-            if [ -n "$devcontainer_label" ] && [ "$devcontainer_label" != "<no value>" ]; then
-                container_type="devcontainer"
-            else
-                container_type="ds01"
+            container_type="ds01"
+        fi
+        # orchestration/atomic are both native ds01 containers
+        if [ "$container_type" = "orchestration" ] || [ "$container_type" = "atomic" ]; then
+            container_type="ds01"
+        fi
+
+        # Check GPU allocation status
+        local has_gpu=false
+        if [[ "$status" == Up* ]]; then
+            local gpu=$(docker inspect --format "{{.HostConfig.DeviceRequests}}" "$full_name" 2>/dev/null)
+            if [[ "$gpu" != "[]" ]] && [[ "$gpu" != "<no value>" ]]; then
+                has_gpu=true
             fi
         fi
 
@@ -252,12 +258,9 @@ show_simple() {
         echo -e "   Image:  ${DIM}$image${NC}"
         echo -e "   Time:   ${DIM}$uptime${NC}"
 
-        # Show GPU if running
-        if [[ "$status" == Up* ]]; then
-            local gpu=$(docker inspect --format "{{.HostConfig.DeviceRequests}}" "$full_name" 2>/dev/null)
-            if [[ "$gpu" != "[]" ]] && [[ "$gpu" != "<no value>" ]]; then
-                echo -e "   GPU:    ${GREEN}Allocated${NC}"
-            fi
+        # Show GPU if running (already checked above for classification)
+        if [ "$has_gpu" = true ]; then
+            echo -e "   GPU:    ${GREEN}Allocated${NC}"
         fi
 
         echo ""

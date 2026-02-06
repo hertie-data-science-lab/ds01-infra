@@ -27,7 +27,7 @@ OPA_DATA_DIR="/var/lib/ds01/opa"
 OPA_DATA_FILE="$OPA_DATA_DIR/container-owners.json"
 SYNC_SCRIPT="$INFRA_ROOT/scripts/docker/sync-container-owners.py"
 FILTER_PROXY="$INFRA_ROOT/scripts/docker/docker-filter-proxy.py"
-RESOURCE_LIMITS="$INFRA_ROOT/config/resource-limits.yaml"
+RESOURCE_LIMITS="$INFRA_ROOT/config/runtime/resource-limits.yaml"
 REAL_DOCKER_SOCKET="/var/run/docker-real.sock"
 PROXY_DOCKER_SOCKET="/var/run/docker.sock"
 

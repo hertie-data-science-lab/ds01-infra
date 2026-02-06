@@ -297,6 +297,59 @@ class ResourceLimitParser:
         """Get policies section from config"""
         return self.config.get('policies', {})
 
+    def get_aggregate_limits(self, username):
+        """Get aggregate resource limits for a user.
+
+        Aggregate limits define PER-USER (not per-container) resource caps
+        enforced via systemd user slices. These provide an additional safety
+        boundary beyond per-container limits.
+
+        Resolution order:
+        1. User overrides aggregate section
+        2. Group aggregate section
+        3. None (admin group or no aggregate config)
+
+        Args:
+            username: The username to look up
+
+        Returns:
+            dict with aggregate limits (cpu_quota, memory_max, memory_high, tasks_max)
+            or None if user has no aggregate limits (admin or unconfigured)
+        """
+        if not self.config:
+            raise ValueError("Configuration is empty or invalid")
+
+        sanitized = sanitize_username_for_slice(username)
+
+        # Check user_overrides first (try original, then sanitized)
+        user_overrides = self.config.get('user_overrides') or {}
+        override_key = None
+        if username in user_overrides:
+            override_key = username
+        elif sanitized != username and sanitized in user_overrides:
+            override_key = sanitized
+
+        if override_key and 'aggregate' in user_overrides[override_key]:
+            return user_overrides[override_key]['aggregate']
+
+        # Check group aggregate
+        groups = self.config.get('groups') or {}
+        for group_name, group_config in groups.items():
+            members = group_config.get('members', [])
+            if username in members or (sanitized != username and sanitized in members):
+                if 'aggregate' in group_config:
+                    return group_config['aggregate']
+                # Group exists but no aggregate section (admin or unconfigured)
+                return None
+
+        # User in default group - check that group's aggregate
+        default_group = self.config.get('default_group', 'student')
+        group_config = groups.get(default_group, {})
+        if 'aggregate' in group_config:
+            return group_config['aggregate']
+
+        return None
+
     def get_lifecycle_limits_json(self, username):
         """Get all lifecycle limits for a user as JSON.
 
@@ -339,6 +392,8 @@ def main():
         print("  --all-lifecycle        All lifecycle limits as JSON")
         print("  --high-demand-threshold  GPU allocation threshold for high demand mode")
         print("  --high-demand-reduction  Idle timeout reduction factor in high demand")
+        print("  --aggregate            Per-user aggregate limits as JSON")
+        print("  --aggregate-gpu-limit  GPU limit from aggregate section (for GPU allocator)")
         sys.exit(1)
 
     username = sys.argv[1]
@@ -405,6 +460,22 @@ def main():
         policies = parser.get_policies()
         reduction = policies.get('high_demand_idle_reduction', 0.5)
         print(reduction)
+    elif '--aggregate' in sys.argv:
+        import json
+        aggregate = parser.get_aggregate_limits(username)
+        if aggregate is None:
+            print("null")
+        else:
+            print(json.dumps(aggregate))
+    elif '--aggregate-gpu-limit' in sys.argv:
+        aggregate = parser.get_aggregate_limits(username)
+        if aggregate is None:
+            print("unlimited")
+        elif 'gpu_limit' in aggregate:
+            print(aggregate['gpu_limit'])
+        else:
+            # No GPU limit in aggregate section (Phase 4 plan 03 will add this)
+            print("unlimited")
     else:
         print(parser.format_for_display(username))
 

@@ -32,7 +32,7 @@ fi
 # Configuration
 # ============================================================================
 
-CONFIG_FILE="$INFRA_ROOT/config/resource-limits.yaml"
+CONFIG_FILE="$INFRA_ROOT/config/runtime/resource-limits.yaml"
 STATE_DIR="/var/lib/ds01/bare-metal-grants"
 DEFAULT_DURATION="24h"
 

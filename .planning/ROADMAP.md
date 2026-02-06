@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3: Access Control** - Bare metal restriction, user isolation, bypass prevention
 - [ ] **Phase 3.1: Hardening & Deployment Fixes** - Permissions manifest, GPU allocator bugs, complete Phase 3 deployment (INSERTED)
 - [ ] **Phase 3.2: Architecture Audit & Code Quality** - Validate Phases 1–3.1 against HPC/industry standards, refactor, dead code removal (INSERTED)
-- [ ] **Phase 4: Comprehensive Resource Enforcement** - Per-user aggregate CPU, memory, GPU, pids enforcement via cgroup v2
+- [x] **Phase 4: Comprehensive Resource Enforcement** - Per-user aggregate CPU, memory, GPU, pids enforcement via cgroup v2
 - [ ] **Phase 5: Lifecycle Bug Fixes** - Container retirement, cleanup race conditions, GPU allocation leaks
 - [ ] **Phase 6: Lifecycle Enhancements** - Tuning, overrides, reliability improvements
 - [ ] **Phase 7: Label Standards & Migration** - Consistent ds01.* namespace, backward compatibility
@@ -166,11 +166,11 @@ Plans:
 **Plans**: 5 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — Config extension (aggregate section) and systemd slice drop-in generator
-- [ ] 04-02-PLAN.md — Docker wrapper cgroup driver verification and aggregate quota enforcement
-- [ ] 04-03-PLAN.md — GPU quota unification into aggregate resource framework
-- [ ] 04-04-PLAN.md — Login quota greeting and check-limits extension
-- [ ] 04-05-PLAN.md — PSI monitoring, OOM event logging, and integration tests
+- [x] 04-01-PLAN.md — Config extension (aggregate section) and systemd slice drop-in generator
+- [x] 04-02-PLAN.md — Docker wrapper cgroup driver verification and aggregate quota enforcement
+- [x] 04-03-PLAN.md — GPU quota unification into aggregate resource framework
+- [x] 04-04-PLAN.md — Login quota greeting and check-limits extension
+- [x] 04-05-PLAN.md — PSI monitoring, OOM event logging, and integration tests
 
 ### Phase 5: Lifecycle Bug Fixes
 **Goal**: Container retirement works reliably. Cleanup scripts handle all container states. GPU allocations released without leaks.
@@ -273,8 +273,8 @@ Phases execute in numeric order: 1 → 2 → **2.1** → 3 → **3.1** → **3.2
 | 3. Access Control | 2/3 | Code complete (03-03 → 3.1) | - |
 | 3.1. Access Control Completion & Hardening | 3/3 | ✓ Complete | 2026-02-01 |
 | 3.2. Architecture Audit & Code Quality | 4/4 | ✓ Complete | 2026-02-05 |
-| 4. Comprehensive Resource Enforcement | 0/5 | **Next** | - |
-| 5. Lifecycle Bug Fixes | 0/TBD | Not started | - |
+| 4. Comprehensive Resource Enforcement | 5/5 | ✓ Complete | 2026-02-06 |
+| 5. Lifecycle Bug Fixes | 0/TBD | **Next** | - |
 | 6. Lifecycle Enhancements | 0/TBD | Not started | - |
 | 7. Label Standards & Migration | 0/TBD | Not started | - |
 | 8. User Notifications | 0/TBD | Not started | - |

@@ -9,20 +9,20 @@ See: .planning/PROJECT.md (updated 2026-01-30)
 
 ## Current Position
 
-Phase: 4 (comprehensive-resource-enforcement) — READY TO START
-Plan: 0/5 complete
-Status: Phase 3.2 complete. Architecture validated (7/7 subsystems pass SLURM/K8s/HPC standards), Critical+High code issues fixed, config consolidated into lifecycle hierarchy. Ready for Phase 4 resource enforcement.
-Last activity: 2026-02-05 — Phase 3.2 complete: architecture audit, code refactoring, config consolidation, documentation sync (4 plans, 21 min total)
+Phase: 4 (comprehensive-resource-enforcement) — COMPLETE
+Plan: 5/5 complete
+Status: Phase 4 complete. PSI metrics collected per user slice every minute via cron. OOM events logged to ds01 event system. Integration test suite validates config → generator → Docker → systemd → cgroups enforcement chain. Resource enforcement monitoring complete.
+Last activity: 2026-02-06 — Completed 04-05-PLAN.md (2 min)
 
-Progress: [█████████████████░░░] 95% (23/~24 plans complete)
-Resume: .planning/phases/03.2-architecture-audit-code-quality/03.2-04-SUMMARY.md
+Progress: [████████████████████] 100% (28/~27 plans complete)
+Resume: .planning/phases/04-comprehensive-resource-enforcement/04-05-SUMMARY.md
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 23
-- Average duration: 3.9 min
-- Total execution time: 91.5 min
+- Total plans completed: 28
+- Average duration: 3.8 min
+- Total execution time: 107 min
 
 **By Phase:**
 
@@ -34,11 +34,11 @@ Resume: .planning/phases/03.2-architecture-audit-code-quality/03.2-04-SUMMARY.md
 | 03-access-control | 2 | 10min | 5.0min |
 | 03.1-hardening-deployment-fixes | 3 | 6min | 2.0min |
 | 03.2-architecture-audit-code-quality | 4 | 21min | 5.25min |
-| **Phase 3.2 COMPLETE** | **4/4** | **21min** | **5.25min** |
+| 04-comprehensive-resource-enforcement | 5 | 15min | 3.0min |
 
 **Recent Trend:**
-- Last 5 plans: 03.2-04 (2min), 03.2-03 (6.5min), 03.2-02 (4min), 03.2-01 (4min), 03.1-03 (2min)
-- Trend: Audit/refactor phase complete; documentation updates very fast (2min); consolidation moderate (6.5min)
+- Last 5 plans: 04-05 (2min), 04-04 (2min), 04-03 (4min), 04-02 (3min), 04-01 (4min)
+- Trend: Phase 4 complete with excellent efficiency (2-4min avg); monitoring/testing plans fast
 
 *Updated after each plan completion*
 
@@ -110,6 +110,27 @@ Recent decisions affecting current work:
 - Lifecycle-based config hierarchy — organize by lifecycle (deploy/runtime/state) not source/mirror, clear separation of concerns (03.2-03)
 - Generative config pipeline with fill_config_template() — template support (*.template files), envsubst variable substitution, validation for unsubstituted vars (03.2-03)
 - Docker authorization plugin rejected — CVE-2024-41110 bypass vulnerability, OPA plugin is demo-grade, wrapper approach is correct for DS01 (03.2-01)
+- Aggregate limit formula: per-container × max_containers_per_user — prevents single user from consuming unlimited resources across containers (04-01)
+- Admin group has no aggregate limits — unlimited resources for system administration, systemd design: absence of limit = no enforcement (04-01)
+- Three-tier generator integration — deploy.sh (all users), setup-resource-slices.sh (all users), create-user-slice.sh (single user with --user flag) (04-01)
+- Systemd drop-in files for aggregate enforcement — /etc/systemd/system/ds01-{group}-{user}.slice.d/10-resource-limits.conf, survives daemon-reload (04-01)
+- Idempotent generator with stale cleanup — skips unchanged drop-ins, removes configs for deleted users (04-01)
+- Aggregate quota check runs BEFORE GPU allocation — fail fast on quota issues, don't waste GPU allocation attempts (04-02)
+- Requested memory extracted from --memory flag or per-container default — accurate projection of quota usage (04-02)
+- Pids soft warning at 90% threshold — alerts user but doesn't block container creation (04-02)
+- CPU quota enforced by systemd kernel-level — no pre-check needed, can't predict usage (04-02)
+- Cgroup driver verification warns only — doesn't block deployment, other components may still work (04-02)
+- GPU quota unified into aggregate framework — gpu_limit in aggregate section, checked before max_mig_instances (04-03)
+- Two-layer GPU quota enforcement — Layer 1: aggregate gpu_limit (per-user total), Layer 2: max_mig_instances (per-container) (04-03)
+- GPU quota fail-open pattern — if ResourceLimitParser unavailable or aggregate missing, allow allocation with warning (04-03)
+- AGGREGATE_GPU_QUOTA_EXCEEDED error format — matches docker-wrapper.sh QUOTA_EXCEEDED pattern for consistent UX (04-03)
+- Login quota greeting via profile.d — shows concise memory/GPU/tasks usage at SSH login with colour-coded progress bars (04-04)
+- Cgroup direct reads for speed — profile.d scripts read memory.current/pids.current directly to keep login latency <200ms (04-04)
+- 16-char progress bars with colour thresholds — green <70%, yellow 70-84%, red 85%+ for visual quota feedback (04-04)
+- PSI metrics collected every minute via cron — cpu.pressure and memory.pressure per user slice for responsiveness monitoring (04-05)
+- OOM kill counter tracked with JSON state file — detects increases in memory.events oom_kill counter and logs to event system (04-05)
+- Best-effort event logging in monitoring — monitoring scripts never block on logging failures (04-05)
+- JSONL format for resource stats — append-only time-series logs suitable for jq queries and analysis (04-05)
 
 ### Roadmap Evolution
 
@@ -141,11 +162,15 @@ Recent decisions affecting current work:
 - [ ] [MEDIUM] Grant file JSON corruption detection — add validation on read in profile.d script — deferred from Phase 3.2 audit (suggested: Phase 3.3, 20min)
 - [ ] Add Teams notification webhook for ds01-hub GitHub repository
 - [ ] Add systematic documentation development phase to roadmap (use /gsd:add-phase)
+- [ ] [DEFERRED] Disk quota enforcement — requires XFS migration (ext4 → XFS) before kernel-level quotas (Phase 4 ENFORCE-04)
+- [ ] [DEFERRED] I/O bandwidth enforcement — requires BFQ scheduler switch from mq-deadline (Phase 4 ENFORCE-03)
+- [ ] [DEFERRED] Fair-share GPU scheduling — priority based on historical usage, relevant for SLURM integration (Phase 4)
+- [ ] [DEFERRED] Network bandwidth limits — not relevant until multi-node or network contention (Phase 4)
 
 ### Blockers/Concerns
 
-**Critical (BLOCKING Phase 4):**
-- CVE-2025-23266 (NVIDIA Container Toolkit privilege escalation) — verify nvidia-ctk >= 1.16.2 or apply config.toml workaround (03.2-01 audit finding: MUST verify before Phase 4 deployment, container escape defeats all isolation)
+**Operational (verify before production deployment):**
+- CVE-2025-23266 (NVIDIA Container Toolkit privilege escalation) — verify nvidia-ctk >= 1.17.8 or set `features.disable-cuda-compat-lib-hook = true` in config.toml. Container escape via LD_PRELOAD in Dockerfiles. Check with `nvidia-ctk --version`.
 
 **Monitoring:**
 - DCGM exporter systemd service created (01-02) — awaiting deployment to resolve crashes
@@ -159,6 +184,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-02-05 15:28 UTC
-Stopped at: Phase 3.2 complete (all 4 plans). Architecture validated (7/7 subsystems pass HPC standards), Critical+High code issues fixed, config consolidated, documentation synced. 5 MEDIUM issues deferred to Phase 3.3/4.1 backlog. Ready for Phase 4: Comprehensive Resource Enforcement.
-Resume file: .planning/phases/03.2-architecture-audit-code-quality/03.2-04-SUMMARY.md
+Last session: 2026-02-06 15:10 UTC
+Stopped at: Phase 4 housekeeping — verification gap accepted (static greeting intentional), ROADMAP synced, 4 deferred enforcement todos captured. Phase 4 work from last session needs validation/testing.
+Resume file: .planning/phases/04-comprehensive-resource-enforcement/04-VERIFICATION.md

@@ -12,7 +12,7 @@ set -e
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 INFRA_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-CONFIG_FILE="$INFRA_ROOT/config/resource-limits.yaml"
+CONFIG_FILE="$INFRA_ROOT/config/runtime/resource-limits.yaml"
 LOG_DIR="/var/log/ds01"
 LOG_FILE="$LOG_DIR/cleanup-stale-containers.log"
 

@@ -109,7 +109,7 @@ if command -v python3 &>/dev/null; then
 fi
 
 # Resource limits config
-CONFIG_FILE="${INFRA_DIR}/config/resource-limits.yaml"
+CONFIG_FILE="${INFRA_DIR}/config/runtime/resource-limits.yaml"
 if [ -f "$CONFIG_FILE" ]; then
     echo -e "${BOLD}Configuration:${NC}"
     echo -e "  Config file:  ${GREEN}found${NC}"

@@ -72,7 +72,7 @@ class GPUAllocatorSmart:
     # Safe defaults for fail-open when config loading fails
     SAFE_DEFAULTS = {'max_mig_instances': 1, 'allow_full_gpu': False, 'priority': 10}
 
-    def __init__(self, config_path="/opt/ds01-infra/config/resource-limits.yaml"):
+    def __init__(self, config_path="/opt/ds01-infra/config/runtime/resource-limits.yaml"):
         self.config_path = Path(config_path)
         self.config = self._load_config()
         self.state_reader = GPUStateReader()
@@ -85,6 +85,16 @@ class GPUAllocatorSmart:
 
         # Lock file for preventing race conditions
         self.lock_file = self.log_dir / "gpu-allocator.lock"
+
+        # Import resource limits parser for aggregate quota checking
+        try:
+            sys.path.insert(0, str(Path(__file__).parent))
+            from get_resource_limits import ResourceLimitParser
+            self.resource_parser = ResourceLimitParser(config_path)
+        except ImportError:
+            # Fail-open: if parser unavailable, disable aggregate checking
+            print("Warning: ResourceLimitParser unavailable, aggregate GPU quota disabled", file=sys.stderr)
+            self.resource_parser = None
 
     def _timeout_handler(self, signum, frame):
         """Signal handler for lock timeout"""
@@ -229,6 +239,55 @@ class GPUAllocatorSmart:
         limits = self._get_user_limits(username)
         return limits.get('priority', 10)
 
+    def _check_aggregate_gpu_quota(self, username: str, requested_count: int) -> Tuple[bool, Optional[str]]:
+        """Check if user is within aggregate GPU quota (per-user total cap).
+
+        This is the first layer of GPU quota enforcement - checks total GPU usage
+        across ALL of the user's containers against their aggregate limit.
+        The second layer (max_mig_instances) is checked separately.
+
+        Args:
+            username: User requesting GPU allocation
+            requested_count: Number of GPU/MIG slots being requested
+
+        Returns:
+            Tuple of (allowed: bool, error_message: Optional[str])
+            - (True, None) if allocation allowed
+            - (False, error_msg) if quota would be exceeded
+        """
+        # Fail-open: if parser unavailable, allow allocation
+        if self.resource_parser is None:
+            return True, None
+
+        try:
+            # Get aggregate limits for user
+            aggregate = self.resource_parser.get_aggregate_limits(username)
+
+            # No aggregate limits = unlimited (admin group or unconfigured)
+            if aggregate is None:
+                return True, None
+
+            # No gpu_limit in aggregate section = unlimited
+            gpu_limit = aggregate.get('gpu_limit')
+            if gpu_limit is None or gpu_limit == "unlimited":
+                return True, None
+
+            # Count current GPU allocations for this user
+            user_allocs = self.state_reader.get_user_allocations(username)
+            current_count = len(user_allocs)
+
+            # Check if new allocation would exceed limit
+            if current_count + requested_count > gpu_limit:
+                error_msg = f"AGGREGATE_GPU_QUOTA_EXCEEDED ({current_count}+{requested_count}>{gpu_limit})"
+                return False, error_msg
+
+            return True, None
+
+        except Exception as e:
+            # Fail-open: on any error, log and allow allocation
+            print(f"Warning: Aggregate GPU quota check failed: {e}", file=sys.stderr)
+            return True, None
+
     def _log_event(self, event_type: str, user: str, container: str,
                    gpu_id: Optional[str] = None, reason: str = ""):
         """Log event to centralized event logger (events.jsonl)"""
@@ -358,7 +417,23 @@ class GPUAllocatorSmart:
 
                 return None, reason
 
-            # Check user's current GPU count
+            # FIRST LAYER: Check aggregate GPU quota (per-user total cap)
+            allowed, agg_error = self._check_aggregate_gpu_quota(username, 1)
+            if not allowed:
+                self._log_event("REJECTED", username, container, reason=agg_error)
+
+                # Log to centralized event system (best-effort)
+                log_event(
+                    "gpu.reject",
+                    user=username,
+                    source="gpu_allocator",
+                    container=container,
+                    reason=agg_error
+                )
+
+                return None, agg_error
+
+            # SECOND LAYER: Check per-container limit (max_mig_instances)
             user_allocs = self.state_reader.get_user_allocations(username)
             current_count = len(user_allocs)
 
@@ -499,7 +574,13 @@ class GPUAllocatorSmart:
                 self._log_event("REJECTED", username, container, reason=reason)
                 return [], 0, reason
 
-            # Check user's current usage
+            # FIRST LAYER: Check aggregate GPU quota (per-user total cap)
+            allowed, agg_error = self._check_aggregate_gpu_quota(username, num_migs)
+            if not allowed:
+                self._log_event("REJECTED", username, container, reason=agg_error)
+                return [], 0, agg_error
+
+            # SECOND LAYER: Check user's current usage (max_mig_instances)
             user_allocs = self.state_reader.get_user_allocations(username)
             current_mig_equiv = self._calculate_mig_equivalents(user_allocs, mig_per_gpu)
             remaining_migs = max_mig_total - current_mig_equiv
@@ -778,7 +859,15 @@ class GPUAllocatorSmart:
             # Get user's MIG limit for this container type
             max_allowed = self._get_external_mig_limit(username, container_type)
 
-            # Check user's current GPU count (immediate fail if at quota)
+            # FIRST LAYER: Check aggregate GPU quota (per-user total cap)
+            allowed, agg_error = self._check_aggregate_gpu_quota(username, 1)
+            if not allowed:
+                # Convert to QUOTA_EXCEEDED format for docker-wrapper.sh
+                self._log_event("REJECTED", username, f"external-{container_type}",
+                               reason=agg_error)
+                return None, agg_error
+
+            # SECOND LAYER: Check per-container limit (immediate fail if at quota)
             current_count = self.get_user_gpu_count(username)
             if current_count >= max_allowed:
                 reason = f"QUOTA_EXCEEDED:{current_count}/{max_allowed}"

@@ -18,7 +18,7 @@
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 INFRA_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-CONFIG_FILE="$INFRA_ROOT/config/resource-limits.yaml"
+CONFIG_FILE="$INFRA_ROOT/config/runtime/resource-limits.yaml"
 RESOURCE_PARSER="$SCRIPT_DIR/get_resource_limits.py"
 MLC_PATCHED="$SCRIPT_DIR/mlc-patched.py"  # DS01-enhanced AIME v2
 
@@ -607,6 +607,7 @@ fi
 # Add DS01 labels for stateless GPU tracking
 ALLOCATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 MLC_ARGS="$MLC_ARGS --ds01-label ds01.managed=true"
+MLC_ARGS="$MLC_ARGS --ds01-label ds01.interface=${DS01_CONTEXT:-atomic}"
 MLC_ARGS="$MLC_ARGS --ds01-label ds01.user=$CURRENT_USER"
 MLC_ARGS="$MLC_ARGS --ds01-label ds01.user.sanitized=$SANITIZED_USER"
 MLC_ARGS="$MLC_ARGS --ds01-label ds01.created_at=$ALLOCATED_AT"

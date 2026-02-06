@@ -18,7 +18,7 @@
 set -e
 
 INFRA_ROOT="/opt/ds01-infra"
-CONFIG_FILE="$INFRA_ROOT/config/resource-limits.yaml"
+CONFIG_FILE="$INFRA_ROOT/config/runtime/resource-limits.yaml"
 WORKSPACE_ROOT="/home"  # Where user workspaces live
 
 # Colors

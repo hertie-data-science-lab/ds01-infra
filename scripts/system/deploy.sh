@@ -58,6 +58,19 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Verify Docker cgroup driver early (warn only, don't block deployment)
+echo -e "${BOLD}Verifying Docker configuration...${NC}"
+if [ -f "$INFRA_ROOT/scripts/system/verify-cgroup-driver.sh" ]; then
+    if bash "$INFRA_ROOT/scripts/system/verify-cgroup-driver.sh"; then
+        echo ""
+    else
+        echo -e "${YELLOW}WARNING: Docker cgroup driver check failed${NC}"
+        echo -e "${YELLOW}Resource enforcement may not work correctly${NC}"
+        echo ""
+        # Don't exit - allow deployment to continue (other components may still be useful)
+    fi
+fi
+
 # ============================================================================
 # Helper Functions
 # ============================================================================
@@ -176,8 +189,10 @@ validate_yaml() {
 }
 
 echo -e "${BOLD}Validating configuration files...${NC}"
-validate_yaml "$INFRA_ROOT/config/resource-limits.yaml" "resource-limits.yaml"
+validate_yaml "$INFRA_ROOT/config/runtime/resource-limits.yaml" "resource-limits.yaml"
 echo -e "${GREEN}✓${NC} resource-limits.yaml"
+echo ""
+
 echo ""
 
 # ============================================================================
@@ -289,6 +304,7 @@ deploy_cmd "$INFRA_ROOT/scripts/docker/gpu-queue-manager.py" "ds01-gpu-queue" "A
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/resource-alert-checker.sh" "ds01-alerts" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/check-idle-containers.sh" "ds01-idle" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/maintenance/backup-logs.sh" "ds01-backup" "Admin"
+deploy_cmd "$INFRA_ROOT/scripts/system/verify-cgroup-driver.sh" "ds01-verify-cgroup" "Admin"
 
 # --- Internal (hidden from users) ---
 $VERBOSE && echo -e "${DIM}Internal:${NC}"
@@ -382,6 +398,28 @@ done
 
 echo -e "  ${GREEN}✓${NC} Sudoers.d files deployed (440)"
 
+# --- Deploy cron.d files (644 — read by cron daemon) ---
+echo -e "${DIM}Deploying cron.d files...${NC}"
+
+for cron_file in "$INFRA_ROOT"/config/deploy/cron.d/ds01-*; do
+    [ -f "$cron_file" ] || continue
+    name="$(basename "$cron_file")"
+    cp "$cron_file" /etc/cron.d/"$name"
+    chmod 644 /etc/cron.d/"$name"
+done
+
+echo -e "  ${GREEN}✓${NC} Cron.d files deployed (644)"
+
+# --- Ensure state directories exist ---
+echo -e "${DIM}Creating state directories...${NC}"
+
+mkdir -p /var/lib/ds01/resource-stats
+chmod 755 /var/lib/ds01/resource-stats
+mkdir -p /var/log/ds01
+chmod 755 /var/log/ds01
+
+echo -e "  ${GREEN}✓${NC} State directories created"
+
 # ============================================================================
 # Validate Runtime Configuration
 # ============================================================================
@@ -470,6 +508,27 @@ if [ -f "$INFRA_ROOT/config/deploy/systemd/ds01-dcgm-exporter.service" ]; then
     fi
 else
     echo -e "  ${DIM}DCGM exporter unit not found${NC}"
+fi
+
+# ============================================================================
+# Resource Enforcement: Generate Per-User Aggregate Limits
+# ============================================================================
+
+echo -e "${DIM}Deploying aggregate limit generator...${NC}"
+
+# Deploy generator script as symlink
+deploy_cmd "$INFRA_ROOT/scripts/system/generate-user-slice-limits.py" "ds01-generate-limits" "Internal"
+
+# Generate/update aggregate limit drop-ins for all users
+if [ -x "$INFRA_ROOT/scripts/system/generate-user-slice-limits.py" ]; then
+    echo -e "${DIM}Generating aggregate limit drop-ins...${NC}"
+    if python3 "$INFRA_ROOT/scripts/system/generate-user-slice-limits.py" --verbose 2>&1 | grep -q "updated\|unchanged"; then
+        echo -e "  ${GREEN}✓${NC} Aggregate limits generated"
+    else
+        echo -e "  ${YELLOW}!${NC} No users found or aggregate limits disabled"
+    fi
+else
+    echo -e "  ${YELLOW}!${NC} Generator script not found, skipping aggregate limit generation"
 fi
 
 # ============================================================================
