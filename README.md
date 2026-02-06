@@ -193,6 +193,8 @@ check-limits                            # View resource usage and limits
 
 ### For Administrators
 
+TODO: this needs updating 
+
 ```bash
 # System status
 dashboard                               # GPU, containers, system overview
@@ -209,6 +211,8 @@ tail -f /var/log/ds01/gpu-allocations.log
 ```
 
 ## Directory Structure
+
+TODO: this needs updating 
 
 ```
 ds01-infra/
@@ -229,9 +233,10 @@ ds01-infra/
 
 ## Documentation
 
+TODO: this needs updating 
+
 | Document | Purpose |
 |----------|---------|
-| [CLAUDE.md](CLAUDE.md) | AI assistant instructions (index to detailed docs) |
 | [ds01-UI_UX_GUIDE.md](ds01-UI_UX_GUIDE.md) | CLI design standards |
 | [config/README.md](config/README.md) | Resource configuration reference |
 | [scripts/user/README.md](scripts/user/README.md) | User command reference |
