@@ -2,9 +2,9 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/) [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff) [![Docs](https://img.shields.io/badge/docs-end%20user%20docs-blue)](https://github.com/hertie-data-science-lab/ds01-hub/tree/main/docs)
 
-**Multi-user GPU management for research labs** - without the complexity of Kubernetes or SLURM.
+**Multi-user containerised ML workload management for data science research labs** 
 
-DS01 brings container-based GPU allocation, per-user resource limits, and automated lifecycle management to small-to-medium research organisations running shared GPU servers.
+DS01 brings container-based compute allocation, per-user resource limits, and automated lifecycle management to small-to-medium research organisations running shared GPU servers.
 
 ## Why DS01?
 
@@ -15,6 +15,8 @@ DS01 brings container-based GPU allocation, per-user resource limits, and automa
 | **Stale containers** | Automated idle detection and cleanup |
 | **Complex onboarding** | Educational wizards guide new users |
 | **Container sprawl** | Ephemeral model - GPUs freed on retire |
+| **Observsability stack** | Prometheus & Grafana dashboard configs |
+| **Green Computing** | Energy use & carbon emission estimation tracking |
 
 **Built on proven foundations:**
 - [AIME ML Containers](https://github.com/aime-team/aime-ml-containers) for container management
@@ -26,6 +28,8 @@ DS01 brings container-based GPU allocation, per-user resource limits, and automa
 ## Quick Start
 
 ### For Administrators
+
+TODO: this is out of date
 
 ```bash
 # Clone to standard location
