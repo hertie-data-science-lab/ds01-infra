@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3.1: Hardening & Deployment Fixes** - Permissions manifest, GPU allocator bugs, complete Phase 3 deployment (INSERTED)
 - [ ] **Phase 3.2: Architecture Audit & Code Quality** - Validate Phases 1–3.1 against HPC/industry standards, refactor, dead code removal (INSERTED)
 - [x] **Phase 4: Comprehensive Resource Enforcement** - Per-user aggregate CPU, memory, GPU, pids enforcement via cgroup v2
-- [ ] **Phase 5: Lifecycle Bug Fixes** - Container retirement, cleanup race conditions, GPU allocation leaks
+- [x] **Phase 5: Lifecycle Bug Fixes** - Container retirement, cleanup race conditions, GPU allocation leaks
 - [ ] **Phase 6: Lifecycle Enhancements** - Tuning, overrides, reliability improvements
 - [ ] **Phase 7: Label Standards & Migration** - Consistent ds01.* namespace, backward compatibility
 - [ ] **Phase 8: User Notifications** - Timeout warnings, quota alerts, terminal delivery
@@ -179,13 +179,16 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Idle timeout enforced for all container types including dev containers and unmanaged containers
   2. Max runtime enforced for all container types
-  3. Containers in "created" state (never started) detected and cleaned up within 24 hours
+  3. Containers in "created" state (never started) detected and cleaned up within 30 minutes
   4. Cleanup scripts handle containers without DS01/AIME labels using multiple detection methods
   5. GPU allocations released reliably when containers stop (verified via gpu_allocator.py status showing no leaks)
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 05-01: TBD during planning
+- [x] 05-01-PLAN.md — GPU idle detection, grace period, devcontainer exemption, wall notifications
+- [x] 05-02-PLAN.md — Max runtime wall notifications, 60s SIGTERM grace
+- [x] 05-03-PLAN.md — Created-state cleanup, unlabelled container handling
+- [x] 05-04-PLAN.md — Post-removal GPU health verification, cron schedule fix
 
 ### Phase 6: Lifecycle Enhancements
 **Goal**: Lifecycle enforcement tuned for real-world usage patterns. Per-user overrides for research workflows.
@@ -274,8 +277,8 @@ Phases execute in numeric order: 1 → 2 → **2.1** → 3 → **3.1** → **3.2
 | 3.1. Access Control Completion & Hardening | 3/3 | ✓ Complete | 2026-02-01 |
 | 3.2. Architecture Audit & Code Quality | 4/4 | ✓ Complete | 2026-02-05 |
 | 4. Comprehensive Resource Enforcement | 5/5 | ✓ Complete | 2026-02-06 |
-| 5. Lifecycle Bug Fixes | 0/TBD | **Next** | - |
-| 6. Lifecycle Enhancements | 0/TBD | Not started | - |
+| 5. Lifecycle Bug Fixes | 4/4 | ✓ Complete | 2026-02-11 |
+| 6. Lifecycle Enhancements | 0/TBD | **Next** | - |
 | 7. Label Standards & Migration | 0/TBD | Not started | - |
 | 8. User Notifications | 0/TBD | Not started | - |
 | 9. Command Bug Fixes | 0/TBD | Not started | - |

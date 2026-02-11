@@ -182,6 +182,12 @@ policies:
   # DEPLOYED: Used by check-idle-containers.sh and high-demand detection
   high_demand_threshold: 0.8       # System is "high demand" at 80% GPU allocation
   high_demand_idle_reduction: 0.5  # Reduce idle timeout by 50% during high demand
+  gpu_idle_threshold: 5            # GPU utilisation % threshold for idle detection
+  grace_period: 30m                # Startup grace period before idle detection begins
+  keepalive_max_duration: 24h      # Max time .keep-alive file is respected
+  sigterm_grace_seconds: 60        # SIGTERM grace period for GPU containers
+  gpu_hold_after_manual_stop: 15m  # GPU hold duration when user manually stops
+  created_container_timeout: 30m   # Cleanup timeout for created-never-started containers
 
   # TODO-NOT-IMPLEMENTED: Policy enforcement
   # auto_stop_idle: true
@@ -198,7 +204,7 @@ policies:
 container_types:
   # Dev containers (VS Code, Cursor, etc.) - development work
   devcontainer:
-    idle_timeout: 30m              # Shorter than ds01 default - ephemeral nature
+    idle_timeout: null             # Exempt from idle timeout (only subject to max_runtime)
     max_runtime: 168h              # 1 week max
     default_mig_count:             # Group-based MIG allocation for external containers
       student: 1                   # Students get 1 MIG for dev containers

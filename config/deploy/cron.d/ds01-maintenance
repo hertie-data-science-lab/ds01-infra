@@ -27,19 +27,20 @@ INFRA_ROOT=/opt/ds01-infra
 
 # ============================================================================
 # Container Lifecycle Management
+# Flow: GPU cleanup (:05) -> idle check (:20) -> runtime enforce (:35) -> container cleanup (:50)
 # ============================================================================
 
-# Check for idle containers (:30 past each hour)
-30 * * * * root $INFRA_ROOT/scripts/maintenance/check-idle-containers.sh >> /var/log/ds01/idle-cleanup.log 2>&1
+# Clean up stale GPU allocations + health check (:05 past each hour)
+5 * * * * root $INFRA_ROOT/scripts/maintenance/cleanup-stale-gpu-allocations.sh >> /var/log/ds01/gpu-cleanup.log 2>&1
 
-# Enforce max runtime (:45 past each hour)
-45 * * * * root $INFRA_ROOT/scripts/maintenance/enforce-max-runtime.sh >> /var/log/ds01/runtime-enforcement.log 2>&1
+# Check for idle containers (:20 past each hour)
+20 * * * * root $INFRA_ROOT/scripts/monitoring/check-idle-containers.sh >> /var/log/ds01/idle-cleanup.log 2>&1
 
-# Clean up stale GPU allocations (:15 past each hour)
-15 * * * * root $INFRA_ROOT/scripts/maintenance/cleanup-stale-gpu-allocations.sh >> /var/log/ds01/gpu-cleanup.log 2>&1
+# Enforce max runtime (:35 past each hour)
+35 * * * * root $INFRA_ROOT/scripts/maintenance/enforce-max-runtime.sh >> /var/log/ds01/runtime-enforcement.log 2>&1
 
-# Clean up stopped containers (:30 past each hour)
-30 * * * * root $INFRA_ROOT/scripts/maintenance/cleanup-stale-containers.sh >> /var/log/ds01/container-cleanup.log 2>&1
+# Clean up stopped containers (:50 past each hour)
+50 * * * * root $INFRA_ROOT/scripts/maintenance/cleanup-stale-containers.sh >> /var/log/ds01/container-cleanup.log 2>&1
 
 # ============================================================================
 # Permissions Drift Fix (every 15 minutes)
@@ -48,6 +49,15 @@ INFRA_ROOT=/opt/ds01-infra
 # Re-enforce file permissions in case editing sessions (umask 0077) break them.
 # Runs the permissions manifest via a bash subshell with the required variables.
 */15 * * * * root bash -c 'IR=/opt/ds01-infra; INFRA_ROOT=$IR USER_ATOMIC=$IR/scripts/user/atomic USER_ORCHESTRATORS=$IR/scripts/user/orchestrators USER_WIZARDS=$IR/scripts/user/wizards USER_HELPERS=$IR/scripts/user/helpers USER_DISPATCHERS=$IR/scripts/user/dispatchers DIM="" NC="" source $IR/config/permissions-manifest.sh' >> /var/log/ds01/permissions-fix.log 2>&1
+
+# ============================================================================
+# Config Watchdog
+# Quick: recover from test crash artifacts (daily at noon)
+# Full:  verify config matches git HEAD (daily at 1am)
+# ============================================================================
+
+0 12 * * * root $INFRA_ROOT/scripts/maintenance/config-watchdog.sh 2>&1
+0 1 * * * root $INFRA_ROOT/scripts/maintenance/config-watchdog.sh --full >> /var/log/ds01/config-watchdog.log 2>&1
 
 # ============================================================================
 # State Validation (runs daily at 2am)

@@ -33,7 +33,8 @@ Categories:
   component     Run component tests (single components, may need Docker)
   integration   Run integration tests (multiple components)
   e2e           Run end-to-end tests (full workflows, slow)
-  all           Run all tests (default)
+  runtime       Run runtime tests (real system, sudo required, ~15 min)
+  all           Run all tests except runtime (default)
 
 Options:
   -v, --verbose     Verbose output
@@ -46,7 +47,7 @@ Options:
   -h, --help        Show this help
 
 Markers available:
-  unit, component, integration, e2e
+  unit, component, integration, e2e, runtime
   slow, requires_docker, requires_gpu, requires_root
 
 Examples:
@@ -55,6 +56,7 @@ Examples:
   $0 -v integration         # Verbose integration tests
   $0 --no-docker            # Skip Docker-dependent tests
   $0 -m "not slow"          # Skip slow tests
+  sudo $0 runtime            # Run runtime tests (~15 min, needs root)
 
 EOF
     exit 0
@@ -63,7 +65,7 @@ EOF
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        unit|component|integration|e2e|all)
+        unit|component|integration|e2e|runtime|all)
             CATEGORY="$1"
             shift
             ;;
@@ -133,9 +135,15 @@ case $CATEGORY in
         TEST_PATH="e2e/"
         echo -e "${BLUE}Running: End-to-End Tests${NC}"
         ;;
+    runtime)
+        TEST_PATH="runtime/"
+        MARKERS="$MARKERS -m runtime"
+        echo -e "${BLUE}Running: Runtime Tests (real system, ~15 min)${NC}"
+        echo -e "${YELLOW}  Requires: sudo, GPU, Docker${NC}"
+        ;;
     all)
         TEST_PATH=""
-        echo -e "${BLUE}Running: All Tests${NC}"
+        echo -e "${BLUE}Running: All Tests (excluding runtime)${NC}"
         ;;
 esac
 

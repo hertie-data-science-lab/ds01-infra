@@ -5,24 +5,24 @@
 See: .planning/PROJECT.md (updated 2026-01-30)
 
 **Core value:** Full control over GPU resources — every GPU process tracked, attributed to a user, and controllable
-**Current focus:** Phase 3.1 (Access Control Completion & Hardening) — merged scope from Phase 3 03-03 + UAT fixes
+**Current focus:** Phase 6 (Lifecycle Enhancements) — next phase after Phase 5 completion
 
 ## Current Position
 
-Phase: 4 (comprehensive-resource-enforcement) — COMPLETE
-Plan: 5/5 complete
-Status: Phase 4 complete. PSI metrics collected per user slice every minute via cron. OOM events logged to ds01 event system. Integration test suite validates config → generator → Docker → systemd → cgroups enforcement chain. Resource enforcement monitoring complete.
-Last activity: 2026-02-06 — Completed 04-05-PLAN.md (2 min)
+Phase: 5 (lifecycle-bug-fixes) — COMPLETE
+Plan: 4/4 complete
+Status: Phase 5 complete. Container lifecycle fully operational: GPU-aware idle detection, wall notifications, universal container cleanup, SLURM epilog GPU health verification.
+Last activity: 2026-02-11 — Completed Phase 5 execution (4 plans, 2 waves)
 
-Progress: [████████████████████] 100% (28/~27 plans complete)
-Resume: .planning/phases/04-comprehensive-resource-enforcement/04-05-SUMMARY.md
+Progress: [████████████████████] 100% (32/~32 plans complete)
+Resume: .planning/phases/05-lifecycle-bug-fixes/05-VERIFICATION.md
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 28
-- Average duration: 3.8 min
-- Total execution time: 107 min
+- Total plans completed: 32
+- Average duration: 3.5 min
+- Total execution time: 124 min
 
 **By Phase:**
 
@@ -35,10 +35,11 @@ Resume: .planning/phases/04-comprehensive-resource-enforcement/04-05-SUMMARY.md
 | 03.1-hardening-deployment-fixes | 3 | 6min | 2.0min |
 | 03.2-architecture-audit-code-quality | 4 | 21min | 5.25min |
 | 04-comprehensive-resource-enforcement | 5 | 15min | 3.0min |
+| 05-lifecycle-bug-fixes | 4 | 11.5min | 2.9min |
 
 **Recent Trend:**
-- Last 5 plans: 04-05 (2min), 04-04 (2min), 04-03 (4min), 04-02 (3min), 04-01 (4min)
-- Trend: Phase 4 complete with excellent efficiency (2-4min avg); monitoring/testing plans fast
+- Last 5 plans: 05-04 (2min), 05-03 (4min), 05-02 (2min), 05-01 (3.5min), 04-05 (2min)
+- Trend: Phase 5 complete with excellent efficiency (2-4min avg per plan)
 
 *Updated after each plan completion*
 
@@ -131,6 +132,20 @@ Recent decisions affecting current work:
 - OOM kill counter tracked with JSON state file — detects increases in memory.events oom_kill counter and logs to event system (04-05)
 - Best-effort event logging in monitoring — monitoring scripts never block on logging failures (04-05)
 - JSONL format for resource stats — append-only time-series logs suitable for jq queries and analysis (04-05)
+- GPU utilization as primary idle signal — nvidia-smi query per GPU UUID (<5% threshold), multi-signal logic with CPU/network as secondary (05-01)
+- 30-minute startup grace period for idle detection — uses Docker StartedAt timestamp, prevents false positives during data loading and package installation (05-01)
+- Dev containers exempt from idle timeout — only subject to max_runtime (168h), rationale: MIG slice usage, bind-mount survival, bursty interactive patterns (05-01)
+- Wall notifications for idle warnings — replaces file-based notifications (.ds01-idle-warning, .idle-warning.txt), plain text broadcast to user terminals (05-01)
+- 24-hour keep-alive limit — .keep-alive file respected for max 24h then ignored, prevents infinite GPU squatting (05-01)
+- 60-second SIGTERM grace for GPU containers — industry standard for model checkpoint saves, increased from 10s (05-01)
+- Wall broadcasts for max runtime notifications — replaces file-based notifications ($HOME/.ds01-runtime-warning), instant terminal delivery (05-02)
+- SIGTERM grace configurable via policies.sigterm_grace_seconds — default 60s for GPU workload checkpointing, was hardcoded 10s (05-02)
+- Universal container cleanup with ownership fallback chain — ds01.user → aime.mlc.USER → devcontainer.local_folder → name pattern → unknown, handles all containers regardless of creation method (05-03)
+- Created-state container cleanup at 30m timeout — detects containers in "created" state (never started) from policies.created_container_timeout (05-03)
+- Belt-and-suspenders GPU release in cleanup — duplicates cleanup-stale-gpu-allocations logic to prevent leaks if timing window missed (05-03)
+- SLURM epilog pattern for GPU health verification — post-removal check detects orphaned processes via nvidia-smi --query-compute-apps, kills them, resets GPU only if not shared (05-04)
+- Never reset shared GPUs — GPU reset affects all containers sharing that physical GPU (MIG multi-tenant safety), alert admin for manual intervention (05-04)
+- Cron schedule distribution for lifecycle jobs — spread across hour at :05, :20, :35, :50 to prevent resource contention and maintain logical ordering (05-04)
 
 ### Roadmap Evolution
 
@@ -162,6 +177,7 @@ Recent decisions affecting current work:
 - [ ] [MEDIUM] Grant file JSON corruption detection — add validation on read in profile.d script — deferred from Phase 3.2 audit (suggested: Phase 3.3, 20min)
 - [ ] Add Teams notification webhook for ds01-hub GitHub repository
 - [ ] Add systematic documentation development phase to roadmap (use /gsd:add-phase)
+- [ ] Review and configure CI/CD pipelines (lint, release, sync-docs) — currently disabled — see `.planning/todos/pending/2026-02-11-review-cicd-pipelines.md`
 - [ ] [DEFERRED] Disk quota enforcement — requires XFS migration (ext4 → XFS) before kernel-level quotas (Phase 4 ENFORCE-04)
 - [ ] [DEFERRED] I/O bandwidth enforcement — requires BFQ scheduler switch from mq-deadline (Phase 4 ENFORCE-03)
 - [ ] [DEFERRED] Fair-share GPU scheduling — priority based on historical usage, relevant for SLURM integration (Phase 4)
@@ -184,6 +200,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-02-06 15:10 UTC
-Stopped at: Phase 4 housekeeping — verification gap accepted (static greeting intentional), ROADMAP synced, 4 deferred enforcement todos captured. Phase 4 work from last session needs validation/testing.
-Resume file: .planning/phases/04-comprehensive-resource-enforcement/04-VERIFICATION.md
+Last session: 2026-02-11 17:20 UTC
+Stopped at: Phase 5 complete — 4 plans executed (2 waves), verified 5/5 must-haves
+Resume file: .planning/phases/05-lifecycle-bug-fixes/05-VERIFICATION.md

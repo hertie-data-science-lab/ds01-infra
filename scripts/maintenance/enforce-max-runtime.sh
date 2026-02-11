@@ -37,6 +37,20 @@ log_color() {
     echo -e "${2}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
 }
 
+# Send message to a specific user's terminals (not wall broadcast)
+notify_user() {
+    local username="$1"
+    local message="$2"
+    local sent=false
+    while IFS= read -r tty; do
+        [ -z "$tty" ] && continue
+        echo "$message" > "/dev/$tty" 2>/dev/null && sent=true
+    done < <(who | awk -v user="$username" '$1 == user {print $2}')
+    if [ "$sent" = false ]; then
+        log "User $username has no active terminals — notification not delivered"
+    fi
+}
+
 # Get max runtime for user (in hours)
 get_max_runtime() {
     local username="$1"
@@ -173,45 +187,22 @@ send_warning() {
     local container="$2"
     local hours_until_stop="$3"
 
-    # Create warning message in user's home
-    local user_home=$(eval echo "~$username")
-    local warning_file="$user_home/.ds01-runtime-warning"
-
-    cat > "$warning_file" << WARNEOF
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️  MAX RUNTIME WARNING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Broadcast warning via wall (all users see it in their terminals)
+    local message="DS01 MAX RUNTIME WARNING
 
 Container: $container
-Status: Approaching maximum runtime limit
-Action: Will auto-stop in ~${hours_until_stop} hours
+Status: Will auto-stop in ~${hours_until_stop} hours
+Reason: Maximum runtime limit approaching
 
-This container will be automatically stopped when it reaches
-its maximum runtime limit. Your work in /workspace is safe
-and will persist.
+Save your work now:
+  - Checkpoint your training/model state
+  - Ensure results are saved to /workspace
 
-To save your work:
-  1. Checkpoint your training/model state
-  2. Ensure results are saved to /workspace
-  3. Consider stopping and restarting if needed
+Your /workspace data persists after stop."
 
-To stop now and restart later:
-  container-stop $container
-  container-run $container
+    notify_user "$username" "$message"
 
-Questions? Check: ds01-status
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WARNEOF
-
-    chown "$username:$username" "$warning_file" 2>/dev/null || true
-
-    # Also send message to container if running
-    if docker exec "$container" test -d /workspace 2>/dev/null; then
-        docker exec "$container" bash -c "cat > /workspace/.runtime-warning.txt" < "$warning_file" 2>/dev/null || true
-    fi
-
-    log_color "Runtime warning sent to $username about container $container" "$YELLOW"
+    log_color "Runtime warning sent to $username for container $container" "$YELLOW"
 }
 
 # Stop container that exceeded runtime
@@ -225,33 +216,6 @@ stop_runtime_exceeded() {
     # Extract container name (remove ._.uid suffix)
     local container_name=$(echo "$container" | cut -d'.' -f1)
 
-    # Create notification
-    local user_home=$(eval echo "~$username")
-    local notification_file="$user_home/.ds01-runtime-exceeded"
-
-    cat > "$notification_file" << NOTIFEOF
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️  CONTAINER STOPPED - MAX RUNTIME EXCEEDED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Container: $container_name
-Stopped: $(date)
-Reason: Maximum runtime limit reached (${runtime_hours}h)
-
-Your work in /workspace is safe and persists.
-
-To restart your container:
-  container-run $container_name
-
-Note: The container will be subject to the same runtime
-limit after restart. If you need more time, please contact
-the administrator.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NOTIFEOF
-
-    chown "$username:$username" "$notification_file" 2>/dev/null || true
-
     # Stop container directly (designed for automation efficiency)
     # Note: Container is stopped but NOT removed - will be removed by cleanup-stale-containers
     # after container_hold_after_stop timeout. GPU will be freed after gpu_hold_after_stop timeout.
@@ -259,8 +223,20 @@ NOTIFEOF
     # Get container type for logging
     local container_type=$(get_container_type "$container")
 
-    # Stop container (10 second grace period)
-    if docker stop -t 10 "$container" &>/dev/null; then
+    # Get SIGTERM grace period from config (fall back to 60s)
+    local grace_seconds=$(python3 -c "
+import yaml
+import sys
+try:
+    with open('$CONFIG_FILE') as f:
+        config = yaml.safe_load(f)
+    print(config.get('policies', {}).get('sigterm_grace_seconds', 60))
+except Exception:
+    print(60)
+" 2>/dev/null || echo 60)
+
+    # Stop container with SIGTERM grace period
+    if docker stop -t "$grace_seconds" "$container" &>/dev/null; then
         log_color "Stopped container: $container (max runtime exceeded: ${runtime_hours}h)" "$GREEN"
         logger -t ds01-maxruntime "Stopped container: $container (user: $username, runtime: ${runtime_hours}h)"
 
@@ -276,6 +252,18 @@ NOTIFEOF
         # Container is now stopped:
         # - GPU will be freed by cleanup-stale-gpu-allocations after gpu_hold_after_stop timeout
         # - Container will be removed by cleanup-stale-containers after container_hold_after_stop timeout
+
+        # Broadcast stop notification via wall
+        local stop_message="DS01 CONTAINER STOPPED - MAX RUNTIME EXCEEDED
+
+Container: $container_name
+Stopped: $(date)
+Reason: Maximum runtime limit reached (${runtime_hours}h)
+
+Your /workspace data is safe.
+To restart: container-run $container_name"
+
+        notify_user "$username" "$stop_message"
     else
         log_color "Failed to stop container: $container" "$RED"
         return 1
@@ -396,62 +384,6 @@ process_container_runtime_universal() {
     source "$state_file"
 
     log "Container $container (user: $username, type: $container_type): runtime ${runtime_hours}h / limit $runtime_str"
-
-    # Calculate warning threshold (90% of limit)
-    local warning_seconds=$((runtime_seconds * 90 / 100))
-
-    # Check if we should warn
-    if [ "$runtime_seconds_actual" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then
-        local hours_until_stop=$(( (runtime_seconds - runtime_seconds_actual) / 3600 ))
-        send_warning "$username" "$container" "$hours_until_stop"
-        sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"
-    fi
-
-    # Check if we should stop
-    if [ "$runtime_seconds_actual" -ge "$runtime_seconds" ]; then
-        stop_runtime_exceeded "$username" "$container" "$runtime_hours"
-        return 0
-    fi
-
-    return 0
-}
-
-# Process a single container (legacy function for backwards compatibility)
-process_container_runtime() {
-    local container="$1"
-    local username="$2"
-
-    # Get max runtime for this user
-    local runtime_str=$(get_max_runtime "$username")
-    local runtime_seconds=$(runtime_to_seconds "$runtime_str")
-
-    # Skip if no limit set
-    if [ "$runtime_seconds" -eq 0 ]; then
-        log "Container $container (user: $username) has no runtime limit"
-        return 0
-    fi
-
-    # Get container start time
-    local start_time=$(get_container_start_time "$container")
-    if [ "$start_time" -eq 0 ]; then
-        log_color "Warning: Could not get start time for $container" "$YELLOW"
-        return 0
-    fi
-
-    # Calculate runtime
-    local now=$(date +%s)
-    local runtime_seconds_actual=$((now - start_time))
-    local runtime_hours=$((runtime_seconds_actual / 3600))
-
-    # State file for tracking warnings
-    local state_file="$STATE_DIR/${container}.state"
-    if [ ! -f "$state_file" ]; then
-        echo "WARNED=false" > "$state_file"
-    fi
-
-    source "$state_file"
-
-    log "Container $container (user: $username): runtime ${runtime_hours}h / limit $runtime_str"
 
     # Calculate warning threshold (90% of limit)
     local warning_seconds=$((runtime_seconds * 90 / 100))

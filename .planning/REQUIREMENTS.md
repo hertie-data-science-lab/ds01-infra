@@ -35,11 +35,11 @@ Requirements for Milestone 1: Full Visibility & Control. Each maps to roadmap ph
 
 ### Lifecycle Management
 
-- [ ] **LIFE-01**: Idle timeout enforced for all container types (including dev containers and unmanaged)
-- [ ] **LIFE-02**: Max runtime enforced for all container types
-- [ ] **LIFE-03**: Containers in "created" state (never started) are detected and cleaned up
-- [ ] **LIFE-04**: Cleanup scripts handle containers without DS01/AIME labels (using multiple detection methods)
-- [ ] **LIFE-05**: GPU allocations released reliably when containers stop (no leaked allocations)
+- [x] **LIFE-01**: Idle timeout enforced for all container types (including dev containers and unmanaged)
+- [x] **LIFE-02**: Max runtime enforced for all container types
+- [x] **LIFE-03**: Containers in "created" state (never started) are detected and cleaned up
+- [x] **LIFE-04**: Cleanup scripts handle containers without DS01/AIME labels (using multiple detection methods)
+- [x] **LIFE-05**: GPU allocations released reliably when containers stop (no leaked allocations)
 - [ ] **LIFE-06**: CPU idle threshold tuned (current < 1% too strict, adjust to 2-5%)
 - [ ] **LIFE-07**: Container-stop timeout increased (current 10s too short for large containers)
 - [ ] **LIFE-08**: Per-user lifecycle overrides — exempt specific users/containers from idle timeout and max runtime (easy to toggle on/off via config)
@@ -190,11 +190,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ENFORCE-04 | Phase 4 | Pending |
 | ENFORCE-05 | Phase 4 | Pending |
 | ENFORCE-06 | Phase 4 | Pending |
-| LIFE-01 | Phase 5 | Pending |
-| LIFE-02 | Phase 5 | Pending |
-| LIFE-03 | Phase 5 | Pending |
-| LIFE-04 | Phase 5 | Pending |
-| LIFE-05 | Phase 5 | Pending |
+| LIFE-01 | Phase 5 | Complete |
+| LIFE-02 | Phase 5 | Complete |
+| LIFE-03 | Phase 5 | Complete |
+| LIFE-04 | Phase 5 | Complete |
+| LIFE-05 | Phase 5 | Complete |
 | LIFE-06 | Phase 6 | Pending |
 | LIFE-07 | Phase 6 | Pending |
 | LIFE-08 | Phase 6 | Pending |

@@ -83,6 +83,32 @@ get_idle_timeout() {
     python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --idle-timeout
 }
 
+# Get GPU idle threshold from config
+get_gpu_idle_threshold() {
+    python3 << PYEOF
+import yaml
+try:
+    with open("$CONFIG_FILE") as f:
+        config = yaml.safe_load(f)
+    print(config.get('policies', {}).get('gpu_idle_threshold', 5))
+except Exception:
+    print(5)  # Default to 5% if config read fails
+PYEOF
+}
+
+# Get grace period from config
+get_grace_period() {
+    python3 << PYEOF
+import yaml
+try:
+    with open("$CONFIG_FILE") as f:
+        config = yaml.safe_load(f)
+    print(config.get('policies', {}).get('grace_period', '30m'))
+except Exception:
+    print('30m')  # Default to 30m if config read fails
+PYEOF
+}
+
 # Check if container has GPU access
 container_has_gpu() {
     local container="$1"
@@ -193,25 +219,95 @@ timeout_to_seconds() {
     fi
 }
 
+# Check GPU idle status (primary idle signal)
+check_gpu_idle() {
+    local container="$1"
+    local threshold="${2:-5}"
+
+    # Try to get GPU UUID from ds01.gpu.uuid label
+    local gpu_uuid=$(docker inspect "$container" --format '{{index .Config.Labels "ds01.gpu.uuid"}}' 2>/dev/null)
+
+    # If not found, try parsing DeviceRequests
+    if [ -z "$gpu_uuid" ] || [ "$gpu_uuid" = "<no value>" ]; then
+        # Try to extract from HostConfig.DeviceRequests
+        gpu_uuid=$(docker inspect "$container" --format '{{range .HostConfig.DeviceRequests}}{{range .DeviceIDs}}{{.}}{{end}}{{end}}' 2>/dev/null)
+    fi
+
+    # If still no UUID found, fall back to CPU-only detection
+    if [ -z "$gpu_uuid" ] || [ "$gpu_uuid" = "<no value>" ]; then
+        log "Container $container: No GPU UUID found, falling back to CPU-only detection"
+        echo "unknown"
+        return
+    fi
+
+    # Query GPU utilization via nvidia-smi
+    local gpu_util=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits --id="$gpu_uuid" 2>/dev/null | head -n1 | tr -d ' ')
+
+    # If nvidia-smi failed (MIG instance, driver issue), fall back to CPU-only
+    if [ -z "$gpu_util" ]; then
+        log "Container $container: nvidia-smi query failed for GPU $gpu_uuid, falling back to CPU-only detection"
+        echo "unknown"
+        return
+    fi
+
+    # Compare with threshold
+    if (( $(echo "$gpu_util < $threshold" | bc -l) )); then
+        echo "idle"  # GPU is idle (< threshold)
+    else
+        echo "active"  # GPU is active
+    fi
+}
+
+# Check if container is active (secondary signals: CPU, network, processes)
+is_container_active_secondary() {
+    local container="$1"
+
+    # Check CPU usage
+    local cpu=$(docker stats "$container" --no-stream --format "{{.CPUPerc}}" 2>/dev/null | sed 's/%//' || echo "0")
+
+    # Consider active if CPU > 1%
+    if (( $(echo "$cpu > 1.0" | bc -l) )); then
+        echo "true"
+        return
+    fi
+
+    # Check for active processes (excluding bash/sleep)
+    local procs=$(docker exec "$container" ps aux 2>/dev/null | grep -v "ps aux" | grep -v "bash" | grep -v "sleep" | wc -l)
+    if [ "$procs" -gt 2 ]; then
+        echo "true"
+        return
+    fi
+
+    # Check network activity (bytes transmitted in last interval)
+    # Docker returns "0B / 0B" format - strip trailing B and handle edge cases
+    local net_raw=$(docker stats "$container" --no-stream --format "{{.NetIO}}" 2>/dev/null | cut -d'/' -f1 | tr -d ' ')
+    # Handle "0B" specially (numfmt doesn't like bare "0B")
+    local net_rx=0
+    if [ -n "$net_raw" ] && [ "$net_raw" != "0B" ]; then
+        net_rx=$(echo "$net_raw" | numfmt --from=iec 2>/dev/null || echo "0")
+    fi
+    if [ "$net_rx" -gt 1000000 ]; then  # > 1MB
+        echo "true"
+        return
+    fi
+
+    echo "false"
+}
+
 # Get last activity time for container
 get_last_activity() {
     local container="$1"
-    
-    # Check multiple activity indicators
-    local last_exec=$(docker inspect "$container" --format='{{.State.StartedAt}}' 2>/dev/null || echo "")
-    local last_cpu=$(docker stats "$container" --no-stream --format "{{.CPUPerc}}" 2>/dev/null | sed 's/%//' || echo "0")
-    local last_mem=$(docker stats "$container" --no-stream --format "{{.MemPerc}}" 2>/dev/null | sed 's/%//' || echo "0")
-    
+
     # Get current timestamp
     local now=$(date +%s)
-    
+
     # Get container start time
     local start_time=$(docker inspect "$container" --format='{{.State.StartedAt}}' 2>/dev/null)
     local start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "$now")
-    
+
     # Check state file for last known activity
     local state_file="$STATE_DIR/${container}.state"
-    
+
     if [ -f "$state_file" ]; then
         source "$state_file"
         echo "${LAST_ACTIVITY:-$start_epoch}"
@@ -229,13 +325,13 @@ update_activity() {
     local container="$1"
     local is_active="$2"
     local state_file="$STATE_DIR/${container}.state"
-    
+
     if [ ! -f "$state_file" ]; then
         return
     fi
-    
+
     source "$state_file"
-    
+
     if [ "$is_active" = "true" ]; then
         # Reset activity timestamp
         sed -i "s/^LAST_ACTIVITY=.*/LAST_ACTIVITY=$(date +%s)/" "$state_file"
@@ -243,68 +339,40 @@ update_activity() {
     fi
 }
 
-# Check if container is active
-is_container_active() {
-    local container="$1"
-    
-    # Check CPU usage
-    local cpu=$(docker stats "$container" --no-stream --format "{{.CPUPerc}}" 2>/dev/null | sed 's/%//' || echo "0")
-    
-    # Consider active if CPU > 1%
-    if (( $(echo "$cpu > 1.0" | bc -l) )); then
-        echo "true"
-        return
+# Send message to a specific user's terminals (not wall broadcast)
+notify_user() {
+    local username="$1"
+    local message="$2"
+    local sent=false
+    while IFS= read -r tty; do
+        [ -z "$tty" ] && continue
+        echo "$message" > "/dev/$tty" 2>/dev/null && sent=true
+    done < <(who | awk -v user="$username" '$1 == user {print $2}')
+    if [ "$sent" = false ]; then
+        log "User $username has no active terminals — notification not delivered"
     fi
-    
-    # Check for active processes (excluding bash/sleep)
-    local procs=$(docker exec "$container" ps aux 2>/dev/null | grep -v "ps aux" | grep -v "bash" | grep -v "sleep" | wc -l)
-    if [ "$procs" -gt 2 ]; then
-        echo "true"
-        return
-    fi
-    
-    # Check network activity (bytes transmitted in last interval)
-    # Docker returns "0B / 0B" format - strip trailing B and handle edge cases
-    local net_raw=$(docker stats "$container" --no-stream --format "{{.NetIO}}" 2>/dev/null | cut -d'/' -f1 | tr -d ' ')
-    # Handle "0B" specially (numfmt doesn't like bare "0B")
-    local net_rx=0
-    if [ -n "$net_raw" ] && [ "$net_raw" != "0B" ]; then
-        net_rx=$(echo "$net_raw" | numfmt --from=iec 2>/dev/null || echo "0")
-    fi
-    if [ "$net_rx" -gt 1000000 ]; then  # > 1MB
-        echo "true"
-        return
-    fi
-    
-    echo "false"
 }
 
 # Send warning to user
 send_warning() {
     local username="$1"
     local container="$2"
-    local hours_until_stop="$3"
-    
-    # Create warning message in user's home
-    local user_home=$(eval echo "~$username")
-    local warning_file="$user_home/.ds01-idle-warning"
-    
+    local minutes_until_stop="$3"
+
     local high_demand_notice=""
     if [ "$HIGH_DEMAND_MODE" = "true" ]; then
         high_demand_notice="
-⚡ HIGH DEMAND MODE ACTIVE
+HIGH DEMAND MODE ACTIVE
    GPU allocation is >80%. Idle timeouts reduced.
    Container will stop sooner than normal."
     fi
 
-    cat > "$warning_file" << WARNEOF
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️  IDLE CONTAINER WARNING
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    local message="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IDLE CONTAINER WARNING
 
 Container: $container
 Status: IDLE (no activity detected)
-Action: Will auto-stop in ~${hours_until_stop} hours
+Action: Will auto-stop in ~${minutes_until_stop} minutes
 ${high_demand_notice}
 This container will be automatically stopped to free
 resources for other users. Your work in /workspace
@@ -321,16 +389,10 @@ To stop and retire now (frees GPU immediately):
   container-retire $(echo $container | cut -d'.' -f1)
 
 Questions? Run 'check-limits' or contact admin.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WARNEOF
-    
-    chown "$username:$username" "$warning_file" 2>/dev/null || true
-    
-    # Also send message to container if running
-    if docker exec "$container" test -d /workspace 2>/dev/null; then
-        docker exec "$container" bash -c "cat > /workspace/.idle-warning.txt" < "$warning_file" 2>/dev/null || true
-    fi
-    
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    notify_user "$username" "$message"
+
     log_color "Warning sent to $username about container $container" "$YELLOW"
 }
 
@@ -338,23 +400,35 @@ WARNEOF
 stop_idle_container() {
     local username="$1"
     local container="$2"
+    local idle_seconds="$3"
 
     log_color "Stopping idle container: $container (user: $username)" "$YELLOW"
 
-    # Check for .keep-alive file
+    # Check for .keep-alive file and its age
     if docker exec "$container" test -f /workspace/.keep-alive 2>/dev/null; then
-        log_color "Container $container has .keep-alive file - skipping" "$GREEN"
-        return
+        # Check if .keep-alive is older than 24 hours
+        local keepalive_age=$(docker exec "$container" find /workspace/.keep-alive -mmin +1440 2>/dev/null | wc -l)
+        if [ "$keepalive_age" -eq 0 ]; then
+            log_color "Container $container has .keep-alive file (< 24h) - skipping" "$GREEN"
+            return
+        else
+            log_color "Container $container .keep-alive expired (>24h), proceeding with idle stop" "$YELLOW"
+        fi
     fi
 
-    # Create notification
-    local user_home=$(eval echo "~$username")
-    local notification_file="$user_home/.ds01-stopped-notification"
+    # Get idle duration in human-readable format
+    local idle_minutes=$((idle_seconds / 60))
+    local idle_hours=$((idle_seconds / 3600))
+    local idle_display
+    if [ "$idle_hours" -gt 0 ]; then
+        idle_display="${idle_hours}h"
+    else
+        idle_display="${idle_minutes}m"
+    fi
 
-    cat > "$notification_file" << NOTIFEOF
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ℹ️  CONTAINER AUTO-STOPPED
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # Send notification via wall
+    local message="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTAINER AUTO-STOPPED
 
 Container: $container
 Stopped: $(date)
@@ -369,27 +443,12 @@ To prevent auto-stop in future:
   1. Keep training/scripts running, OR
   2. Create file: touch /workspace/.keep-alive
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NOTIFEOF
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    chown "$username:$username" "$notification_file" 2>/dev/null || true
+    notify_user "$username" "$message"
 
-     # Stop and remove container directly (designed for automation efficiency)
-    # GPU freed automatically when container removed (Docker labels gone = GPU freed)
-    # This enforces the "running or removed" principle without user command overhead
-
-    # Get idle duration in human-readable format
-    local idle_minutes=$((idle_seconds / 60))
-    local idle_hours=$((idle_seconds / 3600))
-    local idle_display
-    if [ "$idle_hours" -gt 0 ]; then
-        idle_display="${idle_hours}h"
-    else
-        idle_display="${idle_minutes}m"
-    fi
-
-    # Stop container (10 second grace period)
-    if docker stop -t 10 "$container" &>/dev/null; then
+    # Stop container (60 second grace period for GPU workloads)
+    if docker stop -t 60 "$container" &>/dev/null; then
         log_color "Stopped idle container: $container" "$GREEN"
 
         # Log maintenance.idle_kill event (best-effort)
@@ -430,6 +489,11 @@ monitor_containers() {
     HIGH_DEMAND_MODE=$(is_high_demand "$hd_threshold")
     HIGH_DEMAND_REDUCTION="$hd_reduction"
 
+    # Get GPU idle threshold and grace period from config
+    local gpu_idle_threshold=$(get_gpu_idle_threshold)
+    local grace_period_str=$(get_grace_period)
+    local grace_period_seconds=$(timeout_to_seconds "$grace_period_str")
+
     if [ "$HIGH_DEMAND_MODE" = "true" ]; then
         log_color "HIGH DEMAND MODE: GPU allocation above ${hd_threshold}. Idle timeouts reduced by ${hd_reduction}." "$YELLOW"
 
@@ -441,7 +505,13 @@ monitor_containers() {
     fi
 
     # Get ALL running containers (universal container management)
-    local containers=$(docker ps --format "{{.Names}}")
+    local containers
+    if [ -n "$NAME_FILTER" ]; then
+        containers=$(docker ps --filter "name=$NAME_FILTER" --format "{{.Names}}")
+        log "Filtering containers by name: $NAME_FILTER"
+    else
+        containers=$(docker ps --format "{{.Names}}")
+    fi
 
     if [ -z "$containers" ]; then
         log "No containers running"
@@ -453,6 +523,8 @@ monitor_containers() {
     local warned_count=0
     local skipped_no_gpu=0
     local skipped_monitoring=0
+    local skipped_grace=0
+    local skipped_devcontainer=0
 
     for container in $containers; do
         # Verify container still exists (race condition protection)
@@ -485,16 +557,36 @@ monitor_containers() {
             username="unknown"
         fi
 
+        # Exempt dev containers from idle timeout
+        if [ "$container_type" = "devcontainer" ]; then
+            log "Skipping devcontainer $container (exempt from idle timeout)"
+            ((skipped_devcontainer += 1))
+            continue
+        fi
+
+        # Check grace period (30-minute startup grace)
+        local start_time=$(docker inspect "$container" --format='{{.State.StartedAt}}' 2>/dev/null)
+        local start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "0")
+        local now=$(date +%s)
+        local container_age=$((now - start_epoch))
+
+        if [ "$container_age" -lt "$grace_period_seconds" ]; then
+            local age_minutes=$((container_age / 60))
+            log "Container $container within grace period (age: ${age_minutes}m < ${grace_period_str})"
+            ((skipped_grace += 1))
+            continue
+        fi
+
         ((monitored_count += 1))
 
         # Wrap in error handling to prevent one container from breaking the whole loop
-        if ! process_container_universal "$container" "$username" "$container_type"; then
+        if ! process_container_universal "$container" "$username" "$container_type" "$gpu_idle_threshold"; then
             log_color "Error processing container $container, continuing with next" "$RED"
             continue
         fi
     done
 
-    log_color "Idle monitoring complete: monitored=$monitored_count (GPU), skipped_no_gpu=$skipped_no_gpu, skipped_monitoring=$skipped_monitoring, warned=$warned_count, stopped=$stopped_count" "$BLUE"
+    log_color "Idle monitoring complete: monitored=$monitored_count (GPU), skipped_no_gpu=$skipped_no_gpu, skipped_monitoring=$skipped_monitoring, skipped_grace=$skipped_grace, skipped_devcontainer=$skipped_devcontainer, warned=$warned_count, stopped=$stopped_count" "$BLUE"
 }
 
 # Process a single container with type-aware timeout (universal)
@@ -502,6 +594,7 @@ process_container_universal() {
     local container="$1"
     local username="$2"
     local container_type="$3"
+    local gpu_idle_threshold="$4"
 
     # Get timeout based on container type
     local timeout_str
@@ -522,9 +615,9 @@ process_container_universal() {
 
     local timeout_seconds=$(timeout_to_seconds "$timeout_str")
 
-    # Skip if no timeout set (should not happen for GPU containers, but handle gracefully)
+    # Skip if no timeout set (null timeout = exempt)
     if [ "$timeout_seconds" -eq 0 ]; then
-        log "Container $container (user: $username, type: $container_type) has no idle timeout"
+        log "Container $container (user: $username, type: $container_type) has no idle timeout (exempt)"
         return 0
     fi
 
@@ -536,125 +629,102 @@ process_container_universal() {
         log "High demand: Reduced timeout for $container from ${original_timeout_seconds}s to ${timeout_seconds}s"
     fi
 
-    # Check if container is active
-    local active=$(is_container_active "$container")
+    # Check GPU idle status (primary signal)
+    local gpu_status=$(check_gpu_idle "$container" "$gpu_idle_threshold")
 
-    if [ "$active" = "true" ]; then
+    # Multi-signal logic: GPU idle AND secondary idle = idle
+    # GPU active = NOT idle (regardless of secondary signals)
+    # GPU unknown (no UUID/driver issue) = fall back to secondary signals only
+
+    local is_idle="false"
+
+    if [ "$gpu_status" = "active" ]; then
+        # GPU active = container NOT idle
+        is_idle="false"
+        log "Container $container (user: $username, type: $container_type) has active GPU"
         update_activity "$container" "true"
-        log "Container $container (user: $username, type: $container_type) is active"
         return 0
+    elif [ "$gpu_status" = "idle" ]; then
+        # GPU idle - check secondary signals
+        local secondary_active=$(is_container_active_secondary "$container")
+        if [ "$secondary_active" = "true" ]; then
+            # GPU idle but CPU/network active = NOT idle (data loading, preprocessing)
+            is_idle="false"
+            log "Container $container (user: $username, type: $container_type) GPU idle but CPU/network active (data loading)"
+            update_activity "$container" "true"
+            return 0
+        else
+            # GPU idle AND secondary signals idle = idle
+            is_idle="true"
+        fi
+    else
+        # GPU status unknown - fall back to secondary signals only
+        local secondary_active=$(is_container_active_secondary "$container")
+        if [ "$secondary_active" = "true" ]; then
+            is_idle="false"
+            log "Container $container (user: $username, type: $container_type) is active (CPU/network)"
+            update_activity "$container" "true"
+            return 0
+        else
+            is_idle="true"
+        fi
     fi
 
-    # Get last activity time
-    local last_activity=$(get_last_activity "$container")
-    local now=$(date +%s)
-    local idle_seconds=$((now - last_activity))
-    local idle_hours=$((idle_seconds / 3600))
-    local idle_minutes=$((idle_seconds / 60))
+    # Container is idle - check how long
+    if [ "$is_idle" = "true" ]; then
+        # Get last activity time
+        local last_activity=$(get_last_activity "$container")
+        local now=$(date +%s)
+        local idle_seconds=$((now - last_activity))
+        local idle_minutes=$((idle_seconds / 60))
 
-    # Calculate warning threshold (80% of timeout)
-    local warning_seconds=$((timeout_seconds * 80 / 100))
+        # Calculate warning threshold (80% of timeout)
+        local warning_seconds=$((timeout_seconds * 80 / 100))
 
-    local state_file="$STATE_DIR/${container}.state"
+        local state_file="$STATE_DIR/${container}.state"
 
-    # Initialize state file if missing
-    if [ ! -f "$state_file" ]; then
-        log "Initializing state file for $container"
-        echo "LAST_ACTIVITY=$last_activity" > "$state_file"
-        echo "LAST_CPU=0.0" >> "$state_file"
-        echo "WARNED=false" >> "$state_file"
-    fi
+        # Initialize state file if missing
+        if [ ! -f "$state_file" ]; then
+            log "Initializing state file for $container"
+            echo "LAST_ACTIVITY=$last_activity" > "$state_file"
+            echo "LAST_CPU=0.0" >> "$state_file"
+            echo "WARNED=false" >> "$state_file"
+        fi
 
-    source "$state_file"
+        source "$state_file"
 
-    log "Container $container (user: $username, type: $container_type): idle for ${idle_minutes}m (timeout: $timeout_str)"
+        log "Container $container (user: $username, type: $container_type): idle for ${idle_minutes}m (timeout: $timeout_str)"
 
-    # Check if we should warn
-    if [ "$idle_seconds" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then
-        local minutes_until_stop=$(( (timeout_seconds - idle_seconds) / 60 ))
-        send_warning "$username" "$container" "$minutes_until_stop"
-        sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"
-    fi
+        # Check if we should warn
+        if [ "$idle_seconds" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then
+            local minutes_until_stop=$(( (timeout_seconds - idle_seconds) / 60 ))
+            send_warning "$username" "$container" "$minutes_until_stop"
+            sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"
+        fi
 
-    # Check if we should stop
-    if [ "$idle_seconds" -ge "$timeout_seconds" ]; then
-        stop_idle_container "$username" "$container"
-        return 0
+        # Check if we should stop
+        if [ "$idle_seconds" -ge "$timeout_seconds" ]; then
+            stop_idle_container "$username" "$container" "$idle_seconds"
+            return 0
+        fi
     fi
 
     return 0
 }
 
-# Process a single container (legacy function for backwards compatibility)
-process_container() {
-    local container="$1"
-    local username="$2"
-
-    # Get timeout for this user
-    local timeout_str=$(get_idle_timeout "$username")
-    local timeout_seconds=$(timeout_to_seconds "$timeout_str")
-
-    # Skip if no timeout set
-    if [ "$timeout_seconds" -eq 0 ]; then
-        log "Container $container (user: $username) has no idle timeout"
-        return 0
-    fi
-
-    # Apply high-demand reduction if active
-    local original_timeout_seconds="$timeout_seconds"
-    if [ "$HIGH_DEMAND_MODE" = "true" ]; then
-        # Reduce timeout by the configured factor (e.g., 0.5 = 50% of normal)
-        timeout_seconds=$(echo "scale=0; $timeout_seconds * $HIGH_DEMAND_REDUCTION / 1" | bc)
-        log "High demand: Reduced timeout for $container from ${original_timeout_seconds}s to ${timeout_seconds}s"
-    fi
-
-    # Check if container is active
-    local active=$(is_container_active "$container")
-
-    if [ "$active" = "true" ]; then
-        update_activity "$container" "true"
-        log "Container $container (user: $username) is active"
-        return 0
-    fi
-
-    # Get last activity time
-    local last_activity=$(get_last_activity "$container")
-    local now=$(date +%s)
-    local idle_seconds=$((now - last_activity))
-    local idle_hours=$((idle_seconds / 3600))
-
-    # Calculate warning threshold (80% of timeout)
-    local warning_seconds=$((timeout_seconds * 80 / 100))
-
-    local state_file="$STATE_DIR/${container}.state"
-
-    # Initialize state file if missing
-    if [ ! -f "$state_file" ]; then
-        log "Initializing state file for $container"
-        echo "LAST_ACTIVITY=$last_activity" > "$state_file"
-        echo "LAST_CPU=0.0" >> "$state_file"
-        echo "WARNED=false" >> "$state_file"
-    fi
-
-    source "$state_file"
-
-    log "Container $container (user: $username): idle for ${idle_hours}h (timeout: $timeout_str)"
-
-    # Check if we should warn
-    if [ "$idle_seconds" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then
-        local hours_until_stop=$(( (timeout_seconds - idle_seconds) / 3600 ))
-        send_warning "$username" "$container" "$hours_until_stop"
-        sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"
-    fi
-
-    # Check if we should stop
-    if [ "$idle_seconds" -ge "$timeout_seconds" ]; then
-        stop_idle_container "$username" "$container"
-        return 0
-    fi
-
-    return 0
-}
+# Parse command-line arguments
+NAME_FILTER=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --name-filter)
+            NAME_FILTER="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 # Only run when executed, not sourced
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
