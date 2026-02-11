@@ -161,9 +161,9 @@ test_slice_exists() {
         return
     fi
 
-    # Check if any user slices exist
+    # Check if any user slices exist (nested: ds01.slice/ds01-{group}.slice/ds01-{group}-{user}.slice)
     if [ -d "/sys/fs/cgroup/ds01.slice" ]; then
-        local slice_count=$(find /sys/fs/cgroup/ds01.slice -maxdepth 1 -name "ds01-*-*.slice" -type d 2>/dev/null | wc -l)
+        local slice_count=$(find /sys/fs/cgroup/ds01.slice -maxdepth 2 -name "ds01-*-*.slice" -type d 2>/dev/null | wc -l)
         if [ "$slice_count" -gt 0 ]; then
             pass "$test_name - found $slice_count user slices"
         else
@@ -179,18 +179,21 @@ test_memory_enforcement() {
 
     require_root
 
-    # Check if any user slices have memory limits set
+    # Check if any user slices have memory limits set (nested group/user structure)
     local slices_with_limits=0
     if [ -d "/sys/fs/cgroup/ds01.slice" ]; then
-        for slice_dir in /sys/fs/cgroup/ds01.slice/ds01-*-*.slice; do
-            [ -d "$slice_dir" ] || continue
+        for group_dir in /sys/fs/cgroup/ds01.slice/ds01-*.slice; do
+            [ -d "$group_dir" ] || continue
+            for slice_dir in "$group_dir"/ds01-*-*.slice; do
+                [ -d "$slice_dir" ] || continue
 
-            if [ -f "$slice_dir/memory.max" ]; then
-                local mem_max=$(cat "$slice_dir/memory.max" 2>/dev/null || echo "")
-                if [ -n "$mem_max" ] && [ "$mem_max" != "max" ]; then
-                    ((slices_with_limits++))
+                if [ -f "$slice_dir/memory.max" ]; then
+                    local mem_max=$(cat "$slice_dir/memory.max" 2>/dev/null || echo "")
+                    if [ -n "$mem_max" ] && [ "$mem_max" != "max" ]; then
+                        ((slices_with_limits++))
+                    fi
                 fi
-            fi
+            done
         done
     fi
 
@@ -247,15 +250,18 @@ test_psi_files_readable() {
         return
     fi
 
-    # Check if user slices have readable PSI files
+    # Check if user slices have readable PSI files (nested group/user structure)
     local readable_count=0
     if [ -d "/sys/fs/cgroup/ds01.slice" ]; then
-        for slice_dir in /sys/fs/cgroup/ds01.slice/ds01-*-*.slice; do
-            [ -d "$slice_dir" ] || continue
+        for group_dir in /sys/fs/cgroup/ds01.slice/ds01-*.slice; do
+            [ -d "$group_dir" ] || continue
+            for slice_dir in "$group_dir"/ds01-*-*.slice; do
+                [ -d "$slice_dir" ] || continue
 
-            if [ -r "$slice_dir/memory.pressure" ] && [ -r "$slice_dir/cpu.pressure" ]; then
-                ((readable_count++))
-            fi
+                if [ -r "$slice_dir/memory.pressure" ] && [ -r "$slice_dir/cpu.pressure" ]; then
+                    ((readable_count++))
+                fi
+            done
         done
     fi
 

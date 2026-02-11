@@ -18,13 +18,14 @@ _SCRIPTS="/opt/ds01-infra/scripts"
 # Get user group
 _group=$(python3 "$_SCRIPTS/docker/get_resource_limits.py" "$_username" --group 2>/dev/null || echo "unknown")
 
-# Hardcoded figlet banner (font: small)
+# Block-character banner
 echo -e "
-  ${_B}____  ____   ___  _${_NC}
-  ${_B}|  _ \\/ ___| / _ \\/ |${_NC}
-  ${_B}| | | \\___ \\| | | | |${_NC}   GPU Server
-  ${_B}| |_| |___) | |_| | |${_NC}   Hertie Data Science Lab
-  ${_B}|____/|____/ \\___/|_|${_NC}
+  ${_B}██████╗ ███████╗ ██████╗  ██╗${_NC}
+  ${_B}██╔══██╗██╔════╝██╔═████╗███║${_NC}
+  ${_B}██║  ██║███████╗██║██╔██║╚██║${_NC}   Hertie Data Science Lab
+  ${_B}██║  ██║╚════██║████╔╝██║ ██║${_NC}   GPU-enabled Compute Server
+  ${_B}██████╔╝███████║╚██████╔╝ ██║${_NC}
+  ${_B}╚═════╝ ╚══════╝ ╚═════╝  ╚═╝${_NC}
 "
 
 # Check if user has aggregate limits (null = admin/unlimited)
@@ -36,6 +37,20 @@ if [[ "$_agg" == "null" || -z "$_agg" ]]; then
 else
     # Regular user — build static quota line
     _gpus=$(python3 "$_SCRIPTS/docker/get_resource_limits.py" "$_username" --max-gpus 2>/dev/null || echo "?")
+    # Detect GPU topology: MIG slots vs physical GPUs
+    _gpu_listing=$(nvidia-smi -L 2>/dev/null) || _gpu_listing=""
+    _mig_count=$(echo "$_gpu_listing" | grep -c "MIG") || _mig_count=0
+    _phys_count=$(echo "$_gpu_listing" | grep -c "^GPU") || _phys_count=0
+    _gpu_unit="GPUs"
+    _sys_total=$_phys_count
+    if [[ $_mig_count -gt 0 ]]; then
+        _gpu_unit="MIG slots"
+        _sys_total=$_mig_count
+    fi
+    # Cap to actual hardware (only if we detected hardware)
+    if [[ $_sys_total -gt 0 ]] && [[ "$_gpus" =~ ^[0-9]+$ ]] && [[ $_gpus -gt $_sys_total ]]; then
+        _gpus=$_sys_total
+    fi
     _containers=$(python3 "$_SCRIPTS/docker/get_resource_limits.py" "$_username" --max-containers 2>/dev/null || echo "?")
 
     # Parse memory and CPUs from aggregate JSON
@@ -57,7 +72,7 @@ else:
     fi
 
     echo -e " Welcome ${_B}${_username}${_NC} (${_group})"
-    echo -e " Quota: GPUs ${_B}${_gpus}${_NC}, Memory ${_B}${_mem_display}${_NC}, CPUs ${_B}${_cpus}${_NC}, Containers ${_B}${_containers}${_NC}"
+    echo -e " Quota: ${_gpu_unit} ${_B}${_gpus}${_NC}, Memory ${_B}${_mem_display}${_NC}, CPUs ${_B}${_cpus}${_NC}, Containers ${_B}${_containers}${_NC}"
 fi
 
 echo ""
@@ -66,4 +81,4 @@ echo -e " ${_D}                container retire · check-limits · aliases${_NC}
 echo ""
 
 # Cleanup
-unset _B _D _GREEN _NC _username _group _SCRIPTS _agg _gpus _containers _mem _cpus _mem_display
+unset _B _D _GREEN _NC _username _group _SCRIPTS _agg _gpus _containers _mem _cpus _mem_display _gpu_listing _mig_count _phys_count _gpu_unit _sys_total

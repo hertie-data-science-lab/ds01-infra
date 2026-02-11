@@ -539,12 +539,24 @@ check_aggregate_quota() {
     local group
     group=$(get_user_group "$user")
 
-    # Build cgroup path
-    local cgroup_path="/sys/fs/cgroup/ds01.slice/ds01-${group}-${sanitized_user}.slice"
+    # Build cgroup path — detect v2, unified, or v1 memory hierarchy
+    local slice_name="ds01-${group}-${sanitized_user}.slice"
+    local cgroup_path=""
+    local cgroup_version="v2"
+    if [[ -d "/sys/fs/cgroup/ds01.slice/ds01-${group}.slice/${slice_name}" ]]; then
+        cgroup_path="/sys/fs/cgroup/ds01.slice/ds01-${group}.slice/${slice_name}"
+        cgroup_version="v2"
+    elif [[ -d "/sys/fs/cgroup/unified/ds01.slice/ds01-${group}.slice/${slice_name}" ]]; then
+        cgroup_path="/sys/fs/cgroup/unified/ds01.slice/ds01-${group}.slice/${slice_name}"
+        cgroup_version="v2"
+    elif [[ -d "/sys/fs/cgroup/memory/ds01.slice/ds01-${group}.slice/${slice_name}" ]]; then
+        cgroup_path="/sys/fs/cgroup/memory/ds01.slice/ds01-${group}.slice/${slice_name}"
+        cgroup_version="v1"
+    fi
 
     # FAIL-OPEN: If cgroup doesn't exist yet, allow (will be created)
-    if [ ! -d "$cgroup_path" ]; then
-        log_debug "FAIL-OPEN: Cgroup not found at $cgroup_path (allowing, will be created)"
+    if [ -z "$cgroup_path" ]; then
+        log_debug "FAIL-OPEN: Cgroup not found for ${slice_name} (allowing, will be created)"
         return 0
     fi
 
@@ -603,10 +615,12 @@ else:
 " 2>/dev/null)
     fi
 
-    # Check memory usage
-    if [ -n "$memory_max" ] && [ -f "$cgroup_path/memory.current" ]; then
+    # Check memory usage (v2: memory.current, v1: memory.usage_in_bytes)
+    local memory_file="memory.current"
+    [[ "$cgroup_version" == "v1" ]] && memory_file="memory.usage_in_bytes"
+    if [ -n "$memory_max" ] && [ -f "$cgroup_path/$memory_file" ]; then
         local current_memory
-        current_memory=$(cat "$cgroup_path/memory.current" 2>/dev/null || echo "0")
+        current_memory=$(cat "$cgroup_path/$memory_file" 2>/dev/null || echo "0")
 
         # FAIL-OPEN: If we can't read current memory, allow
         if [ -z "$current_memory" ] || [ "$current_memory" = "0" ]; then
@@ -663,9 +677,14 @@ else:
     fi
 
     # Check pids (soft check - warn at 90%)
-    if [ -n "$tasks_max" ] && [ -f "$cgroup_path/pids.current" ]; then
+    # v2: pids.current in same path; v1: separate hierarchy
+    local pids_path="$cgroup_path/pids.current"
+    if [[ "$cgroup_version" == "v1" ]]; then
+        pids_path="/sys/fs/cgroup/pids/ds01.slice/ds01-${group}.slice/${slice_name}/pids.current"
+    fi
+    if [ -n "$tasks_max" ] && [ -f "$pids_path" ]; then
         local current_pids
-        current_pids=$(cat "$cgroup_path/pids.current" 2>/dev/null || echo "0")
+        current_pids=$(cat "$pids_path" 2>/dev/null || echo "0")
 
         if [ -n "$current_pids" ] && [ "$current_pids" -gt 0 ]; then
             local threshold=$((tasks_max * 90 / 100))

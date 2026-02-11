@@ -418,6 +418,10 @@ chmod 755 /var/lib/ds01/resource-stats
 mkdir -p /var/log/ds01
 chmod 755 /var/log/ds01
 
+# Ensure MOTD announcements file exists (empty = no announcements shown)
+touch /etc/ds01-motd
+chmod 644 /etc/ds01-motd
+
 echo -e "  ${GREEN}✓${NC} State directories created"
 
 # ============================================================================

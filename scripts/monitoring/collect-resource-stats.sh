@@ -25,8 +25,23 @@ if [ -f "$EVENTS_LIB" ]; then
     source "$EVENTS_LIB"
 fi
 
+# Detect cgroup hierarchy — v2, unified, or v1 memory
+detect_cgroup_root() {
+    if [[ -d "/sys/fs/cgroup/ds01.slice" ]] && [[ -f "/sys/fs/cgroup/cgroup.controllers" ]]; then
+        echo "/sys/fs/cgroup/ds01.slice"  # pure v2
+    elif [[ -d "/sys/fs/cgroup/unified/ds01.slice" ]]; then
+        echo "/sys/fs/cgroup/unified/ds01.slice"  # v1 hybrid unified
+    elif [[ -d "/sys/fs/cgroup/memory/ds01.slice" ]]; then
+        echo "/sys/fs/cgroup/memory/ds01.slice"  # v1 memory controller
+    else
+        echo ""
+    fi
+}
+
 # Configuration
-CGROUP_ROOT="/sys/fs/cgroup/ds01.slice"
+CGROUP_ROOT="$(detect_cgroup_root)"
+CGROUP_VERSION="v2"
+[[ "$CGROUP_ROOT" == */memory/* ]] && CGROUP_VERSION="v1"
 STATS_LOG="/var/log/ds01/resource-stats.log"
 STATE_DIR="/var/lib/ds01/resource-stats"
 OOM_STATE_FILE="$STATE_DIR/oom-counts.json"
@@ -194,9 +209,14 @@ collect_slice_stats() {
     local oom_count=0
     local oom_kill_count=0
 
-    # Read memory metrics
-    memory_current=$(read_cgroup_file "$slice_dir/memory.current")
-    memory_max=$(read_cgroup_file "$slice_dir/memory.max")
+    # Read memory metrics (v2: memory.current/memory.max, v1: memory.usage_in_bytes/memory.limit_in_bytes)
+    if [[ "$CGROUP_VERSION" == "v1" ]]; then
+        memory_current=$(read_cgroup_file "$slice_dir/memory.usage_in_bytes")
+        memory_max=$(read_cgroup_file "$slice_dir/memory.limit_in_bytes")
+    else
+        memory_current=$(read_cgroup_file "$slice_dir/memory.current")
+        memory_max=$(read_cgroup_file "$slice_dir/memory.max")
+    fi
 
     # Calculate memory percentage
     if [ -n "$memory_current" ] && [ -n "$memory_max" ] && [ "$memory_max" != "max" ]; then
@@ -205,19 +225,30 @@ collect_slice_stats() {
         fi
     fi
 
-    # Read pids metrics
-    pids_current=$(read_cgroup_file "$slice_dir/pids.current")
-    pids_max=$(read_cgroup_file "$slice_dir/pids.max")
+    # Read pids metrics (v1: separate pids hierarchy)
+    if [[ "$CGROUP_VERSION" == "v1" ]]; then
+        local pids_v1_path="/sys/fs/cgroup/pids/ds01.slice/$(basename "$(dirname "$slice_dir")")/$(basename "$slice_dir")"
+        pids_current=$(read_cgroup_file "$pids_v1_path/pids.current")
+        pids_max=$(read_cgroup_file "$pids_v1_path/pids.max")
+    else
+        pids_current=$(read_cgroup_file "$slice_dir/pids.current")
+        pids_max=$(read_cgroup_file "$slice_dir/pids.max")
+    fi
 
-    # Read PSI metrics (only if files exist - older kernels may not have PSI)
-    if [ -f "$slice_dir/memory.pressure" ]; then
-        local memory_pressure=$(read_cgroup_file "$slice_dir/memory.pressure")
+    # Read PSI metrics — v2: in slice_dir; v1: only in unified hierarchy
+    local psi_dir="$slice_dir"
+    if [[ "$CGROUP_VERSION" == "v1" ]]; then
+        psi_dir="/sys/fs/cgroup/unified/ds01.slice/$(basename "$(dirname "$slice_dir")")/$(basename "$slice_dir")"
+    fi
+
+    if [ -f "$psi_dir/memory.pressure" ]; then
+        local memory_pressure=$(read_cgroup_file "$psi_dir/memory.pressure")
         psi_memory_some_avg10=$(parse_psi_avg10 "$memory_pressure" "some")
         psi_memory_full_avg10=$(parse_psi_avg10 "$memory_pressure" "full")
     fi
 
-    if [ -f "$slice_dir/cpu.pressure" ]; then
-        local cpu_pressure=$(read_cgroup_file "$slice_dir/cpu.pressure")
+    if [ -f "$psi_dir/cpu.pressure" ]; then
+        local cpu_pressure=$(read_cgroup_file "$psi_dir/cpu.pressure")
         psi_cpu_some_avg10=$(parse_psi_avg10 "$cpu_pressure" "some")
         psi_cpu_full_avg10=$(parse_psi_avg10 "$cpu_pressure" "full")
     fi
@@ -255,27 +286,29 @@ main() {
     log_verbose "Starting resource stats collection"
 
     # Check if cgroup root exists
-    if [ ! -d "$CGROUP_ROOT" ]; then
-        log_verbose "Cgroup root $CGROUP_ROOT does not exist, nothing to collect"
+    if [ -z "$CGROUP_ROOT" ] || [ ! -d "$CGROUP_ROOT" ]; then
+        log_verbose "Cgroup root not found, nothing to collect"
         exit 0
     fi
 
-    # Iterate over all user slices
+    log_verbose "Using cgroup root: $CGROUP_ROOT (version: $CGROUP_VERSION)"
+
+    # Iterate over group slices, then user slices within each group
     local slice_count=0
-    for slice_dir in "$CGROUP_ROOT"/ds01-*-*.slice; do
-        # Check if glob matched anything
-        if [ ! -d "$slice_dir" ]; then
-            continue
-        fi
+    for group_dir in "$CGROUP_ROOT"/ds01-*.slice; do
+        [[ ! -d "$group_dir" ]] && continue
 
-        # Skip the parent ds01.slice itself
-        if [ "$(basename "$slice_dir")" = "ds01.slice" ]; then
-            continue
-        fi
+        # Skip user slices at the group level (they have two+ hyphens: ds01-group-user)
+        local gname
+        gname=$(basename "$group_dir")
+        [[ "$gname" =~ ds01-[^-]+-.*\.slice ]] && continue
 
-        # Collect stats for this slice
-        collect_slice_stats "$slice_dir"
-        ((slice_count++))
+        for slice_dir in "$group_dir"/ds01-*-*.slice; do
+            [[ ! -d "$slice_dir" ]] && continue
+
+            collect_slice_stats "$slice_dir"
+            ((slice_count++))
+        done
     done
 
     log_verbose "Collection complete: $slice_count user slices processed"
