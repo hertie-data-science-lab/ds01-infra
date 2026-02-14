@@ -83,17 +83,17 @@ get_idle_timeout() {
     python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --idle-timeout
 }
 
-# Get GPU idle threshold from config
-get_gpu_idle_threshold() {
-    python3 << PYEOF
-import yaml
-try:
-    with open("$CONFIG_FILE") as f:
-        config = yaml.safe_load(f)
-    print(config.get('policies', {}).get('gpu_idle_threshold', 5))
-except Exception:
-    print(5)  # Default to 5% if config read fails
-PYEOF
+# Get lifecycle policies for user (per-group resolution)
+get_lifecycle_policies() {
+    local username="$1"
+    python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --lifecycle-policies
+}
+
+# Check if user is exempt from enforcement
+check_exemption() {
+    local username="$1"
+    local enforcement_type="$2"
+    python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --check-exemption "$enforcement_type"
 }
 
 # Get grace period from config
@@ -261,12 +261,14 @@ check_gpu_idle() {
 # Check if container is active (secondary signals: CPU, network, processes)
 is_container_active_secondary() {
     local container="$1"
+    local cpu_threshold="${2:-2.0}"
+    local network_threshold="${3:-1048576}"
 
     # Check CPU usage
     local cpu=$(docker stats "$container" --no-stream --format "{{.CPUPerc}}" 2>/dev/null | sed 's/%//' || echo "0")
 
-    # Consider active if CPU > 1%
-    if (( $(echo "$cpu > 1.0" | bc -l) )); then
+    # Consider active if CPU > threshold
+    if (( $(echo "$cpu > $cpu_threshold" | bc -l) )); then
         echo "true"
         return
     fi
@@ -286,7 +288,7 @@ is_container_active_secondary() {
     if [ -n "$net_raw" ] && [ "$net_raw" != "0B" ]; then
         net_rx=$(echo "$net_raw" | numfmt --from=iec 2>/dev/null || echo "0")
     fi
-    if [ "$net_rx" -gt 1000000 ]; then  # > 1MB
+    if [ "$net_rx" -gt "$network_threshold" ]; then
         echo "true"
         return
     fi
@@ -316,6 +318,7 @@ get_last_activity() {
         echo "LAST_ACTIVITY=$start_epoch" > "$state_file"
         echo "LAST_CPU=0.0" >> "$state_file"
         echo "WARNED=false" >> "$state_file"
+        echo "IDLE_STREAK=0" >> "$state_file"
         echo "$start_epoch"
     fi
 }
@@ -333,9 +336,10 @@ update_activity() {
     source "$state_file"
 
     if [ "$is_active" = "true" ]; then
-        # Reset activity timestamp
+        # Reset activity timestamp and idle streak
         sed -i "s/^LAST_ACTIVITY=.*/LAST_ACTIVITY=$(date +%s)/" "$state_file"
         sed -i "s/^WARNED=.*/WARNED=false/" "$state_file"
+        sed -i "s/^IDLE_STREAK=.*/IDLE_STREAK=0/" "$state_file"
     fi
 }
 
@@ -351,6 +355,26 @@ notify_user() {
     if [ "$sent" = false ]; then
         log "User $username has no active terminals — notification not delivered"
     fi
+}
+
+# Send informational warning (for exempt users)
+send_informational_warning() {
+    local username="$1"
+    local container="$2"
+    local reason="$3"
+
+    local message="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IDLE CONTAINER NOTICE (FYI only — you are exempt)
+
+Container: $container
+Status: IDLE (no activity detected)
+Exemption: $reason
+
+No action will be taken — your exemption is active.
+This is an informational notice only.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    notify_user "$username" "$message"
 }
 
 # Send warning to user
@@ -394,6 +418,25 @@ Questions? Run 'check-limits' or contact admin.
     notify_user "$username" "$message"
 
     log_color "Warning sent to $username about container $container" "$YELLOW"
+}
+
+# Get SIGTERM grace period for container type
+get_sigterm_grace() {
+    local container_type="$1"
+    python3 << PYEOF
+import yaml
+try:
+    with open("$CONFIG_FILE") as f:
+        config = yaml.safe_load(f)
+    ct_config = config.get('container_types', {}).get('$container_type', {})
+    grace = ct_config.get('sigterm_grace_seconds')
+    if grace is not None:
+        print(grace)
+    else:
+        print(config.get('policies', {}).get('sigterm_grace_seconds', 60))
+except Exception:
+    print(60)
+PYEOF
 }
 
 # Stop idle container
@@ -447,9 +490,11 @@ To prevent auto-stop in future:
 
     notify_user "$username" "$message"
 
-    # Stop container (60 second grace period for GPU workloads)
-    if docker stop -t 60 "$container" &>/dev/null; then
-        log_color "Stopped idle container: $container" "$GREEN"
+    # Stop container with variable SIGTERM grace by container type
+    local container_type=$(get_container_type "$container")
+    local grace_seconds=$(get_sigterm_grace "$container_type")
+    if docker stop -t "$grace_seconds" "$container" &>/dev/null; then
+        log_color "Stopped idle container: $container (grace: ${grace_seconds}s)" "$GREEN"
 
         # Log maintenance.idle_kill event (best-effort)
         if command -v log_event &>/dev/null; then
@@ -489,8 +534,7 @@ monitor_containers() {
     HIGH_DEMAND_MODE=$(is_high_demand "$hd_threshold")
     HIGH_DEMAND_REDUCTION="$hd_reduction"
 
-    # Get GPU idle threshold and grace period from config
-    local gpu_idle_threshold=$(get_gpu_idle_threshold)
+    # Get grace period from config
     local grace_period_str=$(get_grace_period)
     local grace_period_seconds=$(timeout_to_seconds "$grace_period_str")
 
@@ -580,7 +624,7 @@ monitor_containers() {
         ((monitored_count += 1))
 
         # Wrap in error handling to prevent one container from breaking the whole loop
-        if ! process_container_universal "$container" "$username" "$container_type" "$gpu_idle_threshold"; then
+        if ! process_container_universal "$container" "$username" "$container_type"; then
             log_color "Error processing container $container, continuing with next" "$RED"
             continue
         fi
@@ -594,7 +638,23 @@ process_container_universal() {
     local container="$1"
     local username="$2"
     local container_type="$3"
-    local gpu_idle_threshold="$4"
+
+    # Get per-group lifecycle policies for the user
+    local policies_json=$(get_lifecycle_policies "$username")
+    local gpu_threshold=$(echo "$policies_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('gpu_idle_threshold', 5))")
+    local cpu_threshold=$(echo "$policies_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('cpu_idle_threshold', 2.0))")
+    local network_threshold=$(echo "$policies_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('network_idle_threshold', 1048576))")
+    local detection_window=$(echo "$policies_json" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('idle_detection_window', 3))")
+
+    # Check exemption before enforcement
+    local exemption_status=$(check_exemption "$username" "idle_timeout")
+    local is_exempt=false
+    local exempt_reason=""
+    if [[ "$exemption_status" == exempt:* ]]; then
+        is_exempt=true
+        exempt_reason="${exemption_status#exempt: }"
+        log "Container $container (user: $username) is EXEMPT from idle timeout: $exempt_reason"
+    fi
 
     # Get timeout based on container type
     local timeout_str
@@ -629,10 +689,10 @@ process_container_universal() {
         log "High demand: Reduced timeout for $container from ${original_timeout_seconds}s to ${timeout_seconds}s"
     fi
 
-    # Check GPU idle status (primary signal)
-    local gpu_status=$(check_gpu_idle "$container" "$gpu_idle_threshold")
+    # Check GPU idle status with per-group threshold
+    local gpu_status=$(check_gpu_idle "$container" "$gpu_threshold")
 
-    # Multi-signal logic: GPU idle AND secondary idle = idle
+    # Multi-signal AND logic: GPU idle AND CPU idle AND network idle = idle
     # GPU active = NOT idle (regardless of secondary signals)
     # GPU unknown (no UUID/driver issue) = fall back to secondary signals only
 
@@ -645,8 +705,8 @@ process_container_universal() {
         update_activity "$container" "true"
         return 0
     elif [ "$gpu_status" = "idle" ]; then
-        # GPU idle - check secondary signals
-        local secondary_active=$(is_container_active_secondary "$container")
+        # GPU idle - check secondary signals with per-group thresholds
+        local secondary_active=$(is_container_active_secondary "$container" "$cpu_threshold" "$network_threshold")
         if [ "$secondary_active" = "true" ]; then
             # GPU idle but CPU/network active = NOT idle (data loading, preprocessing)
             is_idle="false"
@@ -659,7 +719,7 @@ process_container_universal() {
         fi
     else
         # GPU status unknown - fall back to secondary signals only
-        local secondary_active=$(is_container_active_secondary "$container")
+        local secondary_active=$(is_container_active_secondary "$container" "$cpu_threshold" "$network_threshold")
         if [ "$secondary_active" = "true" ]; then
             is_idle="false"
             log "Container $container (user: $username, type: $container_type) is active (CPU/network)"
@@ -670,8 +730,35 @@ process_container_universal() {
         fi
     fi
 
-    # Container is idle - check how long
+    # Container is idle - implement detection window
     if [ "$is_idle" = "true" ]; then
+        local state_file="$STATE_DIR/${container}.state"
+
+        # Initialize state file if missing
+        if [ ! -f "$state_file" ]; then
+            log "Initializing state file for $container"
+            local start_time=$(docker inspect "$container" --format='{{.State.StartedAt}}' 2>/dev/null)
+            local start_epoch=$(date -d "$start_time" +%s 2>/dev/null || date +%s)
+            echo "LAST_ACTIVITY=$start_epoch" > "$state_file"
+            echo "LAST_CPU=0.0" >> "$state_file"
+            echo "WARNED=false" >> "$state_file"
+            echo "IDLE_STREAK=0" >> "$state_file"
+        fi
+
+        source "$state_file"
+
+        # Increment idle streak
+        local current_streak=${IDLE_STREAK:-0}
+        current_streak=$((current_streak + 1))
+        sed -i "s/^IDLE_STREAK=.*/IDLE_STREAK=$current_streak/" "$state_file"
+
+        # Check if detection window satisfied
+        if [ "$current_streak" -lt "$detection_window" ]; then
+            log "Container $container: idle streak $current_streak/$detection_window (waiting for consecutive checks)"
+            return 0
+        fi
+
+        # Detection window satisfied - proceed with warning/stop logic
         # Get last activity time
         local last_activity=$(get_last_activity "$container")
         local now=$(date +%s)
@@ -681,19 +768,17 @@ process_container_universal() {
         # Calculate warning threshold (80% of timeout)
         local warning_seconds=$((timeout_seconds * 80 / 100))
 
-        local state_file="$STATE_DIR/${container}.state"
+        log "Container $container (user: $username, type: $container_type): idle for ${idle_minutes}m (timeout: $timeout_str, streak: $current_streak)"
 
-        # Initialize state file if missing
-        if [ ! -f "$state_file" ]; then
-            log "Initializing state file for $container"
-            echo "LAST_ACTIVITY=$last_activity" > "$state_file"
-            echo "LAST_CPU=0.0" >> "$state_file"
-            echo "WARNED=false" >> "$state_file"
+        # If user is exempt, send informational warning only
+        if [ "$is_exempt" = true ]; then
+            # Send FYI-only warning once (at warning threshold)
+            if [ "$idle_seconds" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then
+                send_informational_warning "$username" "$container" "$exempt_reason"
+                sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"
+            fi
+            return 0
         fi
-
-        source "$state_file"
-
-        log "Container $container (user: $username, type: $container_type): idle for ${idle_minutes}m (timeout: $timeout_str)"
 
         # Check if we should warn
         if [ "$idle_seconds" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then

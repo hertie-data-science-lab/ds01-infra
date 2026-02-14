@@ -40,9 +40,9 @@ Requirements for Milestone 1: Full Visibility & Control. Each maps to roadmap ph
 - [x] **LIFE-03**: Containers in "created" state (never started) are detected and cleaned up
 - [x] **LIFE-04**: Cleanup scripts handle containers without DS01/AIME labels (using multiple detection methods)
 - [x] **LIFE-05**: GPU allocations released reliably when containers stop (no leaked allocations)
-- [ ] **LIFE-06**: CPU idle threshold tuned (current < 1% too strict, adjust to 2-5%)
-- [ ] **LIFE-07**: Container-stop timeout increased (current 10s too short for large containers)
-- [ ] **LIFE-08**: Per-user lifecycle overrides — exempt specific users/containers from idle timeout and max runtime (easy to toggle on/off via config)
+- [x] **LIFE-06**: CPU idle threshold tuned (current < 1% too strict, adjust to 2-5%)
+- [x] **LIFE-07**: Container-stop timeout increased (current 10s too short for large containers)
+- [x] **LIFE-08**: Per-user lifecycle overrides — exempt specific users/containers from idle timeout and max runtime (easy to toggle on/off via config)
 
 ### Labels & Standards
 
@@ -195,9 +195,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LIFE-03 | Phase 5 | Complete |
 | LIFE-04 | Phase 5 | Complete |
 | LIFE-05 | Phase 5 | Complete |
-| LIFE-06 | Phase 6 | Pending |
-| LIFE-07 | Phase 6 | Pending |
-| LIFE-08 | Phase 6 | Pending |
+| LIFE-06 | Phase 6 | Complete |
+| LIFE-07 | Phase 6 | Complete |
+| LIFE-08 | Phase 6 | Complete |
 | LABEL-01 | Phase 7 | Pending |
 | LABEL-02 | Phase 7 | Pending |
 | NOTIFY-01 | Phase 8 | Pending |

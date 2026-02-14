@@ -5,24 +5,24 @@
 See: .planning/PROJECT.md (updated 2026-01-30)
 
 **Core value:** Full control over GPU resources — every GPU process tracked, attributed to a user, and controllable
-**Current focus:** Phase 6 (Lifecycle Enhancements) — next phase after Phase 5 completion
+**Current focus:** Phase 7 (Label Standards & Migration) — next phase after Phase 6 completion
 
 ## Current Position
 
-Phase: 5 (lifecycle-bug-fixes) — COMPLETE
-Plan: 4/4 complete
-Status: Phase 5 complete. Container lifecycle fully operational: GPU-aware idle detection, wall notifications, universal container cleanup, SLURM epilog GPU health verification.
-Last activity: 2026-02-11 — Completed Phase 5 execution (4 plans, 2 waves)
+Phase: 6 (lifecycle-enhancements) — COMPLETE
+Plan: 2/2 complete
+Status: Phase 6 complete. Lifecycle enforcement tuned: per-group multi-signal idle detection with AND logic, detection window, exemption checking, variable SIGTERM grace. LIFE-06/07/08 verified.
+Last activity: 2026-02-14 — Completed Phase 6 execution (2 plans, 2 waves)
 
-Progress: [████████████████████] 100% (32/~32 plans complete)
-Resume: .planning/phases/05-lifecycle-bug-fixes/05-VERIFICATION.md
+Progress: [████████████████████] 100% (34/~34 plans complete)
+Resume: .planning/phases/06-lifecycle-enhancements/06-VERIFICATION.md
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 32
-- Average duration: 3.5 min
-- Total execution time: 124 min
+- Total plans completed: 34
+- Average duration: 3.4 min
+- Total execution time: 129 min
 
 **By Phase:**
 
@@ -36,10 +36,11 @@ Resume: .planning/phases/05-lifecycle-bug-fixes/05-VERIFICATION.md
 | 03.2-architecture-audit-code-quality | 4 | 21min | 5.25min |
 | 04-comprehensive-resource-enforcement | 5 | 15min | 3.0min |
 | 05-lifecycle-bug-fixes | 4 | 11.5min | 2.9min |
+| 06-lifecycle-enhancements | 2 | 5min | 2.5min |
 
 **Recent Trend:**
-- Last 5 plans: 05-04 (2min), 05-03 (4min), 05-02 (2min), 05-01 (3.5min), 04-05 (2min)
-- Trend: Phase 5 complete with excellent efficiency (2-4min avg per plan)
+- Last 5 plans: 06-02 (3min), 06-01 (2min), 05-04 (2min), 05-03 (4min), 05-02 (2min)
+- Trend: Maintaining excellent efficiency (2.5min avg for Phase 6)
 
 *Updated after each plan completion*
 
@@ -146,6 +147,14 @@ Recent decisions affecting current work:
 - SLURM epilog pattern for GPU health verification — post-removal check detects orphaned processes via nvidia-smi --query-compute-apps, kills them, resets GPU only if not shared (05-04)
 - Never reset shared GPUs — GPU reset affects all containers sharing that physical GPU (MIG multi-tenant safety), alert admin for manual intervention (05-04)
 - Cron schedule distribution for lifecycle jobs — spread across hour at :05, :20, :35, :50 to prevent resource contention and maintain logical ordering (05-04)
+- Per-group lifecycle policies with inheritance — global policies → group policies → user override, enables different thresholds per research group (06-01)
+- CPU idle threshold tuned from <1% to 2-5% — reduces false positives during data loading (students 2%, researcher/faculty 3%) (06-01)
+- Time-bounded exemptions with Azure Policy pattern — expires_on field with record preservation after expiry for audit trail (06-01)
+- Eventual consistency for exemptions — changes take effect at next cron cycle (~1 hour max), simpler than immediate propagation (06-01)
+- Multi-signal AND logic for idle detection — GPU idle AND CPU idle AND network idle = idle, prevents false positives during data loading (LIFE-05, 06-02)
+- Detection window with consecutive-check tracking — N idle checks required before action, reduces transient dip false positives (LIFE-06, 06-02)
+- Exemption-aware lifecycle enforcement — exempt users receive FYI-only warnings, no enforcement, with audit logging (06-02)
+- Variable SIGTERM grace by container type — GPU=60s, devcontainer=30s, compose=45s, ensures checkpoint time per workload pattern (LIFE-07, 06-02)
 
 ### Roadmap Evolution
 
@@ -200,6 +209,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-02-11 17:20 UTC
-Stopped at: Phase 5 complete — 4 plans executed (2 waves), verified 5/5 must-haves
-Resume file: .planning/phases/05-lifecycle-bug-fixes/05-VERIFICATION.md
+Last session: 2026-02-14 15:35 UTC
+Stopped at: Phase 6 complete — 2 plans executed (2 waves), verified 7/7 must-haves
+Resume file: .planning/phases/06-lifecycle-enhancements/06-VERIFICATION.md

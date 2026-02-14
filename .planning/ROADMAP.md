@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 3.2: Architecture Audit & Code Quality** - Validate Phases 1–3.1 against HPC/industry standards, refactor, dead code removal (INSERTED)
 - [x] **Phase 4: Comprehensive Resource Enforcement** - Per-user aggregate CPU, memory, GPU, pids enforcement via cgroup v2
 - [x] **Phase 5: Lifecycle Bug Fixes** - Container retirement, cleanup race conditions, GPU allocation leaks
-- [ ] **Phase 6: Lifecycle Enhancements** - Tuning, overrides, reliability improvements
+- [x] **Phase 6: Lifecycle Enhancements** - Tuning, overrides, reliability improvements
 - [ ] **Phase 7: Label Standards & Migration** - Consistent ds01.* namespace, backward compatibility
 - [ ] **Phase 8: User Notifications** - Timeout warnings, quota alerts, terminal delivery
 - [ ] **Phase 9: Command Bug Fixes** - container-stats, image-create, image-update, user-setup
@@ -200,10 +200,11 @@ Plans:
   3. Admin can exempt specific users/containers from idle timeout via config toggle
   4. Admin can exempt specific users/containers from max runtime via config toggle
   5. Lifecycle overrides easy to enable/disable without code changes
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 06-01: TBD during planning
+- [x] 06-01-PLAN.md — Config schema extension (per-group lifecycle policies, lifecycle-exemptions.yaml, get_resource_limits.py)
+- [x] 06-02-PLAN.md — Multi-signal idle detection rewrite + exemption integration + variable SIGTERM grace
 
 ### Phase 7: Label Standards & Migration
 **Goal**: All containers use consistent ds01.* label namespace. Backward compatibility for existing containers.
@@ -278,8 +279,8 @@ Phases execute in numeric order: 1 → 2 → **2.1** → 3 → **3.1** → **3.2
 | 3.2. Architecture Audit & Code Quality | 4/4 | ✓ Complete | 2026-02-05 |
 | 4. Comprehensive Resource Enforcement | 5/5 | ✓ Complete | 2026-02-06 |
 | 5. Lifecycle Bug Fixes | 4/4 | ✓ Complete | 2026-02-11 |
-| 6. Lifecycle Enhancements | 0/TBD | **Next** | - |
-| 7. Label Standards & Migration | 0/TBD | Not started | - |
+| 6. Lifecycle Enhancements | 2/2 | ✓ Complete | 2026-02-14 |
+| 7. Label Standards & Migration | 0/TBD | **Next** | - |
 | 8. User Notifications | 0/TBD | Not started | - |
 | 9. Command Bug Fixes | 0/TBD | Not started | - |
 | 10. Integration & Validation | 0/TBD | Not started | - |

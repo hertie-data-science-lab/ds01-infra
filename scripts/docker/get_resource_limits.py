@@ -371,6 +371,146 @@ class ResourceLimitParser:
         }
         return json.dumps(lifecycle)
 
+    def get_lifecycle_policies(self, username):
+        """Get lifecycle policies for a user with inheritance.
+
+        Resolution order: global policies → group policies → user override
+        Group policies override global; user overrides override group.
+
+        Args:
+            username: The username to look up
+
+        Returns:
+            dict with keys: gpu_idle_threshold, cpu_idle_threshold,
+            network_idle_threshold, idle_detection_window, sigterm_grace_seconds
+        """
+        if not self.config:
+            raise ValueError("Configuration is empty or invalid")
+
+        # Start with global defaults
+        policies = self.config.get('policies', {}).copy()
+
+        # Extract thresholds
+        result = {
+            'gpu_idle_threshold': policies.get('gpu_idle_threshold', 5),
+            'cpu_idle_threshold': policies.get('cpu_idle_threshold', 2.0),
+            'network_idle_threshold': policies.get('network_idle_threshold', 1048576),
+            'idle_detection_window': policies.get('idle_detection_window', 3),
+            'sigterm_grace_seconds': policies.get('sigterm_grace_seconds', 60),
+        }
+
+        sanitized = sanitize_username_for_slice(username)
+
+        # Check for user-specific override
+        user_overrides = self.config.get('user_overrides') or {}
+        override_key = None
+        if username in user_overrides:
+            override_key = username
+        elif sanitized != username and sanitized in user_overrides:
+            override_key = sanitized
+
+        if override_key and 'policies' in user_overrides[override_key]:
+            # User override takes highest priority
+            user_policies = user_overrides[override_key]['policies']
+            for key in result:
+                if key in user_policies:
+                    result[key] = user_policies[key]
+            return result
+
+        # Check group policies
+        groups = self.config.get('groups') or {}
+        for group_name, group_config in groups.items():
+            members = group_config.get('members', [])
+            if username in members or (sanitized != username and sanitized in members):
+                if 'policies' in group_config:
+                    group_policies = group_config['policies']
+                    for key in result:
+                        if key in group_policies:
+                            result[key] = group_policies[key]
+                return result
+
+        # User in default group - check that group's policies
+        default_group = self.config.get('default_group', 'student')
+        group_config = groups.get(default_group, {})
+        if 'policies' in group_config:
+            group_policies = group_config['policies']
+            for key in result:
+                if key in group_policies:
+                    result[key] = group_policies[key]
+
+        return result
+
+    def check_exemption(self, username, enforcement_type):
+        """Check if user is exempted from lifecycle enforcement.
+
+        Loads lifecycle-exemptions.yaml from same config directory and checks
+        if user has an active (non-expired) exemption for the given enforcement type.
+
+        Args:
+            username: The username to check
+            enforcement_type: 'idle_timeout' or 'max_runtime'
+
+        Returns:
+            tuple: (is_exempt: bool, reason: str | None)
+        """
+        from datetime import datetime, timezone
+
+        exemption_file = self.config_dir / "lifecycle-exemptions.yaml"
+
+        # If file doesn't exist, no exemptions
+        if not exemption_file.exists():
+            return (False, None)
+
+        try:
+            with open(exemption_file) as f:
+                exemption_config = yaml.safe_load(f)
+
+            if not exemption_config or 'exemptions' not in exemption_config:
+                return (False, None)
+
+            exemptions = exemption_config['exemptions']
+            now = datetime.now(timezone.utc)
+
+            for exemption in exemptions:
+                # Check if exemption applies to this user
+                if exemption.get('username') != username:
+                    continue
+
+                # Check if exemption covers this enforcement type
+                if enforcement_type not in exemption.get('exempt_from', []):
+                    continue
+
+                # Check expiry
+                expires_on = exemption.get('expires_on')
+
+                if expires_on is None:
+                    # No expiry date — permanent exemption
+                    reason = exemption.get('reason', 'No reason provided')
+                    return (True, f"Permanent exemption: {reason}")
+
+                # Parse expiry date (ISO 8601 format with Z suffix)
+                try:
+                    # Handle Z suffix by replacing with +00:00
+                    expiry_str = expires_on.replace('Z', '+00:00')
+                    expiry_dt = datetime.fromisoformat(expiry_str)
+
+                    if now < expiry_dt:
+                        # Exemption still valid
+                        reason = exemption.get('reason', 'No reason provided')
+                        return (True, f"Temporary exemption until {expires_on}: {reason}")
+                    # Exemption expired — continue to next exemption
+
+                except (ValueError, AttributeError):
+                    # Invalid date format — skip this exemption
+                    continue
+
+            # No active exemption found
+            return (False, None)
+
+        except Exception:
+            # Error reading exemptions file — fail open
+            return (False, None)
+
 
 def main():
     """CLI interface for testing"""
@@ -390,6 +530,8 @@ def main():
         print("  --idle-timeout         Idle timeout duration")
         print("  --max-runtime          Max container runtime")
         print("  --all-lifecycle        All lifecycle limits as JSON")
+        print("  --lifecycle-policies   Per-group lifecycle policies as JSON")
+        print("  --check-exemption TYPE Check if user is exempt from TYPE (idle_timeout or max_runtime)")
         print("  --high-demand-threshold  GPU allocation threshold for high demand mode")
         print("  --high-demand-reduction  Idle timeout reduction factor in high demand")
         print("  --aggregate            Per-user aggregate limits as JSON")
@@ -476,6 +618,23 @@ def main():
         else:
             # No GPU limit in aggregate section (Phase 4 plan 03 will add this)
             print("unlimited")
+    elif '--lifecycle-policies' in sys.argv:
+        import json
+        policies = parser.get_lifecycle_policies(username)
+        print(json.dumps(policies))
+    elif '--check-exemption' in sys.argv:
+        # Next argument should be enforcement_type
+        try:
+            idx = sys.argv.index('--check-exemption')
+            enforcement_type = sys.argv[idx + 1]
+            is_exempt, reason = parser.check_exemption(username, enforcement_type)
+            if is_exempt:
+                print(f"exempt: {reason}")
+            else:
+                print("not_exempt")
+        except (IndexError, ValueError):
+            print("Error: --check-exemption requires enforcement type (idle_timeout or max_runtime)")
+            sys.exit(1)
     else:
         print(parser.format_for_display(username))
 

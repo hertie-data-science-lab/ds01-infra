@@ -1,0 +1,44 @@
+# DS01 Lifecycle Exemptions
+# /opt/ds01-infra/config/runtime/lifecycle-exemptions.yaml
+#
+# Time-bounded exemptions from lifecycle enforcement (idle timeout, max runtime).
+# Exempt users are NOT subject to enforcement but STILL receive informational warnings.
+#
+# Pattern: Azure Policy exemptions — records preserved after expiry for audit trail.
+# Changes take effect at next cron cycle (eventual consistency, ~1 hour max).
+#
+# Fields:
+#   username:      Login username (must match /home/<username>)
+#   exempt_from:   List of enforcements to exempt: idle_timeout, max_runtime
+#   reason:        Human-readable justification
+#   approved_by:   Who approved (admin username)
+#   approved_on:   ISO 8601 date when approved
+#   expires_on:    ISO 8601 datetime for expiry (null = permanent)
+#   category:      "research_grant" or "waiver"
+#
+# Lifecycle:
+#   - Before expiry: exemption honored, user not subject to enforcement
+#   - After expiry: exemption no longer honored, record preserved for audit
+#   - Cleanup: optional periodic cleanup of expired records older than 90 days
+
+exemptions:
+  - username: "204214@hertie-school.lan"
+    category: "waiver"
+    exempt_from:
+      - idle_timeout
+      - max_runtime
+    reason: "Pre-existing research workflow — continuous model training"
+    approved_by: "datasciencelab"
+    approved_on: "2026-02-14"
+    expires_on: null  # Permanent exemption
+
+  # Example: time-bounded research grant
+  # - username: "alice@hertie-school.lan"
+  #   category: "research_grant"
+  #   exempt_from:
+  #     - idle_timeout
+  #     - max_runtime
+  #   reason: "PhD thesis — deep learning model training"
+  #   approved_by: "faculty_supervisor"
+  #   approved_on: "2026-02-14"
+  #   expires_on: "2026-06-30T23:59:59Z"

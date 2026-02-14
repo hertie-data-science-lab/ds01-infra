@@ -80,6 +80,12 @@ groups:
       memory_high: "86G"            # 90% of 96GB (soft limit, triggers throttling)
       tasks_max: 12288              # 4096 × 3
       gpu_limit: 3                  # Max GPU/MIG slots across all containers (matches max_mig_instances)
+    # Per-group lifecycle policies
+    policies:
+      gpu_idle_threshold: 5          # GPU util % below which GPU is idle
+      cpu_idle_threshold: 2.0        # CPU util % below which CPU is idle (bursty but shorter jobs)
+      network_idle_threshold: 1048576  # Network I/O bytes below which network is idle (1MB)
+      idle_detection_window: 3       # Consecutive idle checks before action
 
   researcher:
     # Members: config/groups/researcher.members
@@ -102,6 +108,12 @@ groups:
       memory_high: "288G"           # 90% of 320GB (soft limit)
       tasks_max: 327680             # 65536 × 5
       gpu_limit: 6                  # Max GPU/MIG slots across all containers (matches max_mig_instances)
+    # Per-group lifecycle policies
+    policies:
+      gpu_idle_threshold: 5
+      cpu_idle_threshold: 3.0        # More lenient for data-heavy workflows
+      network_idle_threshold: 1048576
+      idle_detection_window: 4       # More patient — 4 consecutive checks
     # TODO-NOT-IMPLEMENTED: Storage quotas
     # storage_workspace: 500G
     # storage_data: 1T
@@ -127,6 +139,12 @@ groups:
       memory_high: "576G"           # 90% of 640GB (soft limit)
       tasks_max: 327680             # 65536 × 5
       gpu_limit: 8                  # Max GPU/MIG slots across all containers (matches max_mig_instances)
+    # Per-group lifecycle policies
+    policies:
+      gpu_idle_threshold: 5
+      cpu_idle_threshold: 3.0
+      network_idle_threshold: 1048576
+      idle_detection_window: 4
     # TODO-NOT-IMPLEMENTED: Storage quotas
     # storage_workspace: 1T
     # storage_data: 2T
@@ -183,6 +201,9 @@ policies:
   high_demand_threshold: 0.8       # System is "high demand" at 80% GPU allocation
   high_demand_idle_reduction: 0.5  # Reduce idle timeout by 50% during high demand
   gpu_idle_threshold: 5            # GPU utilisation % threshold for idle detection
+  cpu_idle_threshold: 2.0          # CPU utilisation % threshold for idle detection (was hardcoded 1.0)
+  network_idle_threshold: 1048576  # Network I/O bytes threshold for idle detection (1MB)
+  idle_detection_window: 3         # Consecutive idle checks before action
   grace_period: 30m                # Startup grace period before idle detection begins
   keepalive_max_duration: 24h      # Max time .keep-alive file is respected
   sigterm_grace_seconds: 60        # SIGTERM grace period for GPU containers
@@ -206,6 +227,7 @@ container_types:
   devcontainer:
     idle_timeout: null             # Exempt from idle timeout (only subject to max_runtime)
     max_runtime: 168h              # 1 week max
+    sigterm_grace_seconds: 30       # Dev containers: K8s default
     default_mig_count:             # Group-based MIG allocation for external containers
       student: 1                   # Students get 1 MIG for dev containers
       researcher: 2                # Researchers can have 2 MIGs in dev containers
@@ -216,6 +238,7 @@ container_types:
   compose:
     idle_timeout: 30m
     max_runtime: 72h               # 3 days max
+    sigterm_grace_seconds: 45       # Compose: middle ground
     default_mig_count:
       student: 1
       researcher: 2
@@ -226,6 +249,7 @@ container_types:
   docker:
     idle_timeout: 30m
     max_runtime: 48h               # 2 days max
+    sigterm_grace_seconds: 60       # Direct docker: full minute (likely GPU)
     default_mig_count:
       student: 1
       researcher: 1                # Slightly stricter for raw docker
@@ -236,6 +260,7 @@ container_types:
   unknown:
     idle_timeout: 15m              # Short timeout for unidentified containers
     max_runtime: 24h               # 1 day max
+    sigterm_grace_seconds: 30       # Unknown: K8s default
     default_mig_count:
       student: 1
       researcher: 1

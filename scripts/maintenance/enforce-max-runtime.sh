@@ -58,6 +58,13 @@ get_max_runtime() {
     python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --max-runtime
 }
 
+# Check if user is exempt from enforcement
+check_exemption() {
+    local username="$1"
+    local enforcement_type="$2"
+    python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --check-exemption "$enforcement_type"
+}
+
 # Check if container has GPU access
 container_has_gpu() {
     local container="$1"
@@ -220,17 +227,24 @@ stop_runtime_exceeded() {
     # Note: Container is stopped but NOT removed - will be removed by cleanup-stale-containers
     # after container_hold_after_stop timeout. GPU will be freed after gpu_hold_after_stop timeout.
 
-    # Get container type for logging
-    local container_type=$(get_container_type "$container")
+    # Get container type for logging (already available from caller, but re-get if needed)
+    if [ -z "$container_type" ]; then
+        container_type=$(get_container_type "$container")
+    fi
 
-    # Get SIGTERM grace period from config (fall back to 60s)
+    # Get SIGTERM grace period from config with container-type-specific override
     local grace_seconds=$(python3 -c "
 import yaml
 import sys
 try:
     with open('$CONFIG_FILE') as f:
         config = yaml.safe_load(f)
-    print(config.get('policies', {}).get('sigterm_grace_seconds', 60))
+    ct_config = config.get('container_types', {}).get('$container_type', {})
+    grace = ct_config.get('sigterm_grace_seconds')
+    if grace is not None:
+        print(grace)
+    else:
+        print(config.get('policies', {}).get('sigterm_grace_seconds', 60))
 except Exception:
     print(60)
 " 2>/dev/null || echo 60)
@@ -338,6 +352,22 @@ process_container_runtime_universal() {
     local username="$2"
     local container_type="$3"
 
+    # Check exemption before enforcement
+    local exemption_status=$(check_exemption "$username" "max_runtime")
+    if [[ "$exemption_status" == exempt:* ]]; then
+        local exempt_reason="${exemption_status#exempt: }"
+        log "Container $container (user: $username) is EXEMPT from max runtime: $exempt_reason"
+
+        # Log exemption for audit
+        if command -v log_event &>/dev/null; then
+            log_event "maintenance.runtime_exempt" "$username" "enforce-max-runtime" \
+                container="$container" \
+                reason="$exempt_reason" || true
+        fi
+
+        return 0
+    fi
+
     # Get max runtime based on container type
     local runtime_str
     case "$container_type" in
@@ -404,5 +434,7 @@ process_container_runtime_universal() {
     return 0
 }
 
-# Run monitoring
-monitor_containers
+# Run monitoring (only when executed directly, not sourced)
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    monitor_containers
+fi
