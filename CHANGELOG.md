@@ -1,3 +1,20 @@
+# [1.3.0](https://github.com/hertie-data-science-lab/ds01-infra/compare/v1.2.0...v1.3.0) (2026-02-14)
+
+
+### Bug Fixes
+
+* cgroup v2 paths, login banner, MOTD notifications ([6f68d2e](https://github.com/hertie-data-science-lab/ds01-infra/commit/6f68d2ec9f1f36a4f37eb90851f21b0b6b1653d5))
+* repair semantic-release — clean changelog, fix tags, re-enable workflow ([89d1930](https://github.com/hertie-data-science-lab/ds01-infra/commit/89d1930df13748285b978674d2c373a6a2561d84))
+
+
+### Features
+
+* **05:** lifecycle bug fixes — idle detection, runtime enforcement, container cleanup ([286c11a](https://github.com/hertie-data-science-lab/ds01-infra/commit/286c11ade4f466d0269a5d02af9547426dd74e87))
+* **06:** lifecycle enhancements — per-group policies, exemptions, multi-signal idle detection ([e7fd151](https://github.com/hertie-data-science-lab/ds01-infra/commit/e7fd151682ae82d75341d6554233a71dbf3d3440))
+* per-user aggregate resource enforcement via systemd cgroup slices ([5b82ecf](https://github.com/hertie-data-science-lab/ds01-infra/commit/5b82ecf0f67d36d2cd0a17e6490ecbfd9846cf03))
+* Phase 3.1 hardening and container-retire bug fix ([7e3460b](https://github.com/hertie-data-science-lab/ds01-infra/commit/7e3460b0effe0060ac37a2ff2ee5cda50c147703))
+* Phase 3.2 architecture audit, code quality fixes, and config consolidation ([70404b6](https://github.com/hertie-data-science-lab/ds01-infra/commit/70404b60cfb845ac7c9a59955235e9fc3ddcc2e8))
+
 # [1.2.0](https://github.com/hertie-data-science-lab/ds01-infra/compare/v1.1.0...v1.2.0) (2026-01-30)
 
 
