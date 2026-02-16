@@ -153,7 +153,7 @@ show_simple() {
         echo -e "  • GPU - Whether a GPU is allocated to this container"
         echo ""
         echo -e "${CYAN}ℹ ${NC}${BOLD}Behind the scenes:${NC}"
-        echo -e "  • Containers are filtered using AIME labels (${DIM}aime.mlc.USER${NC})"
+        echo -e "  • Containers are filtered using DS01 labels (${DIM}ds01.user${NC})"
         echo ""
     fi
 
@@ -351,10 +351,10 @@ show_detailed() {
         echo -e "  Created:    ${DIM}$created${NC}"
         echo -e "  Image:      $image"
 
-        # Check for AIME labels (verify mlc-list integration)
-        local aime_framework=$(docker inspect --format "{{index .Config.Labels \"aime.mlc.FRAMEWORK\"}}" "$full_name" 2>/dev/null)
-        if [ -n "$aime_framework" ] && [ "$aime_framework" != "<no value>" ]; then
-            echo -e "  Framework:  ${GREEN}$aime_framework${NC} ${DIM}(via AIME)${NC}"
+        # Check for framework label
+        local framework=$(docker inspect --format "{{index .Config.Labels \"ds01.framework\"}}" "$full_name" 2>/dev/null)
+        if [ -n "$framework" ] && [ "$framework" != "<no value>" ]; then
+            echo -e "  Framework:  ${GREEN}$framework${NC}"
         fi
 
         # Resources

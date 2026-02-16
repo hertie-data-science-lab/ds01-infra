@@ -70,7 +70,7 @@ get_user_group() {
 # Get container count for user
 get_container_count() {
     local username="$1"
-    docker ps -a --filter "label=aime.mlc.USER=$username" --format "{{.ID}}" 2>/dev/null | wc -l
+    docker ps -a --filter "label=ds01.user=$username" --format "{{.ID}}" 2>/dev/null | wc -l
 }
 
 # Calculate days since date

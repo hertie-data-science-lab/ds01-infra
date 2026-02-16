@@ -333,8 +333,8 @@ except Exception as e:
 PYEOF
 
     # Check for containers with GPUs not tracked by allocator
-    UNTRACKED_WITH_GPU=$(docker ps --filter "label=aime.mlc.DS01_MANAGED=true" --format '{{.Labels}}' 2>/dev/null | \
-        grep "aime.mlc.GPUS=device=" | wc -l)
+    UNTRACKED_WITH_GPU=$(docker ps --filter "label=ds01.managed=true" --format '{{.Labels}}' 2>/dev/null | \
+        grep "ds01.gpus=device=" | wc -l)
     UNTRACKED_WITH_GPU=${UNTRACKED_WITH_GPU:-0}
 
     if [ "$UNTRACKED_WITH_GPU" -gt 0 ] 2>/dev/null; then
@@ -358,8 +358,8 @@ RUNNING_CONTAINERS=$(docker ps | wc -l)
 STOPPED_CONTAINERS=$((TOTAL_CONTAINERS - RUNNING_CONTAINERS - 1))
 
 # DS01-managed containers (subtract 1 for header line)
-DS01_TOTAL=$(($(docker ps -a --filter "label=aime.mlc.DS01_MANAGED=true" | wc -l) - 1))
-DS01_RUNNING=$(($(docker ps --filter "label=aime.mlc.DS01_MANAGED=true" | wc -l) - 1))
+DS01_TOTAL=$(($(docker ps -a --filter "label=ds01.managed=true" | wc -l) - 1))
+DS01_RUNNING=$(($(docker ps --filter "label=ds01.managed=true" | wc -l) - 1))
 DS01_STOPPED=$((DS01_TOTAL - DS01_RUNNING))
 
 echo -e "  ${BOLD}All Docker Containers:${NC}"

@@ -325,8 +325,8 @@ class DashboardData:
 
         Checks multiple label sources for robust ownership detection:
         1. ds01.user - explicit DS01 label
-        2. aime.mlc.USER - AIME uppercase label
-        3. aime.mlc.username - AIME lowercase label
+        2. aime.mlc.USER - Legacy fallback
+        3. aime.mlc.username - Legacy fallback (rare)
         4. devcontainer.local_folder - VS Code path extraction
         5. Ownership tracking file (for docker-compose, docker run, etc.)
         """

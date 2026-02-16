@@ -277,6 +277,7 @@ class GPUStateReader:
             # Extract additional info from Docker labels (labels already loaded above)
             allocated_at = labels.get('ds01.gpu.allocated_at', '')
             priority = labels.get('ds01.gpu.priority', '')
+            # TODO: Remove aime.mlc.USER fallback when no legacy containers remain (Phase 7 migration)
             user = labels.get('ds01.user') or labels.get('aime.mlc.USER', '')
             container_name = container_data.get('Name', '').lstrip('/')
 
@@ -630,6 +631,7 @@ class GPUStateReader:
 
             # Get user
             labels = container_data.get('Config', {}).get('Labels', {}) or {}
+            # TODO: Remove aime.mlc.USER fallback when no legacy containers remain (Phase 7 migration)
             user = labels.get('ds01.user') or labels.get('aime.mlc.USER', '')
             if not user:
                 cgroup_parent = container_data.get('HostConfig', {}).get('CgroupParent', '')

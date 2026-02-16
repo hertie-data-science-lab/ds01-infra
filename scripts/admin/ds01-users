@@ -57,8 +57,14 @@ echo -e "${BOLD}              ACTIVE DS01 USERS${NC}"
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
-# Get list of users with containers
-USERS=$(docker ps --format "{{.Labels}}" | grep -o "aime.mlc.USER=[^,]*" | cut -d= -f2 | sort -u)
+# Get list of users with containers (ds01.user primary, legacy fallback)
+USERS=$(docker ps --format "{{.Label \"ds01.user\"}}" | sort -u | grep -v '^$')
+
+# Legacy fallback if no ds01.user labels found
+# TODO: Remove aime.mlc.USER fallback when docker ps --filter label=aime.mlc.USER returns nothing
+if [[ -z "$USERS" ]]; then
+    USERS=$(docker ps --format "{{.Labels}}" | grep -o "aime.mlc.USER=[^,]*" | cut -d= -f2 | sort -u)
+fi
 
 if [ -z "$USERS" ]; then
     echo -e "${YELLOW}No active users with running containers${NC}"
@@ -72,7 +78,7 @@ echo -e "${CYAN}─────────────────────�
 
 for user in $USERS; do
     # Get user's containers
-    CONTAINERS=$(docker ps --filter "label=aime.mlc.USER=$user" --format "{{.Names}}")
+    CONTAINERS=$(docker ps --filter "label=ds01.user=$user" --format "{{.Names}}")
     CONTAINER_COUNT=$(echo "$CONTAINERS" | wc -l)
 
     # Get user's GPU allocation (if available)

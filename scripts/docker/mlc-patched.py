@@ -15,15 +15,15 @@
 #      - Falls back to AIME catalog if not specified
 #      - Validates image exists locally before container creation
 #
-#   2. DS01 management labels
-#      - Adds aime.mlc.DS01_MANAGED label
-#      - Adds aime.mlc.CUSTOM_IMAGE label when custom image used
+#   2. DS01 management labels (Phase 7: migrated to ds01.* namespace)
+#      - Adds ds01.managed label
+#      - Adds ds01.custom_image label when custom image used
 #
 # COMPATIBILITY:
 #   - 100% backward compatible with original mlc.py
 #   - All AIME commands (mlc open, etc.) work unchanged
 #   - Uses same naming convention (name._.uid)
-#   - Uses same label system (aime.mlc.*)
+#   - Uses ds01.* label namespace (migrated from aime.mlc.* in Phase 7)
 #
 # DEVIATIONS FROM AIME:
 #   Lines ~130: --image argument added
@@ -488,7 +488,7 @@ def check_container_exists(name):
         str: name of the container .
     """
     
-    result = subprocess.run(['docker', 'container', 'ps', '-a', '--filter', f'name={name}', '--filter', 'label=aime.mlc', '--format', '{{.Names}}'], capture_output=True, text=True)
+    result = subprocess.run(['docker', 'container', 'ps', '-a', '--filter', f'name={name}', '--filter', 'label=ds01.user', '--format', '{{.Names}}'], capture_output=True, text=True)
     return result.stdout.strip()
 
 
@@ -502,7 +502,7 @@ def check_container_running(container_tag):
         str: name of the container tag associated to the provided container tag.
     """   
     
-    docker_command = f'docker container ps --filter=name=^/{container_tag}$ --filter=label=aime.mlc --format "{{{{.Names}}}}"'
+    docker_command = f'docker container ps --filter=name=^/{container_tag}$ --filter=label=ds01.user --format "{{{{.Names}}}}"'
     output, _, _ = run_docker_command(docker_command)
     return output
        
@@ -595,8 +595,8 @@ def existing_user_containers(user_name, mlc_command):
         list, list: returns 2 lists with existing containers and corresponding container tags.
     """    
  
-    # List all containers with the 'aime.mlc' label owned by the current user
-    docker_command = f"docker container ps -a --filter=label=aime.mlc.USER={user_name} --format '{{{{.Names}}}}'"
+    # List all containers with the 'ds01.user' label owned by the current user
+    docker_command = f"docker container ps -a --filter=label=ds01.user={user_name} --format '{{{{.Names}}}}'"
     output, _,_ = run_docker_command(docker_command)
     container_tags = output.splitlines()
     
@@ -663,7 +663,7 @@ def format_container_stats(container_stats_dict):
     #ToDo: check if labels_string is needed  
     # Extract the 'Labels' field
     #labels_string = container_stats_dict.get('Labels', {})
-    # Retrieve the value for 'aime.mlc.USER'
+    # Retrieve the container name (ds01.* labels are accessed via docker inspect, not stats)
     container_name = container_stats_dict["Name"].split('._.')[0]
     cpu_usage_perc = container_stats_dict["CPUPerc"]
     memory_usage = container_stats_dict["MemUsage"]
@@ -742,7 +742,7 @@ def get_container_image(container_tag):
         'ps', 
         '-a', 
         '--filter', f'name={container_tag}', 
-        '--filter', 'label=aime.mlc', 
+        '--filter', 'label=ds01.user', 
         '--format', '{{.Images}}'
         ]    
     output, _, _ = run_docker_command(docker_command_get_image)
@@ -1218,12 +1218,12 @@ def show_container_info(**kwargs):
     """
     
     # Adapt the filter to the selected flags
-    filter_aime_mlc_user =  "label=aime.mlc" if kwargs == {} or kwargs["all_users"] else f"label=aime.mlc={user_name}"
+    filter_ds01_user =  "label=ds01.user" if kwargs == {} or kwargs["all_users"] else f"label=ds01.user={user_name}"
     docker_command_ls = [
-        "docker", "container", 
-        "ls", 
-        "-a", 
-        "--filter", filter_aime_mlc_user, 
+        "docker", "container",
+        "ls",
+        "-a",
+        "--filter", filter_ds01_user, 
         "--format", '{{json .}}'    
     ]
 
@@ -1273,15 +1273,15 @@ def show_container_info(**kwargs):
         titles_to_display = default_titles_to_display        
 
         columns_transcription = {
-            "CONTAINER": "aime.mlc.NAME",
-            "FRAMEWORK": "aime.mlc.FRAMEWORK", 
+            "CONTAINER": "ds01.name",
+            "FRAMEWORK": "ds01.framework",
             "STATUS": "Status",
-            "USER": "aime.mlc.USER",
+            "USER": "ds01.user",
             "SIZE": "Size",
-            "ARCHITECTURE":"aime.mlc.ARCH",
-            "WORKSPACE": "aime.mlc.WORK_MOUNT",
-            "DATA": "aime.mlc.DATA_MOUNT",
-            "MODELS": "aime.mlc.MODELS_MOUNT"
+            "ARCHITECTURE":"ds01.arch",
+            "WORKSPACE": "ds01.work_mount",
+            "DATA": "ds01.data_mount",
+            "MODELS": "ds01.models_mount"
         }
         # Select the values which can be written with '~' 
         reduce_the_path = ["WORKSPACE", "DATA", "MODELS"]  
@@ -1641,19 +1641,18 @@ def build_docker_create_command(
         '-it',
         '-w', workspace,
         '--name', container_tag,
-        '--label', f'{container_label}={user_name}',
-        '--label', f'{container_label}.NAME={validated_container_name}',
-        '--label', f'{container_label}.USER={user_name}',
-        '--label', f'{container_label}.ARCH={architecture}',
-        '--label', f'{container_label}.MLC_VERSION={mlc_container_version}',
-        '--label', f'{container_label}.WORK_MOUNT={workspace_dir}',
-        '--label', f'{container_label}.DATA_MOUNT={data_dir}',
-        '--label', f'{container_label}.MODELS_MOUNT={models_dir}',
-        '--label', f'{container_label}.FRAMEWORK={selected_framework}-{selected_version}',
-        '--label', f'{container_label}.GPUS={num_gpus}',
+        '--label', f'{container_label}.user={user_name}',
+        '--label', f'{container_label}.name={validated_container_name}',
+        '--label', f'{container_label}.arch={architecture}',
+        '--label', f'{container_label}.mlc_version={mlc_container_version}',
+        '--label', f'{container_label}.work_mount={workspace_dir}',
+        '--label', f'{container_label}.data_mount={data_dir}',
+        '--label', f'{container_label}.models_mount={models_dir}',
+        '--label', f'{container_label}.framework={selected_framework}-{selected_version}',
+        '--label', f'{container_label}.gpus={num_gpus}',
         # ========== DS01 PATCH: DS01 Management Labels ==========
-        '--label', f'{container_label}.DS01_MANAGED=true',
-        '--label', f'{container_label}.CUSTOM_IMAGE={"" if selected_docker_image.startswith("aimehub/") else selected_docker_image}',
+        '--label', f'{container_label}.managed=true',
+        '--label', f'{container_label}.custom_image={"" if selected_docker_image.startswith("aimehub/") else selected_docker_image}',
         # VS Code Dev Containers integration - sets workspace folder when attaching
         '--label', f'devcontainer.workspaceFolder={workspace}',
         # ========== END DS01 PATCH ==========
@@ -2227,10 +2226,13 @@ def main():
                     print(f"\n{NEUTRAL}Using local custom image:{RESET} {INPUT}{selected_docker_image}{RESET}")
                     print(f"{HINT}(Custom images are built FROM AIME base images){RESET}\n")
 
-                    # DS01 OPTIMIZATION: Check for DS01_HAS_USER_SETUP label
+                    # DS01 OPTIMIZATION: Check for user setup label (supports both old and new namespace)
                     try:
                         inspect_cmd = subprocess.run(
                             ['docker', 'inspect', '--format',
+                             '{{index .Config.Labels "ds01.has_user_setup"}}|'
+                             '{{index .Config.Labels "ds01.user_id"}}|'
+                             '{{index .Config.Labels "ds01.group_id"}}|'
                              '{{index .Config.Labels "aime.mlc.DS01_HAS_USER_SETUP"}}|'
                              '{{index .Config.Labels "aime.mlc.DS01_USER_ID"}}|'
                              '{{index .Config.Labels "aime.mlc.DS01_GROUP_ID"}}',
@@ -2239,8 +2241,12 @@ def main():
                         )
                         if inspect_cmd.returncode == 0:
                             parts = inspect_cmd.stdout.strip().split('|')
-                            if len(parts) == 3:
-                                has_setup, img_uid, img_gid = parts
+                            if len(parts) == 6:
+                                new_setup, new_uid, new_gid, old_setup, old_uid, old_gid = parts
+                                # Use new labels if present, fall back to old
+                                has_setup = new_setup if new_setup not in ('', '<no value>') else old_setup
+                                img_uid = new_uid if new_uid not in ('', '<no value>') else old_uid
+                                img_gid = new_gid if new_gid not in ('', '<no value>') else old_gid
                                 # Only skip if user setup exists AND UID/GID match current user
                                 if (has_setup == 'true' and
                                     img_uid == str(user_id) and
@@ -2266,7 +2272,7 @@ def main():
         
             print(f"\n{NEUTRAL}Setting up container ... {RESET}")
                          
-            container_label = "aime.mlc"
+            container_label = "ds01"
             workspace = "/workspace"
             data = "/data"
             models = "/models"
@@ -2293,8 +2299,11 @@ def main():
                     dir_to_be_added
                 )
 
-                # ToDo: compare subprocess.Popen with subprocess.run
-                result_run_cmd = subprocess.run(docker_prepare_container, capture_output=True, text=True )
+                # DS01 PATCH: Bypass docker-wrapper for internal setup container
+                # This temp container runs user setup (adduser, etc.) and is removed immediately.
+                # Without bypass, the wrapper detects --gpus and tries to allocate a second GPU.
+                setup_env = {**os.environ, 'DS01_WRAPPER_BYPASS': '1'}
+                result_run_cmd = subprocess.run(docker_prepare_container, capture_output=True, text=True, env=setup_env)
 
                 # DS01: Print user setup result for debugging
                 if 'User setup: FAILED' in result_run_cmd.stdout:
@@ -2401,8 +2410,7 @@ def main():
                 ds01_labels=getattr(args, 'ds01_labels', []),       # DS01 PATCH
                 skip_user_setup=skip_user_setup                     # DS01 PATCH: Use original image if pre-configured
             )
-            
-            # ToDo: compare subprocess.Popen with subprocess.run
+
             result_create_cmd = subprocess.run(docker_create_cmd, capture_output= True, text=True)
 
             # DS01 PATCH: Check if container creation succeeded
@@ -2581,7 +2589,7 @@ def main():
                 'ps', 
                 '-a', 
                 '--filter', f'name={selected_container_tag}', 
-                '--filter', 'label=aime.mlc', 
+                '--filter', 'label=ds01.user', 
                 '--format', '{{.Image}}'
             ]
             process = subprocess.Popen(

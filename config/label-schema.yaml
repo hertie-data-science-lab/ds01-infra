@@ -1,0 +1,240 @@
+# DS01 Label Schema (Authoritative)
+#
+# Defines the complete ds01.* label namespace for container metadata.
+# All DS01 components MUST use this namespace exclusively.
+#
+# Migration: Phase 7 (2026-02-16) consolidated aime.mlc.* labels into ds01.*
+# Legacy containers may still have aime.mlc.* labels — fallback functions
+# in ds01_core.py and docker-utils.sh provide backward compatibility.
+#
+# TODO: Remove aime.mlc.* fallback support when no legacy containers remain
+# Check: docker ps --filter label=aime.mlc.USER should return nothing
+
+version: "1.0"
+namespace: "ds01"
+
+labels:
+  # ========== Core Ownership & Management ==========
+  ds01.user:
+    description: "Container owner username (primary ownership label)"
+    type: "string"
+    set_by: "mlc-patched.py, docker-wrapper.sh, mlc-create-from-image.sh"
+    example: "h.baker"
+    notes: "Replaces aime.mlc and aime.mlc.USER — single authoritative ownership label"
+
+  ds01.managed:
+    description: "Container is DS01-managed (subject to resource enforcement)"
+    type: "boolean"
+    set_by: "mlc-patched.py, docker-wrapper.sh, mlc-create-from-image.sh"
+    example: "true"
+    notes: "Replaces aime.mlc.DS01_MANAGED"
+
+  ds01.interface:
+    description: "Creation interface (orchestration, atomic, docker, vscode)"
+    type: "enum"
+    set_by: "container-create, mlc-patched.py, docker-wrapper.sh"
+    example: "orchestration"
+    values: ["orchestration", "atomic", "docker", "vscode", "unknown"]
+
+  ds01.container_type:
+    description: "Container type for resource enforcement (devcontainer, compose, docker)"
+    type: "enum"
+    set_by: "docker-wrapper.sh, mlc-create-from-image.sh"
+    example: "devcontainer"
+    values: ["devcontainer", "compose", "docker", "unknown"]
+    notes: "Replaces aime.mlc.DS01_TYPE — used for MIG allocation limits"
+
+  # ========== Container Metadata ==========
+  ds01.name:
+    description: "User-friendly container display name"
+    type: "string"
+    set_by: "mlc-patched.py"
+    example: "pytorch-research"
+    notes: "Replaces aime.mlc.NAME"
+
+  ds01.arch:
+    description: "GPU architecture (ampere, ada, hopper)"
+    type: "string"
+    set_by: "mlc-patched.py"
+    example: "ampere"
+    notes: "Replaces aime.mlc.ARCH"
+
+  ds01.framework:
+    description: "ML framework and version (pytorch-2.1, tensorflow-2.14)"
+    type: "string"
+    set_by: "mlc-patched.py, mlc-create-from-image.sh"
+    example: "pytorch-2.1"
+    notes: "Replaces aime.mlc.FRAMEWORK and aime.mlc.DS01_FRAMEWORK"
+
+  ds01.mlc_version:
+    description: "AIME MLC container version"
+    type: "string"
+    set_by: "mlc-patched.py"
+    example: "v3.4.1"
+    notes: "Replaces aime.mlc.MLC_VERSION"
+
+  ds01.custom_image:
+    description: "Custom Docker image name (empty if using AIME catalog)"
+    type: "string"
+    set_by: "mlc-patched.py"
+    example: "myregistry/custom-pytorch:latest"
+    notes: "Replaces aime.mlc.CUSTOM_IMAGE"
+
+  ds01.created_at:
+    description: "Container creation timestamp (ISO 8601)"
+    type: "string"
+    set_by: "docker-wrapper.sh, mlc-create-from-image.sh"
+    example: "2026-02-16T15:30:00Z"
+    notes: "Replaces aime.mlc.DS01_CREATED"
+
+  # ========== Mount Paths ==========
+  ds01.work_mount:
+    description: "Host path mounted to /workspace"
+    type: "string"
+    set_by: "mlc-patched.py"
+    example: "/data/users/h.baker/workspace"
+    notes: "Replaces aime.mlc.WORK_MOUNT"
+
+  ds01.data_mount:
+    description: "Host path mounted to /data"
+    type: "string"
+    set_by: "mlc-patched.py"
+    example: "/data/shared"
+    notes: "Replaces aime.mlc.DATA_MOUNT"
+
+  ds01.models_mount:
+    description: "Host path mounted to /models"
+    type: "string"
+    set_by: "mlc-patched.py"
+    example: "/data/models"
+    notes: "Replaces aime.mlc.MODELS_MOUNT"
+
+  ds01.workspace:
+    description: "Workspace directory path (project root)"
+    type: "string"
+    set_by: "mlc-create-from-image.sh"
+    example: "/home/user/projects/research"
+    notes: "Replaces aime.mlc.DS01_WORKSPACE"
+
+  ds01.project:
+    description: "Project name or identifier"
+    type: "string"
+    set_by: "mlc-create-from-image.sh"
+    example: "climate-model"
+    notes: "Replaces aime.mlc.DS01_PROJECT"
+
+  # ========== GPU Allocation ==========
+  ds01.gpus:
+    description: "Number of GPUs requested (from mlc)"
+    type: "string"
+    set_by: "mlc-patched.py"
+    example: "1"
+    notes: "Replaces aime.mlc.GPUS — informational only, actual allocation in ds01.gpu.*"
+
+  ds01.gpu.uuid:
+    description: "Single allocated GPU UUID"
+    type: "string"
+    set_by: "gpu_allocator_v2.py"
+    example: "GPU-12345678-1234-1234-1234-123456789abc"
+
+  ds01.gpu.uuids:
+    description: "Multiple allocated GPU UUIDs (comma-separated)"
+    type: "string"
+    set_by: "gpu_allocator_v2.py"
+    example: "GPU-abc,GPU-def"
+
+  ds01.gpu.slots:
+    description: "Allocated GPU slots (MIG instances)"
+    type: "string"
+    set_by: "gpu_allocator_v2.py"
+    example: "0:0,0:1"
+    notes: "Format: physical_gpu:mig_instance"
+
+  ds01.gpu.allocated:
+    description: "GPU allocation timestamp (ISO 8601)"
+    type: "string"
+    set_by: "gpu_allocator_v2.py"
+    example: "2026-02-16T15:30:00Z"
+
+  ds01.gpu_ephemeral:
+    description: "GPU allocated via external allocation (devcontainer, compose)"
+    type: "boolean"
+    set_by: "docker-wrapper.sh"
+    example: "true"
+
+  ds01.gpu_slot:
+    description: "Legacy single GPU slot identifier"
+    type: "string"
+    set_by: "gpu_allocator_v2.py (legacy)"
+    example: "0:0"
+    notes: "Deprecated — use ds01.gpu.slots instead"
+
+  # ========== Resource Management ==========
+  ds01.slice:
+    description: "Systemd cgroup slice path"
+    type: "string"
+    set_by: "docker-wrapper.sh"
+    example: "ds01-student-h.baker.slice"
+    notes: "Used for aggregate resource enforcement (CPU, memory, pids)"
+
+  ds01.protected:
+    description: "Container protected from lifecycle enforcement"
+    type: "boolean"
+    set_by: "manual (admin override)"
+    example: "true"
+    notes: "Prevents idle detection and max runtime enforcement"
+
+  # ========== User Setup ==========
+  ds01.has_user_setup:
+    description: "Image contains pre-configured user setup"
+    type: "boolean"
+    set_by: "mlc-create-from-image.sh (image build)"
+    example: "true"
+    notes: "Replaces aime.mlc.DS01_HAS_USER_SETUP"
+
+  ds01.user_id:
+    description: "UNIX UID for container user"
+    type: "string"
+    set_by: "mlc-create-from-image.sh (image build)"
+    example: "1001"
+    notes: "Replaces aime.mlc.DS01_USER_ID"
+
+  ds01.group_id:
+    description: "UNIX GID for container user"
+    type: "string"
+    set_by: "mlc-create-from-image.sh (image build)"
+    example: "1001"
+    notes: "Replaces aime.mlc.DS01_GROUP_ID"
+
+  ds01.username:
+    description: "Sanitised UNIX username (no special chars)"
+    type: "string"
+    set_by: "mlc-create-from-image.sh"
+    example: "h-baker-at-hertie-school-lan"
+    notes: "Replaces aime.mlc.DS01_USERNAME — LDAP-safe version for home dirs"
+
+  ds01.container_name:
+    description: "Container name (duplicate of Docker .Name field)"
+    type: "string"
+    set_by: "mlc-create-from-image.sh"
+    example: "pytorch-research-01"
+    notes: "Replaces aime.mlc.DS01_CONTAINER"
+
+  ds01.image:
+    description: "Docker image name (duplicate of Docker .Image field)"
+    type: "string"
+    set_by: "mlc-create-from-image.sh"
+    example: "aimehub/pytorch:2.1-cuda12.1"
+    notes: "Replaces aime.mlc.DS01_IMAGE"
+
+# ========== Migration Notes ==========
+# Phase 7 Migration (2026-02-16):
+# - mlc-patched.py: container_label changed from "aime.mlc" to "ds01"
+# - docker-wrapper.sh: Already uses ds01.* labels (no changes needed)
+# - Fallback functions in ds01_core.py and docker-utils.sh provide backward compatibility
+# - Legacy containers (aime.mlc.*) continue to work until recreated
+#
+# Future cleanup (when no legacy containers remain):
+# - Remove aime.mlc.* fallback logic from ds01_core.py::get_container_owner_from_labels()
+# - Remove aime.mlc.* fallback logic from docker-utils.sh::ds01_get_container_owner()
+# - Remove this migration notes section

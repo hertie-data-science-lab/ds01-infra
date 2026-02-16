@@ -15,13 +15,13 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation & Observability** - Event logging, monitoring stability, audit trail
 - [x] **Phase 2: Awareness Layer** - Detect all GPU workloads (containers, host processes, unmanaged)
 - [x] **Phase 2.1: GPU Access Control Research** - Research HPC/data centre GPU access patterns, redesign bare metal restriction based on industry practice (INSERTED)
-- [ ] **Phase 3: Access Control** - Bare metal restriction, user isolation, bypass prevention
-- [ ] **Phase 3.1: Hardening & Deployment Fixes** - Permissions manifest, GPU allocator bugs, complete Phase 3 deployment (INSERTED)
-- [ ] **Phase 3.2: Architecture Audit & Code Quality** - Validate Phases 1–3.1 against HPC/industry standards, refactor, dead code removal (INSERTED)
+- [x] **Phase 3: Access Control** - Bare metal restriction, user isolation, bypass prevention
+- [x] **Phase 3.1: Hardening & Deployment Fixes** - Permissions manifest, GPU allocator bugs, complete Phase 3 deployment (INSERTED)
+- [x] **Phase 3.2: Architecture Audit & Code Quality** - Validate Phases 1–3.1 against HPC/industry standards, refactor, dead code removal (INSERTED)
 - [x] **Phase 4: Comprehensive Resource Enforcement** - Per-user aggregate CPU, memory, GPU, pids enforcement via cgroup v2
 - [x] **Phase 5: Lifecycle Bug Fixes** - Container retirement, cleanup race conditions, GPU allocation leaks
 - [x] **Phase 6: Lifecycle Enhancements** - Tuning, overrides, reliability improvements
-- [ ] **Phase 7: Label Standards & Migration** - Consistent ds01.* namespace, backward compatibility
+- [x] **Phase 7: Label Standards & Migration** - Consistent ds01.* namespace, backward compatibility
 - [ ] **Phase 8: User Notifications** - Timeout warnings, quota alerts, terminal delivery
 - [ ] **Phase 9: Command Bug Fixes** - container-stats, image-create, image-update, user-setup
 - [ ] **Phase 10: Integration & Validation** - End-to-end testing, full coverage verification, documentation
@@ -215,10 +215,12 @@ Plans:
   2. Existing containers with aime.mlc.* labels continue working without modification
   3. Label migration path documented for manual container relabelling if needed
   4. Monitoring and cleanup scripts handle both ds01.* and aime.mlc.* label schemes
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 07-01: TBD during planning
+- [x] 07-01-PLAN.md — Schema document, mlc-patched.py root fix (ds01.* label generation), shared library fallbacks
+- [x] 07-02-PLAN.md — Migrate docker/, user/, lib/ consumer scripts to ds01.* labels
+- [x] 07-03-PLAN.md — Migrate monitoring/, maintenance/, admin/ scripts to ds01.* labels
 
 ### Phase 8: User Notifications
 **Goal**: Users receive timely alerts when containers approach limits or quotas. Notifications visible in terminal or container.
@@ -229,10 +231,12 @@ Plans:
   2. User notified 30 minutes before container reaches max runtime
   3. User notified when GPU quota usage exceeds 80% of allocation
   4. Notifications delivered via terminal message (wall/write) or container-visible mechanism (e.g., /dev/shm)
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 08-01: TBD during planning
+- [ ] 08-01-PLAN.md — Shared notification library (ds01_notify.sh)
+- [ ] 08-02-PLAN.md — Lifecycle escalation refactor (idle + runtime two-level warnings)
+- [ ] 08-03-PLAN.md — Quota alerts terminal delivery + login greeting integration
 
 ### Phase 9: Command Bug Fixes
 **Goal**: Known command bugs resolved. User-facing tools work correctly.
@@ -274,13 +278,13 @@ Phases execute in numeric order: 1 → 2 → **2.1** → 3 → **3.1** → **3.2
 | 1. Foundation & Observability | 6/6 | ✓ Complete | 2026-01-30 |
 | 2. Awareness Layer | 3/3 | ✓ Complete | 2026-01-30 |
 | 2.1. GPU Access Control Research | 2/2 | ✓ Complete | 2026-01-31 |
-| 3. Access Control | 2/3 | Code complete (03-03 → 3.1) | - |
-| 3.1. Access Control Completion & Hardening | 3/3 | ✓ Complete | 2026-02-01 |
+| 3. Access Control | 2/2 | ✓ Complete (03-03 superseded → 3.1) | 2026-02-01 |
+| 3.1. Access Control Completion & Hardening | 3/3 | ✓ Complete (03.1-04 superseded) | 2026-02-01 |
 | 3.2. Architecture Audit & Code Quality | 4/4 | ✓ Complete | 2026-02-05 |
 | 4. Comprehensive Resource Enforcement | 5/5 | ✓ Complete | 2026-02-06 |
 | 5. Lifecycle Bug Fixes | 4/4 | ✓ Complete | 2026-02-11 |
 | 6. Lifecycle Enhancements | 2/2 | ✓ Complete | 2026-02-14 |
-| 7. Label Standards & Migration | 0/TBD | **Next** | - |
+| 7. Label Standards & Migration | 3/3 | ✓ Complete | 2026-02-16 |
 | 8. User Notifications | 0/TBD | Not started | - |
 | 9. Command Bug Fixes | 0/TBD | Not started | - |
 | 10. Integration & Validation | 0/TBD | Not started | - |

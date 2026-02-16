@@ -1442,10 +1442,10 @@ DOCKERFILEEOF
     # Store user info in labels for mlc-patched.py to verify and skip commit
     cat >> "$dockerfile" << DOCKERFILEEOF
 # DS01 Labels for container creation optimization
-LABEL aime.mlc.DS01_HAS_USER_SETUP="true"
-LABEL aime.mlc.DS01_USER_ID="$USER_ID"
-LABEL aime.mlc.DS01_GROUP_ID="$GROUP_ID"
-LABEL aime.mlc.DS01_USERNAME="$SANITIZED_USERNAME"
+LABEL ds01.has_user_setup="true"
+LABEL ds01.user_id="$USER_ID"
+LABEL ds01.group_id="$GROUP_ID"
+LABEL ds01.username="$SANITIZED_USERNAME"
 
 DOCKERFILEEOF
 

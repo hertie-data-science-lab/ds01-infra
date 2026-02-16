@@ -6,10 +6,12 @@ Core DS01 utilities for centralized, deduplicated infrastructure logic.
 This module provides:
 - Duration parsing (parse_duration, format_duration)
 - Container utilities (get_user_containers, get_container_owner, get_container_gpu)
+- Label utilities (get_container_owner_from_labels, get_container_managed_from_labels)
 - ANSI color constants (Colors class)
 
 Usage:
     from ds01_core import parse_duration, format_duration, Colors
+    from ds01_core import get_container_owner_from_labels
 
     # Parse duration strings to seconds
     seconds = parse_duration("2h")  # -> 7200
@@ -17,6 +19,9 @@ Usage:
 
     # Format seconds to human-readable
     text = format_duration(7200)  # -> "2h"
+
+    # Get owner from container labels (with backward compatibility)
+    owner = get_container_owner_from_labels(container_labels)
 
     # Colors for terminal output
     print(f"{Colors.GREEN}Success{Colors.NC}")
@@ -298,6 +303,56 @@ def run_docker_command(args: List[str], timeout: int = 30) -> subprocess.Complet
         timeout=timeout,
         check=True
     )
+
+
+def get_container_owner_from_labels(labels: Dict[str, str]) -> Optional[str]:
+    """
+    Get container owner from Docker labels with backward-compatible fallback.
+
+    Checks ds01.user first (new namespace), falls back to aime.mlc.USER
+    (legacy AIME namespace) for containers created before Phase 7 migration.
+
+    Args:
+        labels: Docker container labels dict
+
+    Returns:
+        Username string or None if no ownership label found
+
+    Examples:
+        >>> get_container_owner_from_labels({"ds01.user": "alice"})
+        'alice'
+        >>> get_container_owner_from_labels({"aime.mlc.USER": "bob"})
+        'bob'
+
+    # TODO: Remove aime.mlc.USER fallback when no legacy containers remain
+    # Check: docker ps --filter label=aime.mlc.USER returns nothing
+    """
+    owner = labels.get("ds01.user")
+    if owner:
+        return owner
+    # Legacy fallback for pre-Phase-7 containers
+    return labels.get("aime.mlc.USER")
+
+
+def get_container_managed_from_labels(labels: Dict[str, str]) -> bool:
+    """
+    Check if container is DS01-managed from labels.
+
+    Args:
+        labels: Docker container labels dict
+
+    Returns:
+        True if container is DS01-managed, False otherwise
+
+    Examples:
+        >>> get_container_managed_from_labels({"ds01.managed": "true"})
+        True
+        >>> get_container_managed_from_labels({"aime.mlc.DS01_MANAGED": "true"})
+        True
+
+    # TODO: Remove aime.mlc.DS01_MANAGED fallback when no legacy containers remain
+    """
+    return labels.get("ds01.managed") == "true" or labels.get("aime.mlc.DS01_MANAGED") == "true"
 
 
 if __name__ == '__main__':

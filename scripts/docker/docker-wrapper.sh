@@ -757,7 +757,8 @@ verify_container_ownership() {
     local owner
     owner=$("$REAL_DOCKER" inspect "$container" --format '{{index .Config.Labels "ds01.user"}}' 2>/dev/null || echo "")
 
-    # Fallback: check aime.mlc.USER label for pre-Phase-3 containers
+    # TODO: Remove aime.mlc.USER fallback when no legacy containers remain (Phase 7 migration)
+    # Fallback: check aime.mlc.USER label for pre-migration containers
     if [[ -z "$owner" || "$owner" == "<no value>" ]]; then
         owner=$("$REAL_DOCKER" inspect "$container" --format '{{index .Config.Labels "aime.mlc.USER"}}' 2>/dev/null || echo "")
     fi

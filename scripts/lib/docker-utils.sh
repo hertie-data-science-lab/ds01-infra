@@ -122,9 +122,11 @@ ds01_get_container_gpu_slots() {
 }
 
 ds01_get_container_owner() {
-    # Get container owner from labels
+    # Get container owner from labels with backward-compatible fallback
     # Args: container_tag
     # Returns: username or empty
+    # TODO: Remove aime.mlc.USER fallback when no legacy containers remain
+    # Check: docker ps --filter label=aime.mlc.USER returns nothing
     local container="$1"
     local owner
     owner=$(ds01_get_container_label "$container" "ds01.user")

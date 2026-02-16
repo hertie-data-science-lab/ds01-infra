@@ -91,6 +91,7 @@ class DS01ResourceQuery:
             labels = container_info.get('Config', {}).get('Labels', {}) or {}
 
             # Filter by user if specified
+            # TODO: Remove aime.mlc.USER fallback when no legacy containers remain (Phase 7 migration)
             container_user = labels.get('ds01.user') or labels.get('aime.mlc.USER', '')
             if user and container_user != user:
                 continue
@@ -184,6 +185,7 @@ class DS01ResourceQuery:
             'created': container_info.get('Created', ''),
             'status': state.get('Status', ''),
             'running': state.get('Running', False),
+            # TODO: Remove aime.mlc.USER fallback when no legacy containers remain (Phase 7 migration)
             'user': labels.get('ds01.user') or labels.get('aime.mlc.USER', ''),
             'ds01_managed': labels.get('ds01.managed') == 'true',
             'created_at': labels.get('ds01.created_at', ''),

@@ -59,7 +59,8 @@ get_container_owner() {
         return
     fi
 
-    # Try aime.mlc.USER label
+    # Legacy fallback - remove when no legacy containers remain
+    # TODO: Remove aime.mlc.USER fallback when docker ps --filter label=aime.mlc.USER returns nothing
     owner=$(docker inspect "$container" --format '{{index .Config.Labels "aime.mlc.USER"}}' 2>/dev/null)
     if [ -n "$owner" ] && [ "$owner" != "<no value>" ]; then
         echo "$owner"

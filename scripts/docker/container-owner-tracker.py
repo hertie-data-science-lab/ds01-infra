@@ -229,7 +229,8 @@ class ContainerOwnerTracker:
             uid = self._resolve_username_to_uid(username)
             return username, uid, "ds01_label"
 
-        # Strategy 2: aime.mlc.USER label
+        # TODO: Remove aime.mlc.USER fallback when no legacy containers remain (Phase 7 migration)
+        # Strategy 2: aime.mlc.USER label (legacy)
         if labels.get("aime.mlc.USER"):
             username = labels["aime.mlc.USER"]
             uid = self._resolve_username_to_uid(username)
@@ -352,6 +353,7 @@ class ContainerOwnerTracker:
         # DS01 managed containers
         if labels.get("ds01.managed") == "true":
             return "atomic"
+        # TODO: Remove aime.mlc.DS01_MANAGED fallback when no legacy containers remain (Phase 7 migration)
         if labels.get("aime.mlc.DS01_MANAGED") == "true":
             return "atomic"
 
@@ -386,6 +388,7 @@ class ContainerOwnerTracker:
         interface = self._detect_interface(container_data)
 
         labels = container_data.get("Config", {}).get("Labels", {}) or {}
+        # TODO: Remove aime.mlc.DS01_MANAGED fallback when no legacy containers remain (Phase 7 migration)
         ds01_managed = (
             labels.get("ds01.managed") == "true"
             or labels.get("aime.mlc.DS01_MANAGED") == "true"

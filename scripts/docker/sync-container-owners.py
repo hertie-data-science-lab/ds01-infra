@@ -66,7 +66,7 @@ def get_container_owner(labels: Dict[str, str]) -> Optional[str]:
 
     Checks multiple label sources in priority order:
     1. ds01.user - Explicit DS01 owner label
-    2. aime.mlc.USER - AIME MLC user label
+    2. aime.mlc.USER - AIME MLC user label (legacy, Phase 7 migration)
     3. devcontainer.local_folder - Extract from path for dev containers
 
     Returns None if owner cannot be determined.
@@ -75,7 +75,8 @@ def get_container_owner(labels: Dict[str, str]) -> Optional[str]:
     if "ds01.user" in labels:
         return labels["ds01.user"]
 
-    # Priority 2: AIME MLC label
+    # TODO: Remove aime.mlc.USER fallback when no legacy containers remain (Phase 7 migration)
+    # Priority 2: AIME MLC label (legacy)
     if "aime.mlc.USER" in labels:
         return labels["aime.mlc.USER"]
 
@@ -237,6 +238,7 @@ def build_ownership_data() -> Dict[str, Any]:
             )
             owner = existing_entry.get("owner")
 
+        # TODO: Remove aime.mlc.DS01_MANAGED fallback when no legacy containers remain (Phase 7 migration)
         ds01_managed = labels.get("ds01.managed") == "true" or \
                        labels.get("aime.mlc.DS01_MANAGED") == "true"
 

@@ -1141,7 +1141,7 @@ if [ -n "$IMAGE_OR_FRAMEWORK" ]; then
                     IMAGE_NAME="$check_name:latest"
                 fi
                 # Try to detect framework from image labels
-                FRAMEWORK=$(docker inspect --format '{{index .Config.Labels "aime.mlc.DS01_FRAMEWORK"}}' "$check_name" 2>/dev/null || echo "Pytorch")
+                FRAMEWORK=$(docker inspect --format '{{index .Config.Labels "ds01.framework"}}' "$check_name" 2>/dev/null || echo "Pytorch")
                 if [ -z "$FRAMEWORK" ]; then
                     FRAMEWORK="Pytorch"
                 fi
@@ -1169,7 +1169,7 @@ if [ -z "$IMAGE_NAME" ] && [ -n "$CONTAINER_NAME" ]; then
         IMAGE_NAME="${AUTO_IMAGE}:latest"
         echo -e "${GREEN}✓${NC} Found matching image: ${CYAN}$IMAGE_NAME${NC}"
         # Try to detect framework from image (for proper mlc handling)
-        DETECTED_FRAMEWORK=$(docker inspect --format '{{index .Config.Labels "aime.mlc.DS01_FRAMEWORK"}}' "$AUTO_IMAGE" 2>/dev/null || echo "")
+        DETECTED_FRAMEWORK=$(docker inspect --format '{{index .Config.Labels "ds01.framework"}}' "$AUTO_IMAGE" 2>/dev/null || echo "")
         if [ -n "$DETECTED_FRAMEWORK" ]; then
             case "${DETECTED_FRAMEWORK,,}" in
                 pytorch|torch) FRAMEWORK="Pytorch" ;;

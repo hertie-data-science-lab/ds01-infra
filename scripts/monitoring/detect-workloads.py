@@ -159,8 +159,8 @@ def get_container_user(container) -> str:
     Determine the user who owns this container.
 
     Priority order:
-    1. ds01.user label
-    2. aime.mlc.USER label
+    1. ds01.user label (primary)
+    2. aime.mlc.USER label (legacy fallback)
     3. devcontainer.local_folder label (extract username from path)
     4. Process owner from /proc (if container is running)
     5. "unknown"
@@ -177,7 +177,8 @@ def get_container_user(container) -> str:
     if "ds01.user" in labels:
         return labels["ds01.user"]
 
-    # Priority 2: AIME MLC label
+    # Priority 2: Legacy fallback
+    # TODO: Remove aime.mlc.USER fallback when docker ps --filter label=aime.mlc.USER returns nothing
     if "aime.mlc.USER" in labels:
         return labels["aime.mlc.USER"]
 

@@ -110,15 +110,16 @@ docker run -dit \
     --restart unless-stopped \
     \
     # ===== IDENTIFICATION LABELS ===== \
-    --label "aime.mlc.DS01_USER=$USERNAME" \
-    --label "aime.mlc.DS01_USER_ID=$USER_ID" \
-    --label "aime.mlc.DS01_GROUP_ID=$GROUP_ID" \
-    --label "aime.mlc.DS01_CONTAINER=$CONTAINER_NAME" \
-    --label "aime.mlc.DS01_IMAGE=$IMAGE_NAME" \
-    --label "aime.mlc.DS01_CREATED=$(date -Iseconds)" \
-    --label "aime.mlc.DS01_TYPE=custom" \
-    --label "aime.mlc.DS01_PROJECT=$PROJECT_NAME" \
-    --label "aime.mlc.DS01_WORKSPACE=$WORKSPACE_DIR" \
+    --label "ds01.managed=true" \
+    --label "ds01.user=$USERNAME" \
+    --label "ds01.user_id=$USER_ID" \
+    --label "ds01.group_id=$GROUP_ID" \
+    --label "ds01.container_name=$CONTAINER_NAME" \
+    --label "ds01.image=$IMAGE_NAME" \
+    --label "ds01.created_at=$(date -Iseconds)" \
+    --label "ds01.container_type=custom" \
+    --label "ds01.project=$PROJECT_NAME" \
+    --label "ds01.workspace=$WORKSPACE_DIR" \
     \
     # ===== SECURITY & ISOLATION ===== \
     --security-opt=no-new-privileges:true \
