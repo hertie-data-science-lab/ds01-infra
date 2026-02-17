@@ -19,19 +19,20 @@ INFRA_ROOT=/opt/ds01-infra
 # Check for wasted GPU allocations (every 30 minutes)
 */30 * * * * root python3 $INFRA_ROOT/scripts/monitoring/gpu-utilization-monitor.py --check-waste >> /var/log/ds01/gpu-waste-check.log 2>&1
 
-# Generate resource alerts for users approaching limits (every 15 minutes)
-*/15 * * * * root $INFRA_ROOT/scripts/monitoring/resource-alert-checker.sh >> /var/log/ds01/alert-checker.log 2>&1
 
 # Process GPU queue and notify waiting users (every 5 minutes)
 */5 * * * * root python3 $INFRA_ROOT/scripts/docker/gpu-queue-manager.py process >> /var/log/ds01/gpu-queue.log 2>&1
 
 # ============================================================================
 # Container Lifecycle Management
-# Flow: GPU cleanup (:05) -> idle check (:20) -> runtime enforce (:35) -> container cleanup (:50)
+# Flow: GPU cleanup (:05) -> quota alerts (:10) -> idle check (:20) -> runtime enforce (:35) -> container cleanup (:50)
 # ============================================================================
 
 # Clean up stale GPU allocations + health check (:05 past each hour)
 5 * * * * root $INFRA_ROOT/scripts/maintenance/cleanup-stale-gpu-allocations.sh >> /var/log/ds01/gpu-cleanup.log 2>&1
+
+# Check resource quotas and deliver alerts (:10 past each hour)
+10 * * * * root $INFRA_ROOT/scripts/monitoring/resource-alert-checker.sh >> /var/log/ds01/alert-checker.log 2>&1
 
 # Check for idle containers (:20 past each hour)
 20 * * * * root $INFRA_ROOT/scripts/monitoring/check-idle-containers.sh >> /var/log/ds01/idle-cleanup.log 2>&1

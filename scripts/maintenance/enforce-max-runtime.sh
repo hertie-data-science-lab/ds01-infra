@@ -19,6 +19,9 @@ LOG_FILE="/var/log/ds01/runtime-enforcement.log"
 # Source shared library for colors and utilities
 source "$INFRA_ROOT/scripts/lib/init.sh"
 
+# Source notification library
+source "$INFRA_ROOT/scripts/lib/ds01_notify.sh"
+
 # Source event logging library
 EVENTS_LIB="$INFRA_ROOT/scripts/lib/ds01_events.sh"
 if [ -f "$EVENTS_LIB" ]; then
@@ -35,20 +38,6 @@ log() {
 
 log_color() {
     echo -e "${2}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
-}
-
-# Send message to a specific user's terminals (not wall broadcast)
-notify_user() {
-    local username="$1"
-    local message="$2"
-    local sent=false
-    while IFS= read -r tty; do
-        [ -z "$tty" ] && continue
-        echo "$message" > "/dev/$tty" 2>/dev/null && sent=true
-    done < <(who | awk -v user="$username" '$1 == user {print $2}')
-    if [ "$sent" = false ]; then
-        log "User $username has no active terminals — notification not delivered"
-    fi
 }
 
 # Get max runtime for user (in hours)
@@ -137,7 +126,8 @@ get_container_owner() {
         return
     fi
 
-    # Try aime.mlc.USER label
+    # Legacy fallback - remove when no legacy containers remain
+    # TODO: Remove aime.mlc.USER fallback when docker ps --filter label=aime.mlc.USER returns nothing
     owner=$(docker inspect "$container" --format '{{index .Config.Labels "aime.mlc.USER"}}' 2>/dev/null)
     if [ -n "$owner" ] && [ "$owner" != "<no value>" ]; then
         echo "$owner"
@@ -188,28 +178,57 @@ get_container_start_time() {
     date -d "$start_time" +%s 2>/dev/null || echo "0"
 }
 
-# Send warning to user
+# Send first runtime warning (at 75% of limit)
 send_warning() {
     local username="$1"
     local container="$2"
     local hours_until_stop="$3"
 
-    # Broadcast warning via wall (all users see it in their terminals)
-    local message="DS01 MAX RUNTIME WARNING
-
-Container: $container
+    local body="Container: $container
 Status: Will auto-stop in ~${hours_until_stop} hours
 Reason: Maximum runtime limit approaching
 
-Save your work now:
-  - Checkpoint your training/model state
-  - Ensure results are saved to /workspace
+Please save your work and consider:
+  1. Saving model checkpoints
+  2. Pushing code to git
+  3. Creating a new container if needed
 
-Your /workspace data persists after stop."
+Your /workspace data persists after stop.
 
-    notify_user "$username" "$message"
+To check your limits: check-limits"
+
+    local msg
+    msg=$(ds01_format_message "WARNING" "MAX RUNTIME WARNING" "$body" "$username")
+    ds01_notify "$username" "$container" "$msg"
 
     log_color "Runtime warning sent to $username for container $container" "$YELLOW"
+}
+
+# Send final runtime warning (at 90% of limit) — more urgent
+send_final_warning() {
+    local username="$1"
+    local container="$2"
+    local hours_until_stop="$3"
+
+    local body="Container: $container
+Status: Will auto-stop in ~${hours_until_stop} hours
+Reason: Maximum runtime limit imminent
+
+SAVE YOUR WORK NOW. This container is stopping soon.
+
+  1. Save model checkpoints immediately
+  2. Push code to git
+  3. Ensure all results are in /workspace
+
+Your /workspace data persists after stop.
+
+To check your limits: check-limits"
+
+    local msg
+    msg=$(ds01_format_message "WARNING" "FINAL RUNTIME WARNING — STOPPING SOON" "$body" "$username")
+    ds01_notify "$username" "$container" "$msg"
+
+    log_color "Final runtime warning sent to $username for container $container" "$YELLOW"
 }
 
 # Stop container that exceeded runtime
@@ -267,17 +286,17 @@ except Exception:
         # - GPU will be freed by cleanup-stale-gpu-allocations after gpu_hold_after_stop timeout
         # - Container will be removed by cleanup-stale-containers after container_hold_after_stop timeout
 
-        # Broadcast stop notification via wall
-        local stop_message="DS01 CONTAINER STOPPED - MAX RUNTIME EXCEEDED
-
-Container: $container_name
+        # Send stop notification
+        local body="Container: $container_name
 Stopped: $(date)
 Reason: Maximum runtime limit reached (${runtime_hours}h)
 
 Your /workspace data is safe.
 To restart: container-run $container_name"
 
-        notify_user "$username" "$stop_message"
+        local msg
+        msg=$(ds01_format_message "STOPPED" "CONTAINER STOPPED — RUNTIME LIMIT" "$body" "$username")
+        ds01_notify "$username" "$container" "$msg"
     else
         log_color "Failed to stop container: $container" "$RED"
         return 1
@@ -409,20 +428,31 @@ process_container_runtime_universal() {
     local state_file="$STATE_DIR/${container}.state"
     if [ ! -f "$state_file" ]; then
         echo "WARNED=false" > "$state_file"
+        echo "WARNED_FINAL=false" >> "$state_file"
     fi
 
     source "$state_file"
 
     log "Container $container (user: $username, type: $container_type): runtime ${runtime_hours}h / limit $runtime_str"
 
-    # Calculate warning threshold (90% of limit)
-    local warning_seconds=$((runtime_seconds * 90 / 100))
+    # Calculate warning thresholds: first at 75%, final at 90%
+    local warning_seconds=$((runtime_seconds * 75 / 100))
+    local final_warning_seconds=$((runtime_seconds * 90 / 100))
 
-    # Check if we should warn
+    # First warning at 75% of limit
     if [ "$runtime_seconds_actual" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then
         local hours_until_stop=$(( (runtime_seconds - runtime_seconds_actual) / 3600 ))
+        [ "$hours_until_stop" -lt 1 ] && hours_until_stop=1
         send_warning "$username" "$container" "$hours_until_stop"
         sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"
+    fi
+
+    # Final warning at 90% of limit
+    if [ "$runtime_seconds_actual" -ge "$final_warning_seconds" ] && [ "${WARNED_FINAL:-false}" != "true" ]; then
+        local hours_until_stop=$(( (runtime_seconds - runtime_seconds_actual) / 3600 ))
+        [ "$hours_until_stop" -lt 1 ] && hours_until_stop=1
+        send_final_warning "$username" "$container" "$hours_until_stop"
+        grep -q "^WARNED_FINAL=" "$state_file" && sed -i "s/^WARNED_FINAL=.*/WARNED_FINAL=true/" "$state_file" || echo "WARNED_FINAL=true" >> "$state_file"
     fi
 
     # Check if we should stop

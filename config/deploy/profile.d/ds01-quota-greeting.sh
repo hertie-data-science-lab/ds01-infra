@@ -75,10 +75,31 @@ else:
     echo -e " Quota: ${_gpu_unit} ${_B}${_gpus}${_NC}, Memory ${_B}${_mem_display}${_NC}, CPUs ${_B}${_cpus}${_NC}, Containers ${_B}${_containers}${_NC}"
 fi
 
-echo ""
+# Pending alerts from resource monitoring
+_alerts_file="/var/lib/ds01/alerts/${_username}.json"
+if [ -f "$_alerts_file" ]; then
+    _alert_summary=$(python3 -c "
+import json, sys
+try:
+    alerts = json.load(open('$_alerts_file'))
+    if not alerts:
+        sys.exit(0)
+    for a in alerts:
+        severity = 'ALERT' if 'reached' in a.get('type', '') else 'WARNING'
+        print(f'  [{severity}] {a[\"message\"]}')
+except:
+    pass
+" 2>/dev/null)
+    if [ -n "$_alert_summary" ]; then
+        echo -e " ${_B}\033[0;31mPending alerts:\033[0m"
+        echo "$_alert_summary"
+        echo ""
+    fi
+fi
+
 echo -e " ${_D}Useful commands: user-setup · project-launch · container deploy${_NC}"
 echo -e " ${_D}                container retire · check-limits · aliases${_NC}"
 echo ""
 
 # Cleanup
-unset _B _D _GREEN _NC _username _group _SCRIPTS _agg _gpus _containers _mem _cpus _mem_display _gpu_listing _mig_count _phys_count _gpu_unit _sys_total
+unset _B _D _GREEN _NC _username _group _SCRIPTS _agg _gpus _containers _mem _cpus _mem_display _gpu_listing _mig_count _phys_count _gpu_unit _sys_total _alerts_file _alert_summary

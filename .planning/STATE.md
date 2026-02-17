@@ -5,24 +5,24 @@
 See: .planning/PROJECT.md (updated 2026-01-30)
 
 **Core value:** Full control over GPU resources — every GPU process tracked, attributed to a user, and controllable
-**Current focus:** Phase 7 (Label Standards & Migration) — next phase after Phase 6 completion
+**Current focus:** Phase 8 complete — User Notifications. Phase 9 next.
 
 ## Current Position
 
-Phase: 6 (lifecycle-enhancements) — COMPLETE
-Plan: 2/2 complete
-Status: Phase 6 complete. Lifecycle enforcement tuned: per-group multi-signal idle detection with AND logic, detection window, exemption checking, variable SIGTERM grace. LIFE-06/07/08 verified.
-Last activity: 2026-02-14 — Completed Phase 6 execution (2 plans, 2 waves)
+Phase: 08 (user-notifications) — COMPLETE
+Plan: 3/3 complete
+Status: Phase 8 complete. Shared notification library (ds01_notify.sh) created, lifecycle scripts refactored with two-level escalation (idle 80%+95%, runtime 75%+90%), resource-alert-checker extended with memory alerts + terminal delivery + 4h cooldown, cron updated to :10 hourly, login greeting shows pending alerts.
+Last activity: 2026-02-17 — Completed 08-03-PLAN.md (quota alert terminal delivery)
 
-Progress: [████████████████████] 100% (34/~34 plans complete)
-Resume: .planning/phases/06-lifecycle-enhancements/06-VERIFICATION.md
+Progress: [████████████████████] 97% (39/~41 plans complete)
+Resume: .planning/phases/08-user-notifications/08-03-SUMMARY.md
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 34
-- Average duration: 3.4 min
-- Total execution time: 129 min
+- Total plans completed: 39
+- Average duration: 3.6 min
+- Total execution time: 143 min
 
 **By Phase:**
 
@@ -37,12 +37,14 @@ Resume: .planning/phases/06-lifecycle-enhancements/06-VERIFICATION.md
 | 04-comprehensive-resource-enforcement | 5 | 15min | 3.0min |
 | 05-lifecycle-bug-fixes | 4 | 11.5min | 2.9min |
 | 06-lifecycle-enhancements | 2 | 5min | 2.5min |
+| 07-label-standards-migration | 2 | 8min | 4.0min |
+| 08-user-notifications | 3 | 10min | 3.3min |
 
 **Recent Trend:**
-- Last 5 plans: 06-02 (3min), 06-01 (2min), 05-04 (2min), 05-03 (4min), 05-02 (2min)
-- Trend: Maintaining excellent efficiency (2.5min avg for Phase 6)
-
-*Updated after each plan completion*
+- Last 5 plans: 08-03 (6min), 08-02 (8min), 08-01 (2min), 07-03 (3min), 07-02 (3min)
+- Trend: Phase 8 slightly longer due to multi-file refactors (3.3min avg)
+| Phase 08-user-notifications P02 | 480 | 2 tasks | 2 files |
+| Phase 08-user-notifications P03 | 360 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -155,6 +157,20 @@ Recent decisions affecting current work:
 - Detection window with consecutive-check tracking — N idle checks required before action, reduces transient dip false positives (LIFE-06, 06-02)
 - Exemption-aware lifecycle enforcement — exempt users receive FYI-only warnings, no enforcement, with audit logging (06-02)
 - Variable SIGTERM grace by container type — GPU=60s, devcontainer=30s, compose=45s, ensures checkpoint time per workload pattern (LIFE-07, 06-02)
+- [Phase 07]: Lowercase label names (ds01.user not ds01.USER) for Docker ecosystem consistency
+- [Phase 07]: Single ds01.user label replaces both aime.mlc and aime.mlc.USER (eliminates duplication)
+- [Phase 07]: Authoritative label schema as YAML document (machine-readable, version-controlled)
+- [Phase 07]: Bash filter scripts need no fallback — Docker daemon's --filter handles OR logic implicitly
+- [Phase 07]: Python ownership scripts retain fallback — explicit ds01.user → aime.mlc.USER chain for attribution
+- [Phase 07]: Framework label migrated (aime.mlc.DS01_FRAMEWORK → ds01.framework) in generation and consumption
+- [Phase 07]: Monitoring scripts filter on ds01.* labels (ds01.user, ds01.managed, ds01.image)
+- [Phase 07]: Admin dashboards use ds01.managed=true filter for DS01 container enumeration
+- [Phase 07]: Ownership fallback chain with TODO markers (ds01.user → aime.mlc.USER → devcontainer path → process owner)
+- [Phase 08-01]: docker exec -e flag for env var passing avoids shell quoting issues in container alert writes
+- [Phase 08-01]: Quota summary caches in shell var per run to avoid repeated Python startup overhead per notification
+- [Phase 08-user-notifications]: deliver_alert_to_terminal skips container fallback — quota alerts are user-level, no specific container context
+- [Phase 08-02]: Idle two-level escalation: first warning at 80%, final at 95% of idle timeout; WARNED_FINAL state added to container state files
+- [Phase 08-02]: Runtime two-level escalation: first warning at 75%, final at 90% of runtime limit; hours_until_stop floored at 1h for clean messaging
 
 ### Roadmap Evolution
 
@@ -209,6 +225,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-02-14 15:35 UTC
-Stopped at: Phase 6 complete — 2 plans executed (2 waves), verified 7/7 must-haves
-Resume file: .planning/phases/06-lifecycle-enhancements/06-VERIFICATION.md
+Last session: 2026-02-17 11:09 UTC
+Stopped at: Completed Phase 8 — all 3 plans (user notifications complete)
+Resume file: .planning/phases/08-user-notifications/08-03-SUMMARY.md

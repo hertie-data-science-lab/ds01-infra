@@ -24,6 +24,9 @@ LOG_FILE="/var/log/ds01/idle-cleanup.log"
 # Source shared library for colors and utilities
 source "$INFRA_ROOT/scripts/lib/init.sh"
 
+# Source notification library
+source "$INFRA_ROOT/scripts/lib/ds01_notify.sh"
+
 # Source event logging library
 EVENTS_LIB="$INFRA_ROOT/scripts/lib/ds01_events.sh"
 if [ -f "$EVENTS_LIB" ]; then
@@ -181,7 +184,8 @@ get_container_owner() {
         return
     fi
 
-    # Try aime.mlc.USER label
+    # Legacy fallback - remove when no legacy containers remain
+    # TODO: Remove aime.mlc.USER fallback when docker ps --filter label=aime.mlc.USER returns nothing
     owner=$(docker inspect "$container" --format '{{index .Config.Labels "aime.mlc.USER"}}' 2>/dev/null)
     if [ -n "$owner" ] && [ "$owner" != "<no value>" ]; then
         echo "$owner"
@@ -318,6 +322,7 @@ get_last_activity() {
         echo "LAST_ACTIVITY=$start_epoch" > "$state_file"
         echo "LAST_CPU=0.0" >> "$state_file"
         echo "WARNED=false" >> "$state_file"
+        echo "WARNED_FINAL=false" >> "$state_file"
         echo "IDLE_STREAK=0" >> "$state_file"
         echo "$start_epoch"
     fi
@@ -339,21 +344,8 @@ update_activity() {
         # Reset activity timestamp and idle streak
         sed -i "s/^LAST_ACTIVITY=.*/LAST_ACTIVITY=$(date +%s)/" "$state_file"
         sed -i "s/^WARNED=.*/WARNED=false/" "$state_file"
+        grep -q "^WARNED_FINAL=" "$state_file" && sed -i "s/^WARNED_FINAL=.*/WARNED_FINAL=false/" "$state_file" || echo "WARNED_FINAL=false" >> "$state_file"
         sed -i "s/^IDLE_STREAK=.*/IDLE_STREAK=0/" "$state_file"
-    fi
-}
-
-# Send message to a specific user's terminals (not wall broadcast)
-notify_user() {
-    local username="$1"
-    local message="$2"
-    local sent=false
-    while IFS= read -r tty; do
-        [ -z "$tty" ] && continue
-        echo "$message" > "/dev/$tty" 2>/dev/null && sent=true
-    done < <(who | awk -v user="$username" '$1 == user {print $2}')
-    if [ "$sent" = false ]; then
-        log "User $username has no active terminals — notification not delivered"
     fi
 }
 
@@ -363,21 +355,19 @@ send_informational_warning() {
     local container="$2"
     local reason="$3"
 
-    local message="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-IDLE CONTAINER NOTICE (FYI only — you are exempt)
-
-Container: $container
+    local body="Container: $container
 Status: IDLE (no activity detected)
 Exemption: $reason
 
 No action will be taken — your exemption is active.
-This is an informational notice only.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+This is an informational notice only."
 
-    notify_user "$username" "$message"
+    local msg
+    msg=$(ds01_format_message "NOTICE" "IDLE CONTAINER NOTICE (FYI only — you are exempt)" "$body" "$username")
+    ds01_notify "$username" "$container" "$msg"
 }
 
-# Send warning to user
+# Send first idle warning (at 80% of timeout)
 send_warning() {
     local username="$1"
     local container="$2"
@@ -391,10 +381,7 @@ HIGH DEMAND MODE ACTIVE
    Container will stop sooner than normal."
     fi
 
-    local message="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-IDLE CONTAINER WARNING
-
-Container: $container
+    local body="Container: $container
 Status: IDLE (no activity detected)
 Action: Will auto-stop in ~${minutes_until_stop} minutes
 ${high_demand_notice}
@@ -412,12 +399,40 @@ To disable this warning (if actively training):
 To stop and retire now (frees GPU immediately):
   container-retire $(echo $container | cut -d'.' -f1)
 
-Questions? Run 'check-limits' or contact admin.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+Questions? Run 'check-limits' or contact admin."
 
-    notify_user "$username" "$message"
+    local msg
+    msg=$(ds01_format_message "WARNING" "IDLE CONTAINER WARNING" "$body" "$username")
+    ds01_notify "$username" "$container" "$msg"
 
     log_color "Warning sent to $username about container $container" "$YELLOW"
+}
+
+# Send final idle warning (at 95% of timeout) — more urgent
+send_final_warning() {
+    local username="$1"
+    local container="$2"
+    local minutes_until_stop="$3"
+
+    local body="Container: $container
+Status: IDLE — STOPPING VERY SOON
+Action: Will auto-stop in ~${minutes_until_stop} minutes
+
+SAVE YOUR WORK NOW. This container is about to be stopped.
+Your /workspace data is safe and will persist.
+
+To keep your container running (act immediately):
+  1. Run any command in the container
+  2. Or restart your training/script
+
+To stop and retire now (frees GPU immediately):
+  container-retire $(echo $container | cut -d'.' -f1)"
+
+    local msg
+    msg=$(ds01_format_message "WARNING" "FINAL IDLE WARNING — STOPPING SOON" "$body" "$username")
+    ds01_notify "$username" "$container" "$msg"
+
+    log_color "Final idle warning sent to $username about container $container" "$YELLOW"
 }
 
 # Get SIGTERM grace period for container type
@@ -469,11 +484,8 @@ stop_idle_container() {
         idle_display="${idle_minutes}m"
     fi
 
-    # Send notification via wall
-    local message="━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CONTAINER AUTO-STOPPED
-
-Container: $container
+    # Send stop notification
+    local body="Container: $container
 Stopped: $(date)
 Reason: Idle timeout reached
 
@@ -484,11 +496,11 @@ To restart your container:
 
 To prevent auto-stop in future:
   1. Keep training/scripts running, OR
-  2. Create file: touch /workspace/.keep-alive
+  2. Create file: touch /workspace/.keep-alive"
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-    notify_user "$username" "$message"
+    local msg
+    msg=$(ds01_format_message "STOPPED" "CONTAINER AUTO-STOPPED" "$body" "$username")
+    ds01_notify "$username" "$container" "$msg"
 
     # Stop container with variable SIGTERM grace by container type
     local container_type=$(get_container_type "$container")
@@ -742,6 +754,7 @@ process_container_universal() {
             echo "LAST_ACTIVITY=$start_epoch" > "$state_file"
             echo "LAST_CPU=0.0" >> "$state_file"
             echo "WARNED=false" >> "$state_file"
+            echo "WARNED_FINAL=false" >> "$state_file"
             echo "IDLE_STREAK=0" >> "$state_file"
         fi
 
@@ -765,8 +778,9 @@ process_container_universal() {
         local idle_seconds=$((now - last_activity))
         local idle_minutes=$((idle_seconds / 60))
 
-        # Calculate warning threshold (80% of timeout)
+        # Calculate warning thresholds: first at 80%, final at 95%
         local warning_seconds=$((timeout_seconds * 80 / 100))
+        local final_warning_seconds=$((timeout_seconds * 95 / 100))
 
         log "Container $container (user: $username, type: $container_type): idle for ${idle_minutes}m (timeout: $timeout_str, streak: $current_streak)"
 
@@ -780,11 +794,18 @@ process_container_universal() {
             return 0
         fi
 
-        # Check if we should warn
+        # First warning at 80% of timeout
         if [ "$idle_seconds" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then
             local minutes_until_stop=$(( (timeout_seconds - idle_seconds) / 60 ))
             send_warning "$username" "$container" "$minutes_until_stop"
             sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"
+        fi
+
+        # Final warning at 95% of timeout
+        if [ "$idle_seconds" -ge "$final_warning_seconds" ] && [ "${WARNED_FINAL:-false}" != "true" ]; then
+            local minutes_until_stop=$(( (timeout_seconds - idle_seconds) / 60 ))
+            send_final_warning "$username" "$container" "$minutes_until_stop"
+            grep -q "^WARNED_FINAL=" "$state_file" && sed -i "s/^WARNED_FINAL=.*/WARNED_FINAL=true/" "$state_file" || echo "WARNED_FINAL=true" >> "$state_file"
         fi
 
         # Check if we should stop
