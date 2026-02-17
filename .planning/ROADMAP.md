@@ -234,9 +234,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 08-01-PLAN.md — Shared notification library (ds01_notify.sh)
-- [ ] 08-02-PLAN.md — Lifecycle escalation refactor (idle + runtime two-level warnings)
-- [ ] 08-03-PLAN.md — Quota alerts terminal delivery + login greeting integration
+- [x] 08-01-PLAN.md — Shared notification library (ds01_notify.sh)
+- [x] 08-02-PLAN.md — Lifecycle escalation refactor (idle + runtime two-level warnings)
+- [x] 08-03-PLAN.md — Quota alerts terminal delivery + login greeting integration
 
 ### Phase 9: Command Bug Fixes
 **Goal**: Known command bugs resolved. User-facing tools work correctly.
@@ -247,10 +247,12 @@ Plans:
   2. image-create line 1244 "creation: command not found" error resolved
   3. image-update offers rebuild option after Dockerfile modification
   4. user-setup reads user's existing images correctly from Docker daemon
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 09-01: TBD during planning
+- [ ] 09-01-PLAN.md — Fix container-stats unknown flag crash + image-create code quality bugs
+- [ ] 09-02-PLAN.md — Fix image-update double rebuild prompt, add diff display + revert on failure
+- [ ] 09-03-PLAN.md — Enhance user-setup image awareness (list names, skip option)
 
 ### Phase 10: Integration & Validation
 **Goal**: All Milestone 1 capabilities verified end-to-end. Documentation updated. System ready for production use.
@@ -285,6 +287,6 @@ Phases execute in numeric order: 1 → 2 → **2.1** → 3 → **3.1** → **3.2
 | 5. Lifecycle Bug Fixes | 4/4 | ✓ Complete | 2026-02-11 |
 | 6. Lifecycle Enhancements | 2/2 | ✓ Complete | 2026-02-14 |
 | 7. Label Standards & Migration | 3/3 | ✓ Complete | 2026-02-16 |
-| 8. User Notifications | 0/TBD | Not started | - |
-| 9. Command Bug Fixes | 0/TBD | Not started | - |
+| 8. User Notifications | 3/3 | ✓ Complete | 2026-02-17 |
+| 9. Command Bug Fixes | 0/3 | Planned | - |
 | 10. Integration & Validation | 0/TBD | Not started | - |
