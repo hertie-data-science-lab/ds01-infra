@@ -1,3 +1,11 @@
+# [1.4.0](https://github.com/hertie-data-science-lab/ds01-infra/compare/v1.3.0...v1.4.0) (2026-02-17)
+
+
+### Features
+
+* migrate container labels to ds01.* namespace with backward compatibility ([252429a](https://github.com/hertie-data-science-lab/ds01-infra/commit/252429a5f513beaf7c0b42a80a6504c52dd951fe))
+* user notifications — lifecycle escalation, quota alerts, terminal delivery ([9f528db](https://github.com/hertie-data-science-lab/ds01-infra/commit/9f528dbc6fbde5dfa07449923de5a2afd7af0ad7))
+
 # [1.3.0](https://github.com/hertie-data-science-lab/ds01-infra/compare/v1.2.0...v1.3.0) (2026-02-14)
 
 
