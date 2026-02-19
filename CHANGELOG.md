@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/hertie-data-science-lab/ds01-infra/compare/v1.4.0...v1.4.1) (2026-02-19)
+
+
+### Bug Fixes
+
+* numeric username handling in image build and container creation ([3e6c1ef](https://github.com/hertie-data-science-lab/ds01-infra/commit/3e6c1efd2193266eaee555dc2ee205d3ee1636c6))
+
 # [1.4.0](https://github.com/hertie-data-science-lab/ds01-infra/compare/v1.3.0...v1.4.0) (2026-02-17)
 
 
