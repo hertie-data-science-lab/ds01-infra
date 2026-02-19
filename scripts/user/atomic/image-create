@@ -1361,7 +1361,7 @@ DOCKERFILEEOF
     fi
 
     # Jupyter configuration (only if Jupyter was installed)
-    if [ "$skip_base" != true ] && [ "$jupyter_choice" = "default" ] || [ "$jupyter_choice" = "custom" ]; then
+    if [ "$skip_base" != true ] && { [ "$jupyter_choice" = "default" ] || [ "$jupyter_choice" = "custom" ]; }; then
         cat >> "$dockerfile" << DOCKERFILEEOF
 # Configure Jupyter Lab
 RUN jupyter lab --generate-config && \\
@@ -1373,8 +1373,8 @@ RUN jupyter lab --generate-config && \\
 
 # IPython kernel
 RUN python -m ipykernel install --user \\
-    --name=$project_name \\
-    --display-name="$project_name ($framework)"
+    --name="${project_name}" \\
+    --display-name="${project_name} (${framework})"
 
 DOCKERFILEEOF
     fi
@@ -1398,8 +1398,10 @@ RUN set -e && \
             groupdel "$EXISTING_GROUP" 2>/dev/null || true; \
         fi && \
         # Step 2: Create group with specific GID
-        if ! getent group $DS01_USERNAME >/dev/null 2>&1; then \
-            addgroup --gid $DS01_GROUP_ID $DS01_USERNAME; \
+        # Uses groupadd (POSIX) instead of addgroup (Debian) to avoid NAME_REGEX
+        # rejection of numeric-only usernames (e.g., LDAP ID "245721")
+        if ! getent group $DS01_GROUP_ID >/dev/null 2>&1; then \
+            groupadd -g $DS01_GROUP_ID $DS01_USERNAME 2>/dev/null || true; \
         fi && \
         # Step 3: Remove conflicting user if exists with different name
         EXISTING_USER=$(getent passwd $DS01_USER_ID 2>/dev/null | cut -d: -f1 || true) && \
@@ -1408,8 +1410,10 @@ RUN set -e && \
             userdel -r "$EXISTING_USER" 2>/dev/null || true; \
         fi && \
         # Step 4: Create user with specific UID and GID
-        if ! getent passwd $DS01_USERNAME >/dev/null 2>&1; then \
-            adduser --disabled-password --gecos "" --uid $DS01_USER_ID --gid $DS01_GROUP_ID $DS01_USERNAME; \
+        # Uses useradd (POSIX) instead of adduser (Debian) to avoid NAME_REGEX
+        # rejection of numeric-only usernames (e.g., LDAP ID "245721")
+        if ! getent passwd $DS01_USER_ID >/dev/null 2>&1; then \
+            useradd -m -d /home/$DS01_USERNAME -u $DS01_USER_ID -g $DS01_GROUP_ID -s /bin/bash $DS01_USERNAME; \
         fi && \
         # Step 4b: CRITICAL - Truncate lastlog/faillog to prevent huge sparse files
         # High UIDs (e.g., 1722830498) cause these files to grow to 300GB+
