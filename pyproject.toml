@@ -1,50 +1,6 @@
 # DS01 Infrastructure - Project Configuration
-# This file configures commitizen for semantic versioning.
 # This is NOT a Python package - just configuration for development tools.
-
-[tool.commitizen]
-name = "cz_conventional_commits"
-version = "1.1.0"
-version_files = ["VERSION"]
-tag_format = "v$version"
-update_changelog_on_bump = true
-changelog_file = "CHANGELOG.md"
-major_version_zero = false
-
-# Bump rules
-bump_pattern = "^(feat|fix|refactor|perf|revert)"
-bump_map = { feat = "MINOR", fix = "PATCH", refactor = "PATCH", perf = "PATCH", revert = "PATCH" }
-
-# Breaking changes trigger MAJOR bump (handled automatically by commitizen)
-# Use feat!: or BREAKING CHANGE: in footer
-
-# Changelog grouping
-change_type_order = [
-    "feat",
-    "fix",
-    "refactor",
-    "perf",
-    "docs",
-    "style",
-    "test",
-    "build",
-    "ci",
-    "chore",
-    "revert",
-]
-
-[tool.commitizen.change_type_map]
-feat = "Features"
-fix = "Bug Fixes"
-refactor = "Refactoring"
-perf = "Performance"
-docs = "Documentation"
-style = "Style"
-test = "Testing"
-build = "Build"
-ci = "CI/CD"
-chore = "Chores"
-revert = "Reverts"
+# Versioning handled by semantic-release (see .releaserc.json + .github/workflows/release.yml)
 
 [tool.ruff]
 line-length = 100
