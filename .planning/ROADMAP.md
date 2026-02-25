@@ -268,6 +268,31 @@ Plans:
 Plans:
 - [ ] 10-01: TBD during planning
 
+### Phase 12: Prometheus & Grafana Observability Stack
+**Goal**: Audit, fix, and mature the existing Prometheus/Grafana monitoring stack to production-grade. Add cAdvisor for container metrics, migrate to Teams-only alerting, create admin and user dashboards, extend retention to 90 days, and validate all alert/recording rules.
+**Depends on**: Phases 1-8 (monitoring infrastructure + lifecycle events)
+**Requirements**: MON-01, MON-02, MON-03, DASH-01, DASH-02, HIST-01, HIST-02, HIST-03, ALERT-01, ALERT-02, ALERT-03
+**Success Criteria** (what must be TRUE):
+  1. DCGM exporter runs reliably with systemd restart management
+  2. DS01 exporter exposes lifecycle event counters and SSH session metrics
+  3. Prometheus scrapes all targets (DCGM, DS01, node-exporter, cAdvisor, Grafana, Alertmanager)
+  4. Admin dashboard shows real-time GPU/container/user/system status with working panels
+  5. User dashboard shows per-user GPU allocations, GPU-hours, utilisation, and quota
+  6. Historical dashboard shows GPU-hours cost attribution, capacity trends, usage patterns
+  7. 90-day metric retention configured with 15GB safety cap
+  8. Teams-only alert delivery working via msteamsv2_configs (email removed)
+  9. All alert rules reference correct metric names (no silent failures)
+  10. Alert thresholds tuned for single-server GPU environment (no alert fatigue)
+**Plans**: 6 plans
+
+Plans:
+- [ ] 12-01-PLAN.md — Stack infrastructure: cAdvisor, 90d retention, Teams-only alerting, Grafana auth, logind
+- [ ] 12-02-PLAN.md — DS01 exporter enhancements: lifecycle event counters, SSH session metrics
+- [ ] 12-03-PLAN.md — Alert rule audit: fix broken metric references, tune thresholds, validate
+- [ ] 12-04-PLAN.md — Admin overview dashboard + historical trends dashboard
+- [ ] 12-05-PLAN.md — User self-service dashboard with variable filtering
+- [ ] 12-06-PLAN.md — Teams webhook configuration + end-to-end alert delivery validation
+
 ## Progress
 
 **Execution Order:**
@@ -288,3 +313,4 @@ Phases execute in numeric order: 1 → 2 → **2.1** → 3 → **3.1** → **3.2
 | 8. User Notifications | 0/TBD | Not started | - |
 | 9. Command Bug Fixes | 0/TBD | Not started | - |
 | 10. Integration & Validation | 0/TBD | Not started | - |
+| 12. Prometheus & Grafana Observability Stack | 0/6 | Planned | - |
