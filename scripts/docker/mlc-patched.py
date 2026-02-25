@@ -1505,7 +1505,7 @@ def build_docker_run_command(
         # Step 2: Create group with specific GID
         f"echo 'DS01 DEBUG Step 2: Creating group {container_username} with gid={group_id}'; "
         f"if ! getent group {group_id} > /dev/null 2>&1; then "
-        f"addgroup --gid {group_id} {container_username} 2>&1 && echo 'DS01 DEBUG Step 2: addgroup succeeded' || "
+        f"addgroup --force-badname --gid {group_id} {container_username} 2>&1 && echo 'DS01 DEBUG Step 2: addgroup succeeded' || "
         f"{{ groupadd -g {group_id} {container_username} 2>&1 && echo 'DS01 DEBUG Step 2: groupadd succeeded' || "
         f"echo 'DS01 DEBUG Step 2: Group creation FAILED'; }}; "
         f"else echo 'DS01 DEBUG Step 2: Group {group_id} already exists (skipping creation)'; fi;",
@@ -1522,7 +1522,7 @@ def build_docker_run_command(
         # Step 4: Create user with specific UID and GID
         f"echo 'DS01 DEBUG Step 4: Creating user {container_username} (uid={user_id}, gid={group_id})'; "
         f"if ! getent passwd {user_id} > /dev/null 2>&1; then "
-        f"adduser --uid {user_id} --gid {group_id} {container_username} --disabled-password --gecos aime 2>&1 && echo 'DS01 DEBUG Step 4: adduser succeeded' || "
+        f"adduser --force-badname --uid {user_id} --gid {group_id} {container_username} --disabled-password --gecos aime 2>&1 && echo 'DS01 DEBUG Step 4: adduser succeeded' || "
         f"{{ useradd -u {user_id} -g {group_id} -d /home/{container_username} -m -s /bin/bash {container_username} 2>&1 && echo 'DS01 DEBUG Step 4: useradd succeeded' || "
         f"echo 'DS01 DEBUG Step 4: User creation FAILED'; }}; "
         f"else echo 'DS01 DEBUG Step 4: User {user_id} already exists (skipping creation)'; fi;",
