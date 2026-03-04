@@ -7,19 +7,15 @@ Tests the metric collection functions and HTTP endpoints of the exporter.
 Uses mocks for external dependencies (nvidia-smi, Docker, gpu-state-reader).
 """
 
-import io
 import json
 import os
-import sys
 import subprocess
-import tempfile
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, Any
-from unittest.mock import MagicMock, patch, Mock
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # =============================================================================
 # Paths and Module Loading
@@ -32,6 +28,7 @@ EXPORTER_FILE = EXPORTER_PATH / "ds01_exporter.py"
 def load_exporter_module():
     """Load exporter module fresh for testing."""
     import importlib.util
+
     spec = importlib.util.spec_from_file_location("ds01_exporter", EXPORTER_FILE)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -41,6 +38,7 @@ def load_exporter_module():
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def mock_gpu_data() -> List[Dict[str, Any]]:
@@ -53,7 +51,7 @@ def mock_gpu_data() -> List[Dict[str, Any]]:
             "mem_util_percent": 60,
             "mem_used_mb": 24576,
             "mem_total_mb": 40960,
-            "temperature_c": 65
+            "temperature_c": 65,
         },
         {
             "index": 1,
@@ -62,8 +60,8 @@ def mock_gpu_data() -> List[Dict[str, Any]]:
             "mem_util_percent": 30,
             "mem_used_mb": 12288,
             "mem_total_mb": 40960,
-            "temperature_c": 55
-        }
+            "temperature_c": 55,
+        },
     ]
 
 
@@ -76,15 +74,15 @@ def mock_allocation_data() -> Dict[str, Any]:
             "containers": ["project-a._.1001"],
             "users": {"student1": 1},
             "uuid": "MIG-abc123",
-            "interfaces": {"orchestration": 1}
+            "interfaces": {"orchestration": 1},
         },
         "0.1": {
             "type": "mig_instance",
             "containers": ["project-b._.1002"],
             "users": {"student2": 1},
             "uuid": "MIG-def456",
-            "interfaces": {"atomic": 1}
-        }
+            "interfaces": {"atomic": 1},
+        },
     }
 
 
@@ -94,15 +92,13 @@ def mock_containers_by_interface() -> Dict[str, List[Dict]]:
     return {
         "orchestration": [
             {"name": "project-a._.1001", "user": "student1", "running": True, "gpu": "0.0"},
-            {"name": "project-c._.1003", "user": "student3", "running": False, "gpu": None}
+            {"name": "project-c._.1003", "user": "student3", "running": False, "gpu": None},
         ],
-        "atomic": [
-            {"name": "project-b._.1002", "user": "student2", "running": True, "gpu": "0.1"}
-        ],
+        "atomic": [{"name": "project-b._.1002", "user": "student2", "running": True, "gpu": "0.1"}],
         "docker": [],
         "other": [
             {"name": "vscode-project-x", "user": "researcher1", "running": True, "gpu": None}
-        ]
+        ],
     }
 
 
@@ -121,11 +117,31 @@ def temp_events_file(temp_log_dir) -> Path:
     now = datetime.now(timezone.utc)
 
     events = [
-        {"timestamp": (now - timedelta(hours=1)).isoformat(), "event_type": "container.start", "user": "student1"},
-        {"timestamp": (now - timedelta(hours=2)).isoformat(), "event_type": "container.start", "user": "student2"},
-        {"timestamp": (now - timedelta(hours=3)).isoformat(), "event_type": "gpu.allocated", "user": "student1"},
-        {"timestamp": (now - timedelta(hours=25)).isoformat(), "event_type": "container.start", "user": "old_user"},
-        {"timestamp": (now - timedelta(minutes=30)).isoformat(), "event_type": "container.stop", "user": "student1"},
+        {
+            "timestamp": (now - timedelta(hours=1)).isoformat(),
+            "event_type": "container.start",
+            "user": "student1",
+        },
+        {
+            "timestamp": (now - timedelta(hours=2)).isoformat(),
+            "event_type": "container.start",
+            "user": "student2",
+        },
+        {
+            "timestamp": (now - timedelta(hours=3)).isoformat(),
+            "event_type": "gpu.allocated",
+            "user": "student1",
+        },
+        {
+            "timestamp": (now - timedelta(hours=25)).isoformat(),
+            "event_type": "container.start",
+            "user": "old_user",
+        },
+        {
+            "timestamp": (now - timedelta(minutes=30)).isoformat(),
+            "event_type": "container.stop",
+            "user": "student1",
+        },
     ]
 
     with open(events_file, "w") as f:
@@ -139,6 +155,7 @@ def temp_events_file(temp_log_dir) -> Path:
 # Test: collect_gpu_metrics()
 # =============================================================================
 
+
 class TestCollectGpuMetrics:
     """Tests for collect_gpu_metrics() function."""
 
@@ -148,7 +165,7 @@ class TestCollectGpuMetrics:
         mock_module = MagicMock()
         mock_module.get_gpu_utilization.return_value = mock_gpu_data
 
-        with patch.dict('sys.modules', {'gpu_util_monitor': mock_module}):
+        with patch.dict("sys.modules", {"gpu_util_monitor": mock_module}):
             exporter = load_exporter_module()
 
             # Patch the global module cache
@@ -163,14 +180,14 @@ class TestCollectGpuMetrics:
         mock_module = MagicMock()
         mock_module.get_gpu_utilization.return_value = mock_gpu_data
 
-        with patch.dict('sys.modules', {'gpu_util_monitor': mock_module}):
+        with patch.dict("sys.modules", {"gpu_util_monitor": mock_module}):
             exporter = load_exporter_module()
             exporter._gpu_util_module = mock_module
 
             lines = exporter.collect_gpu_metrics()
 
-        help_lines = [l for l in lines if l.startswith("# HELP")]
-        type_lines = [l for l in lines if l.startswith("# TYPE")]
+        help_lines = [line for line in lines if line.startswith("# HELP")]
+        type_lines = [line for line in lines if line.startswith("# TYPE")]
 
         assert len(help_lines) > 0, "Should have HELP comments"
         assert len(type_lines) > 0, "Should have TYPE comments"
@@ -180,14 +197,14 @@ class TestCollectGpuMetrics:
         mock_module = MagicMock()
         mock_module.get_gpu_utilization.return_value = []
 
-        with patch.dict('sys.modules', {'gpu_util_monitor': mock_module}):
+        with patch.dict("sys.modules", {"gpu_util_monitor": mock_module}):
             exporter = load_exporter_module()
             exporter._gpu_util_module = mock_module
 
             lines = exporter.collect_gpu_metrics()
 
         # Should have no data metrics (only comments or empty)
-        data_lines = [l for l in lines if l and not l.startswith("#")]
+        data_lines = [line for line in lines if line and not line.startswith("#")]
         assert len(data_lines) == 0
 
     def test_handles_exception_gracefully(self):
@@ -195,7 +212,7 @@ class TestCollectGpuMetrics:
         mock_module = MagicMock()
         mock_module.get_gpu_utilization.side_effect = Exception("nvidia-smi failed")
 
-        with patch.dict('sys.modules', {'gpu_util_monitor': mock_module}):
+        with patch.dict("sys.modules", {"gpu_util_monitor": mock_module}):
             exporter = load_exporter_module()
             exporter._gpu_util_module = mock_module
 
@@ -203,13 +220,14 @@ class TestCollectGpuMetrics:
             lines = exporter.collect_gpu_metrics()
 
         # Should contain error comment
-        error_lines = [l for l in lines if "Error" in l or "error" in l]
+        error_lines = [line for line in lines if "Error" in line or "error" in line]
         assert len(error_lines) > 0, "Should include error comment"
 
 
 # =============================================================================
 # Test: collect_allocation_metrics()
 # =============================================================================
+
 
 class TestCollectAllocationMetrics:
     """Tests for collect_allocation_metrics() function."""
@@ -223,7 +241,7 @@ class TestCollectAllocationMetrics:
         mock_state_module = MagicMock()
         mock_state_module.get_reader.return_value = mock_reader
 
-        with patch.dict('sys.modules', {'gpu_state_reader': mock_state_module}):
+        with patch.dict("sys.modules", {"gpu_state_reader": mock_state_module}):
             exporter = load_exporter_module()
             exporter._gpu_state_module = mock_state_module
 
@@ -240,7 +258,7 @@ class TestCollectAllocationMetrics:
         mock_state_module = MagicMock()
         mock_state_module.get_reader.return_value = mock_reader
 
-        with patch.dict('sys.modules', {'gpu_state_reader': mock_state_module}):
+        with patch.dict("sys.modules", {"gpu_state_reader": mock_state_module}):
             exporter = load_exporter_module()
             exporter._gpu_state_module = mock_state_module
 
@@ -253,6 +271,7 @@ class TestCollectAllocationMetrics:
 # =============================================================================
 # Test: collect_user_metrics()
 # =============================================================================
+
 
 class TestCollectUserMetrics:
     """Tests for collect_user_metrics() function."""
@@ -267,7 +286,7 @@ class TestCollectUserMetrics:
         mock_state_module = MagicMock()
         mock_state_module.get_reader.return_value = mock_reader
 
-        with patch.dict('sys.modules', {'gpu_state_reader': mock_state_module}):
+        with patch.dict("sys.modules", {"gpu_state_reader": mock_state_module}):
             exporter = load_exporter_module()
             exporter._gpu_state_module = mock_state_module
 
@@ -279,6 +298,7 @@ class TestCollectUserMetrics:
 # =============================================================================
 # Test: collect_container_stats()
 # =============================================================================
+
 
 class TestCollectContainerStats:
     """Tests for collect_container_stats() function."""
@@ -341,6 +361,7 @@ ds01-exporter|1.0%|100MiB / 1GiB|10.0%"""
 # Test: collect_event_counts()
 # =============================================================================
 
+
 class TestCollectEventCounts:
     """Tests for collect_event_counts() function."""
 
@@ -385,7 +406,7 @@ class TestCollectEventCounts:
 
         with open(events_file, "w") as f:
             f.write('{"timestamp": "' + now.isoformat() + '", "event_type": "valid.event"}\n')
-            f.write('this is not valid json\n')
+            f.write("this is not valid json\n")
             f.write('{"incomplete": "json"\n')
             f.write('{"timestamp": "' + now.isoformat() + '", "event_type": "another.valid"}\n')
 
@@ -401,6 +422,7 @@ class TestCollectEventCounts:
 # =============================================================================
 # Test: collect_system_metrics()
 # =============================================================================
+
 
 class TestCollectSystemMetrics:
     """Tests for collect_system_metrics() function."""
@@ -433,6 +455,7 @@ class TestCollectSystemMetrics:
 # Test: collect_all_metrics()
 # =============================================================================
 
+
 class TestCollectAllMetrics:
     """Tests for collect_all_metrics() function."""
 
@@ -445,7 +468,10 @@ class TestCollectAllMetrics:
         mock_reader = MagicMock()
         mock_reader.get_all_allocations.return_value = {}
         mock_reader.get_all_containers_by_interface.return_value = {
-            "orchestration": [], "atomic": [], "docker": [], "other": []
+            "orchestration": [],
+            "atomic": [],
+            "docker": [],
+            "other": [],
         }
         mock_reader.get_user_mig_total.return_value = 0
         mock_reader.get_user_allocations.return_value = []
@@ -477,7 +503,10 @@ class TestCollectAllMetrics:
         mock_reader = MagicMock()
         mock_reader.get_all_allocations.return_value = {}
         mock_reader.get_all_containers_by_interface.return_value = {
-            "orchestration": [], "atomic": [], "docker": [], "other": []
+            "orchestration": [],
+            "atomic": [],
+            "docker": [],
+            "other": [],
         }
 
         mock_state_module = MagicMock()
@@ -506,7 +535,10 @@ class TestCollectAllMetrics:
         mock_reader = MagicMock()
         mock_reader.get_all_allocations.return_value = {}
         mock_reader.get_all_containers_by_interface.return_value = {
-            "orchestration": [], "atomic": [], "docker": [], "other": []
+            "orchestration": [],
+            "atomic": [],
+            "docker": [],
+            "other": [],
         }
 
         mock_state_module = MagicMock()
@@ -532,23 +564,25 @@ class TestCollectAllMetrics:
 # Test: MetricsHandler Class
 # =============================================================================
 
+
 class TestMetricsHandler:
     """Tests for the HTTP MetricsHandler class."""
 
     def test_handler_class_exists(self):
         """MetricsHandler class should exist in the module."""
         exporter = load_exporter_module()
-        assert hasattr(exporter, 'MetricsHandler')
+        assert hasattr(exporter, "MetricsHandler")
 
     def test_handler_has_do_get(self):
         """MetricsHandler should have do_GET method."""
         exporter = load_exporter_module()
-        assert hasattr(exporter.MetricsHandler, 'do_GET')
+        assert hasattr(exporter.MetricsHandler, "do_GET")
 
 
 # =============================================================================
 # Test: Prometheus Format Validation
 # =============================================================================
+
 
 class TestPrometheusFormat:
     """Tests for Prometheus exposition format compliance."""
@@ -566,7 +600,7 @@ class TestPrometheusFormat:
         lines = exporter.collect_gpu_metrics()
 
         # Valid Prometheus metric name: [a-zA-Z_:][a-zA-Z0-9_:]*
-        metric_pattern = re.compile(r'^[a-zA-Z_:][a-zA-Z0-9_:]*')
+        metric_pattern = re.compile(r"^[a-zA-Z_:][a-zA-Z0-9_:]*")
 
         for line in lines:
             if line and not line.startswith("#"):
@@ -594,13 +628,14 @@ class TestPrometheusFormat:
 # Test: Module Structure
 # =============================================================================
 
+
 class TestModuleStructure:
     """Tests for module structure and required functions."""
 
     def test_module_has_main(self):
         """Module should have main() function."""
         exporter = load_exporter_module()
-        assert hasattr(exporter, 'main')
+        assert hasattr(exporter, "main")
         assert callable(exporter.main)
 
     def test_module_has_collect_functions(self):
@@ -608,13 +643,13 @@ class TestModuleStructure:
         exporter = load_exporter_module()
 
         required_functions = [
-            'collect_gpu_metrics',
-            'collect_allocation_metrics',
-            'collect_user_metrics',
-            'collect_container_stats',
-            'collect_event_counts',
-            'collect_system_metrics',
-            'collect_all_metrics',
+            "collect_gpu_metrics",
+            "collect_allocation_metrics",
+            "collect_user_metrics",
+            "collect_container_stats",
+            "collect_event_counts",
+            "collect_system_metrics",
+            "collect_all_metrics",
         ]
 
         for func_name in required_functions:
@@ -625,20 +660,21 @@ class TestModuleStructure:
         """Module should have configuration constants."""
         exporter = load_exporter_module()
 
-        assert hasattr(exporter, 'EXPORTER_PORT')
-        assert hasattr(exporter, 'BIND_ADDRESS')
-        assert hasattr(exporter, 'INFRA_ROOT')
+        assert hasattr(exporter, "EXPORTER_PORT")
+        assert hasattr(exporter, "BIND_ADDRESS")
+        assert hasattr(exporter, "INFRA_ROOT")
 
     def test_port_is_9101(self):
         """Default exporter port should be 9101."""
         exporter = load_exporter_module()
         # Default value (before env override)
-        assert exporter.EXPORTER_PORT == 9101 or os.environ.get('DS01_EXPORTER_PORT') is not None
+        assert exporter.EXPORTER_PORT == 9101 or os.environ.get("DS01_EXPORTER_PORT") is not None
 
 
 # =============================================================================
 # Test: Error Resilience
 # =============================================================================
+
 
 class TestErrorResilience:
     """Tests for error handling and resilience."""
@@ -654,7 +690,7 @@ class TestErrorResilience:
         def failing_load(*args):
             raise ImportError("Module not found")
 
-        with patch.object(exporter, '_load_module', failing_load):
+        with patch.object(exporter, "_load_module", failing_load):
             # Reset cached module
             exporter._gpu_util_module = None
 
@@ -662,7 +698,7 @@ class TestErrorResilience:
             try:
                 lines = exporter.collect_gpu_metrics()
                 # If it returns, check for error handling
-                error_present = any("Error" in l or "error" in l.lower() for l in lines)
+                error_present = any("Error" in line or "error" in line.lower() for line in lines)
                 assert error_present or len(lines) == 0
             except Exception:
                 # Exception is acceptable if error handling is different

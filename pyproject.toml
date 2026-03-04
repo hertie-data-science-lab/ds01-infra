@@ -5,6 +5,7 @@
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+extend-exclude = ["aime-ml-containers", "scripts/docker/mlc-patched.py", "config/groups"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]

@@ -23,15 +23,13 @@ import fcntl
 import json
 import os
 import pwd
+import signal
 import subprocess
 import sys
-import signal
-import stat
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Generator
-
 
 # Configuration
 OUTPUT_FILE = Path("/var/lib/ds01/opa/container-owners.json")
@@ -212,9 +210,7 @@ class ContainerOwnerTracker:
         # If we can't validate, reject the ownership claim
         return False
 
-    def _detect_owner(
-        self, container_data: dict[str, Any]
-    ) -> tuple[str | None, int | None, str]:
+    def _detect_owner(self, container_data: dict[str, Any]) -> tuple[str | None, int | None, str]:
         """
         Detect container owner using multiple strategies.
 
@@ -332,14 +328,16 @@ class ContainerOwnerTracker:
         if container_id in existing_ids or container_id[:12] in existing_ids:
             return
 
-        self.owners["flagged_gpu_containers"].append({
-            "container_id": container_id,
-            "container_name": container_name,
-            "owner": username,
-            "interface": interface,
-            "detected_at": datetime.now(timezone.utc).isoformat(),
-            "reason": "GPU access without ds01 allocation",
-        })
+        self.owners["flagged_gpu_containers"].append(
+            {
+                "container_id": container_id,
+                "container_name": container_name,
+                "owner": username,
+                "interface": interface,
+                "detected_at": datetime.now(timezone.utc).isoformat(),
+                "reason": "GPU access without ds01 allocation",
+            }
+        )
 
     def _detect_interface(self, container_data: dict[str, Any]) -> str:
         """Detect which interface/tool created the container."""
@@ -390,8 +388,7 @@ class ContainerOwnerTracker:
         labels = container_data.get("Config", {}).get("Labels", {}) or {}
         # TODO: Remove aime.mlc.DS01_MANAGED fallback when no legacy containers remain (Phase 7 migration)
         ds01_managed = (
-            labels.get("ds01.managed") == "true"
-            or labels.get("aime.mlc.DS01_MANAGED") == "true"
+            labels.get("ds01.managed") == "true" or labels.get("aime.mlc.DS01_MANAGED") == "true"
         )
 
         # Check if container has GPU access
@@ -423,7 +420,9 @@ class ContainerOwnerTracker:
         owner_str = username if username else "(unknown)"
         gpu_str = " [GPU]" if has_gpu else ""
         managed_str = "" if ds01_managed else " [unmanaged]" if has_gpu else ""
-        log(f"Tracked: {name} owner={owner_str} interface={interface}{gpu_str}{managed_str} method={method}")
+        log(
+            f"Tracked: {name} owner={owner_str} interface={interface}{gpu_str}{managed_str} method={method}"
+        )
 
     def handle_destroy(self, container_id: str, container_name: str = "") -> None:
         """Handle container destroy event."""
@@ -448,7 +447,8 @@ class ContainerOwnerTracker:
         if "flagged_gpu_containers" in self.owners:
             short_id = container_id[:12]
             self.owners["flagged_gpu_containers"] = [
-                c for c in self.owners["flagged_gpu_containers"]
+                c
+                for c in self.owners["flagged_gpu_containers"]
                 if c.get("container_id") != container_id
                 and c.get("container_id", "")[:12] != short_id
                 and c.get("container_name") != container_name
@@ -483,7 +483,9 @@ class ContainerOwnerTracker:
                 log(f"Warning: Could not list containers for catch-up: {result.stderr}", error=True)
                 return
 
-            container_ids = [cid.strip() for cid in result.stdout.strip().split("\n") if cid.strip()]
+            container_ids = [
+                cid.strip() for cid in result.stdout.strip().split("\n") if cid.strip()
+            ]
             existing_keys = set(self.owners.get("containers", {}).keys())
 
             new_count = 0
@@ -496,7 +498,9 @@ class ContainerOwnerTracker:
                 self.handle_create(container_id)
                 new_count += 1
 
-            log(f"Catch-up complete: {new_count} new containers tracked, {len(container_ids)} total")
+            log(
+                f"Catch-up complete: {new_count} new containers tracked, {len(container_ids)} total"
+            )
 
         except subprocess.TimeoutExpired:
             log("Warning: Timeout during startup catch-up", error=True)

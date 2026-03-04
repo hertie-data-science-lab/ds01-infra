@@ -23,7 +23,7 @@ import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, Any, Optional, Generator
+from typing import Any, Dict, Generator, Optional
 
 # Configuration
 OUTPUT_DIR = Path("/var/lib/ds01/opa")
@@ -106,6 +106,7 @@ def get_admin_users() -> list:
     if RESOURCE_LIMITS.exists():
         try:
             import yaml
+
             with open(RESOURCE_LIMITS) as f:
                 config = yaml.safe_load(f)
 
@@ -118,11 +119,7 @@ def get_admin_users() -> list:
 
     # Source 2: Linux group ds01-admin
     try:
-        result = subprocess.run(
-            ["getent", "group", "ds01-admin"],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["getent", "group", "ds01-admin"], capture_output=True, text=True)
         if result.returncode == 0:
             # Format: ds01-admin:x:1234:user1,user2,user3
             parts = result.stdout.strip().split(":")
@@ -142,9 +139,7 @@ def get_all_containers() -> list:
     try:
         # Get all container IDs
         result = subprocess.run(
-            ["docker", "ps", "-a", "--format", "{{.ID}}"],
-            capture_output=True,
-            text=True
+            ["docker", "ps", "-a", "--format", "{{.ID}}"], capture_output=True, text=True
         )
         if result.returncode != 0:
             print(f"Error listing containers: {result.stderr}", file=sys.stderr)
@@ -158,9 +153,7 @@ def get_all_containers() -> list:
 
         # Inspect all containers at once
         result = subprocess.run(
-            ["docker", "inspect"] + container_ids,
-            capture_output=True,
-            text=True
+            ["docker", "inspect"] + container_ids, capture_output=True, text=True
         )
         if result.returncode != 0:
             print(f"Error inspecting containers: {result.stderr}", file=sys.stderr)
@@ -232,15 +225,14 @@ def build_ownership_data() -> Dict[str, Any]:
         # If no owner from labels, preserve tracker-detected owner
         if not owner:
             existing_entry = (
-                existing_containers.get(container_id)
-                or existing_containers.get(name)
-                or {}
+                existing_containers.get(container_id) or existing_containers.get(name) or {}
             )
             owner = existing_entry.get("owner")
 
         # TODO: Remove aime.mlc.DS01_MANAGED fallback when no legacy containers remain (Phase 7 migration)
-        ds01_managed = labels.get("ds01.managed") == "true" or \
-                       labels.get("aime.mlc.DS01_MANAGED") == "true"
+        ds01_managed = (
+            labels.get("ds01.managed") == "true" or labels.get("aime.mlc.DS01_MANAGED") == "true"
+        )
 
         # Preserve extra fields from tracker if available
         existing_entry = existing_containers.get(container_id, {})
@@ -267,7 +259,7 @@ def build_ownership_data() -> Dict[str, Any]:
         "containers": containers,
         "admins": get_admin_users(),
         "service_users": ["ds01-dashboard"],  # Service accounts with full access
-        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
 
 
@@ -308,7 +300,9 @@ def sync_once() -> bool:
     success = write_ownership_data(data)
 
     if success:
-        container_count = len([k for k in data["containers"] if len(k) == 12])  # Count short IDs only
+        container_count = len(
+            [k for k in data["containers"] if len(k) == 12]
+        )  # Count short IDs only
         admin_count = len(data["admins"])
         print(f"Synced {container_count} containers, {admin_count} admins")
 
@@ -331,21 +325,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="Sync container ownership data for OPA authorization"
     )
+    parser.add_argument("--once", action="store_true", help="Single sync (for cron jobs)")
     parser.add_argument(
-        "--once",
-        action="store_true",
-        help="Single sync (for cron jobs)"
-    )
-    parser.add_argument(
-        "--watch",
-        action="store_true",
-        help="Continuous sync (for systemd service)"
+        "--watch", action="store_true", help="Continuous sync (for systemd service)"
     )
     parser.add_argument(
         "--interval",
         type=int,
         default=WATCH_INTERVAL,
-        help=f"Watch interval in seconds (default: {WATCH_INTERVAL})"
+        help=f"Watch interval in seconds (default: {WATCH_INTERVAL})",
     )
 
     args = parser.parse_args()

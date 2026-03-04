@@ -25,11 +25,11 @@ Usage:
 
 from __future__ import annotations
 
-import sys
 import json
 import logging
-import subprocess
 import os
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -43,8 +43,10 @@ sys.path.insert(0, str(LIB_DIR))
 try:
     from ds01_events import log_event
 except ImportError:
+
     def log_event(*args, **kwargs) -> bool:
         return False
+
 
 # Lazy import docker (only when needed)
 docker = None
@@ -632,8 +634,7 @@ def detect_transitions(old: dict[str, Any], new: dict[str, Any]) -> None:
 
 
 def apply_transient_filter(
-    old_inventory: dict[str, Any],
-    scanned_processes: dict[str, dict[str, Any]]
+    old_inventory: dict[str, Any], scanned_processes: dict[str, dict[str, Any]]
 ) -> dict[str, dict[str, Any]]:
     """
     Apply 2-scan persistence filter for host GPU processes.
@@ -726,6 +727,7 @@ def run_scan() -> dict[str, Any]:
     # Lazy import docker
     if docker is None:
         import docker as docker_module
+
         docker = docker_module
 
     # Create docker client

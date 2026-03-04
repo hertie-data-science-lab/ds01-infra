@@ -11,15 +11,14 @@ Tests cover:
 5. User limit resolution
 """
 
-import pytest
 import json
 import os
-import sys
-import tempfile
 import subprocess
-from pathlib import Path
-from unittest.mock import patch, MagicMock, mock_open
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
 
 # Add scripts to path
 sys.path.insert(0, "/opt/ds01-infra/scripts/docker")
@@ -83,6 +82,7 @@ class TestFullGPUAccessControl:
     @pytest.mark.unit
     def test_full_gpu_slot_detection(self):
         """Full GPU slots have no decimal, MIG slots do."""
+
         # Full GPUs: "0", "1", "2", "3"
         # MIG slots: "1.0", "1.1", "2.0", etc.
         def is_full_gpu(slot):
@@ -125,9 +125,10 @@ class TestFileLocking:
     def test_fcntl_import_available(self):
         """fcntl module should be importable for file locking."""
         import fcntl
-        assert hasattr(fcntl, 'flock')
-        assert hasattr(fcntl, 'LOCK_EX')
-        assert hasattr(fcntl, 'LOCK_UN')
+
+        assert hasattr(fcntl, "flock")
+        assert hasattr(fcntl, "LOCK_EX")
+        assert hasattr(fcntl, "LOCK_UN")
 
 
 class TestEventLogging:

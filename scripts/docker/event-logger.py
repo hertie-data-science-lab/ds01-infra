@@ -20,16 +20,15 @@ Usage:
     event-logger.py types
 """
 
-import sys
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Dict, List
 
 # Import shared event logging library
 sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
-from ds01_events import log_event, EVENTS_FILE, EVENT_TYPES as BASE_EVENT_TYPES
-
+from ds01_events import EVENTS_FILE, log_event
 
 # Expanded event types for DS01 infrastructure
 EVENT_TYPES = {
@@ -38,35 +37,27 @@ EVENT_TYPES = {
     "container.start": ["user", "container"],
     "container.stop": ["user", "container", "reason"],
     "container.remove": ["user", "container"],
-
     # GPU allocation
     "gpu.allocate": ["user", "container", "gpu_uuid", "mig_profile"],
     "gpu.release": ["user", "container", "gpu_uuid", "reason"],
     "gpu.reject": ["user", "container", "reason"],
-
     # Auth events
     "auth.denied": ["user", "reason", "requested"],
-
     # Resource events
     "resource.cgroup_limit": ["user", "container", "resource", "limit"],
     "resource.oom_kill": ["user", "container"],
-
     # Maintenance
     "maintenance.cleanup": ["containers_stopped", "gpus_released", "source"],
     "maintenance.idle_kill": ["user", "container", "idle_duration"],
     "maintenance.runtime_kill": ["user", "container", "runtime"],
-
     # Monitoring
     "monitoring.dcgm_restart": ["reason"],
     "monitoring.scrape_failure": ["target", "error"],
-
     # Config changes
     "config.change": ["field", "old_value", "new_value", "changed_by"],
-
     # Unmanaged workload detection (LOG-03)
     "detection.unmanaged_container": ["container", "user", "source"],
     "detection.host_gpu_process": ["user", "pid", "command"],
-
     # Legacy event types (backward compatibility)
     "container.created": ["user", "container", "interface", "gpu"],
     "container.started": ["user", "container"],
@@ -96,7 +87,7 @@ class EventReader:
 
         events = []
         try:
-            with open(self.log_file, 'r') as f:
+            with open(self.log_file, "r") as f:
                 lines = f.readlines()
                 for line in lines[-n:]:
                     try:
@@ -117,7 +108,7 @@ class EventReader:
         regex = re.compile(pattern, re.IGNORECASE)
 
         try:
-            with open(self.log_file, 'r') as f:
+            with open(self.log_file, "r") as f:
                 for line in f:
                     if regex.search(line):
                         try:
@@ -171,8 +162,8 @@ def main():
 
         # Parse key=value arguments
         for arg in sys.argv[3:]:
-            if '=' in arg:
-                key, value = arg.split('=', 1)
+            if "=" in arg:
+                key, value = arg.split("=", 1)
                 # Handle special fields
                 if key == "user":
                     user = value if value else None
@@ -189,7 +180,10 @@ def main():
         if log_event(event_type, user=user, source=source, **details):
             print(f"Logged: {event_type}")
         else:
-            print("Warning: Event logging failed (check permissions on /var/log/ds01/events.jsonl)", file=sys.stderr)
+            print(
+                "Warning: Event logging failed (check permissions on /var/log/ds01/events.jsonl)",
+                file=sys.stderr,
+            )
 
     elif command == "tail":
         n = int(sys.argv[2]) if len(sys.argv) > 2 else 20
@@ -200,12 +194,15 @@ def main():
         else:
             for event in events:
                 # Handle both old (ts/event) and new (timestamp/event_type) schema
-                ts = event.get('timestamp', event.get('ts', '?'))
-                evt = event.get('event_type', event.get('event', '?'))
+                ts = event.get("timestamp", event.get("ts", "?"))
+                evt = event.get("event_type", event.get("event", "?"))
                 # Remove timestamp and event_type for details display
-                details = {k: v for k, v in event.items()
-                          if k not in ('timestamp', 'ts', 'event_type', 'event', 'schema_version')}
-                details_str = ' '.join(f"{k}={v}" for k, v in details.items())
+                details = {
+                    k: v
+                    for k, v in event.items()
+                    if k not in ("timestamp", "ts", "event_type", "event", "schema_version")
+                }
+                details_str = " ".join(f"{k}={v}" for k, v in details.items())
                 print(f"{ts} {evt} {details_str}")
 
     elif command == "search":
@@ -232,10 +229,10 @@ def main():
 
         print(f"Events for user '{user}':")
         for event in events[-50:]:  # Last 50
-            ts = event.get('timestamp', event.get('ts', '?'))
-            evt = event.get('event_type', event.get('event', '?'))
+            ts = event.get("timestamp", event.get("ts", "?"))
+            evt = event.get("event_type", event.get("event", "?"))
             # Extract container from event or details
-            container = event.get('container', event.get('details', {}).get('container', ''))
+            container = event.get("container", event.get("details", {}).get("container", ""))
             print(f"  {ts} {evt} {container}")
 
     elif command == "container":
@@ -248,17 +245,21 @@ def main():
 
         print(f"Events for container '{container}':")
         for event in events:
-            ts = event.get('timestamp', event.get('ts', '?'))
-            evt = event.get('event_type', event.get('event', '?'))
+            ts = event.get("timestamp", event.get("ts", "?"))
+            evt = event.get("event_type", event.get("event", "?"))
             # Remove common fields for display
-            details = {k: v for k, v in event.items()
-                      if k not in ('timestamp', 'ts', 'event_type', 'event', 'container', 'schema_version')}
+            details = {
+                k: v
+                for k, v in event.items()
+                if k
+                not in ("timestamp", "ts", "event_type", "event", "container", "schema_version")
+            }
             # Also check details dict
-            if 'details' in event:
-                for k, v in event['details'].items():
-                    if k != 'container':
+            if "details" in event:
+                for k, v in event["details"].items():
+                    if k != "container":
                         details[k] = v
-            details_str = ' '.join(f"{k}={v}" for k, v in details.items())
+            details_str = " ".join(f"{k}={v}" for k, v in details.items())
             print(f"  {ts} {evt} {details_str}")
 
     elif command == "types":

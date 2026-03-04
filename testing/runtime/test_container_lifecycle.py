@@ -14,7 +14,6 @@ Run:
   sudo pytest runtime/ -m runtime -v
 """
 
-import re
 import time
 from pathlib import Path
 
@@ -23,7 +22,6 @@ import yaml
 
 from .conftest import (
     CONFIG_FILE,
-    DOCKER_BIN,
     INFRA_ROOT,
     container_exists,
     container_running,
@@ -91,56 +89,84 @@ def lifecycle_scenario(lowered_timeouts):
 
     # 1. GPU idle container: sleep with SIGTERM trap, docker labels
     real_docker(
-        "run", "-d",
-        "--name", CONTAINERS["gpu_idle"],
-        "--gpus", '"device=1"',
-        "--label", "ds01.user=e2e-test-user",
-        "--label", "ds01.container_type=docker",
+        "run",
+        "-d",
+        "--name",
+        CONTAINERS["gpu_idle"],
+        "--gpus",
+        '"device=1"',
+        "--label",
+        "ds01.user=e2e-test-user",
+        "--label",
+        "ds01.container_type=docker",
         "ubuntu:22.04",
-        "bash", "-c",
+        "bash",
+        "-c",
         "trap 'echo SIGTERM received; exit 0' TERM; while true; do sleep 1; done",
     )
 
     # 2. Devcontainer: exempt from idle timeout
     real_docker(
-        "run", "-d",
-        "--name", CONTAINERS["devcontainer"],
-        "--gpus", '"device=1"',
-        "--label", "ds01.user=e2e-test-user",
-        "--label", "ds01.container_type=devcontainer",
-        "--label", "devcontainer.local_folder=/home/e2e-test-user/project",
+        "run",
+        "-d",
+        "--name",
+        CONTAINERS["devcontainer"],
+        "--gpus",
+        '"device=1"',
+        "--label",
+        "ds01.user=e2e-test-user",
+        "--label",
+        "ds01.container_type=devcontainer",
+        "--label",
+        "devcontainer.local_folder=/home/e2e-test-user/project",
         "ubuntu:22.04",
-        "bash", "-c", "while true; do sleep 60; done",
+        "bash",
+        "-c",
+        "while true; do sleep 60; done",
     )
 
     # 3. Keep-alive container: has .keep-alive file
     real_docker(
-        "run", "-d",
-        "--name", CONTAINERS["keepalive"],
-        "--gpus", '"device=1"',
-        "--label", "ds01.user=e2e-test-user",
-        "--label", "ds01.container_type=docker",
+        "run",
+        "-d",
+        "--name",
+        CONTAINERS["keepalive"],
+        "--gpus",
+        '"device=1"',
+        "--label",
+        "ds01.user=e2e-test-user",
+        "--label",
+        "ds01.container_type=docker",
         "ubuntu:22.04",
-        "bash", "-c", "mkdir -p /workspace && touch /workspace/.keep-alive && while true; do sleep 60; done",
+        "bash",
+        "-c",
+        "mkdir -p /workspace && touch /workspace/.keep-alive && while true; do sleep 60; done",
     )
 
     # 4. Created-never-started container
     real_docker(
         "create",
-        "--name", CONTAINERS["created"],
-        "--gpus", '"device=1"',
-        "--label", "ds01.user=e2e-test-user",
-        "--label", "ds01.container_type=docker",
+        "--name",
+        CONTAINERS["created"],
+        "--gpus",
+        '"device=1"',
+        "--label",
+        "ds01.user=e2e-test-user",
+        "--label",
+        "ds01.container_type=docker",
         "ubuntu:22.04",
-        "echo", "never started",
+        "echo",
+        "never started",
     )
 
     # 5. Unlabelled container: no DS01 labels, exits immediately
     real_docker(
         "run",
-        "--name", CONTAINERS["unlabelled"],
+        "--name",
+        CONTAINERS["unlabelled"],
         "ubuntu:22.04",
-        "echo", "done",
+        "echo",
+        "done",
     )
 
     # ── Run monitoring loop ───────────────────────────────────────────────
@@ -167,19 +193,23 @@ def lifecycle_scenario(lowered_timeouts):
         ):
             try:
                 out = run_lifecycle_script(script_name, *extra_args, timeout=120)
-                results["script_outputs"].append({
-                    "script": script_name,
-                    "iteration": results["loop_iterations"],
-                    "stdout": out.stdout,
-                    "stderr": out.stderr,
-                    "returncode": out.returncode,
-                })
+                results["script_outputs"].append(
+                    {
+                        "script": script_name,
+                        "iteration": results["loop_iterations"],
+                        "stdout": out.stdout,
+                        "stderr": out.stderr,
+                        "returncode": out.returncode,
+                    }
+                )
             except Exception as e:
-                results["script_outputs"].append({
-                    "script": script_name,
-                    "iteration": results["loop_iterations"],
-                    "error": str(e),
-                })
+                results["script_outputs"].append(
+                    {
+                        "script": script_name,
+                        "iteration": results["loop_iterations"],
+                        "error": str(e),
+                    }
+                )
 
         # Check if the gpu_idle container has been stopped/removed
         # (primary signal to end early)
@@ -190,7 +220,9 @@ def lifecycle_scenario(lowered_timeouts):
         if not container_running(CONTAINERS["gpu_idle"]):
             # Run cleanup once more to handle removal
             try:
-                run_lifecycle_script("cleanup-stale-containers.sh", "--name-filter", "ds01-e2e-", timeout=120)
+                run_lifecycle_script(
+                    "cleanup-stale-containers.sh", "--name-filter", "ds01-e2e-", timeout=120
+                )
             except Exception:
                 pass
             break
@@ -277,9 +309,7 @@ def test_wall_notifications_sent(lifecycle_scenario):
     # OR the container was stopped (which also sends wall)
     has_warning = "Warning sent to" in all_output or "CONTAINER AUTO-STOPPED" in all_output
     has_stop = "Stopped idle container" in all_output or "Removed" in all_output
-    assert has_warning or has_stop, (
-        "Expected wall notification evidence in script output"
-    )
+    assert has_warning or has_stop, "Expected wall notification evidence in script output"
 
 
 @pytest.mark.requires_root
@@ -290,9 +320,7 @@ def test_sigterm_grace_respected(lifecycle_scenario):
     # The container traps SIGTERM and exits 0. If killed (SIGKILL), exit code is 137.
     # If already removed, we check script output for evidence of graceful stop.
     if lifecycle_scenario["final_state"]["gpu_idle"]["exists"]:
-        result = real_docker(
-            "inspect", "-f", "{{.State.ExitCode}}", CONTAINERS["gpu_idle"]
-        )
+        result = real_docker("inspect", "-f", "{{.State.ExitCode}}", CONTAINERS["gpu_idle"])
         if result.returncode == 0:
             exit_code = int(result.stdout.strip())
             assert exit_code == 0, (
@@ -333,7 +361,13 @@ def test_cron_schedule_no_collisions():
     minutes = []
     for line in content.splitlines():
         line = line.strip()
-        if not line or line.startswith("#") or line.startswith("SHELL") or line.startswith("PATH") or line.startswith("INFRA"):
+        if (
+            not line
+            or line.startswith("#")
+            or line.startswith("SHELL")
+            or line.startswith("PATH")
+            or line.startswith("INFRA")
+        ):
             continue
         if any(script in line for script in lifecycle_scripts):
             minute_field = line.split()[0]
@@ -366,9 +400,7 @@ def test_cron_deployed_matches_repo():
 @pytest.mark.requires_gpu
 def test_gpu_health_check_mode():
     """cleanup-stale-gpu-allocations.sh --health-check should produce output."""
-    result = run_lifecycle_script(
-        "cleanup-stale-gpu-allocations.sh", "--health-check", timeout=60
-    )
+    result = run_lifecycle_script("cleanup-stale-gpu-allocations.sh", "--health-check", timeout=60)
     combined = result.stdout + result.stderr
     assert result.returncode == 0 or "health check" in combined.lower(), (
         f"--health-check failed with rc={result.returncode}: {combined[:500]}"
@@ -401,11 +433,9 @@ def test_max_runtime_uses_targeted_notifications():
     script = INFRA_ROOT / "scripts" / "maintenance" / "enforce-max-runtime.sh"
     content = script.read_text()
 
-    assert "notify_user" in content, "enforce-max-runtime.sh should use notify_user for targeted notifications"
+    assert "notify_user" in content, (
+        "enforce-max-runtime.sh should use notify_user for targeted notifications"
+    )
     # Check it doesn't use broadcast wall or file-based notification
     assert "| wall" not in content, "enforce-max-runtime.sh should not broadcast via wall"
-    assert "notify-send" not in content, (
-        "enforce-max-runtime.sh should not use notify-send"
-    )
-
-
+    assert "notify-send" not in content, "enforce-max-runtime.sh should not use notify-send"

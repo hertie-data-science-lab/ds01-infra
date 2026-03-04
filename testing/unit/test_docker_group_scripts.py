@@ -22,10 +22,10 @@ modifying group membership.
 
 import os
 import subprocess
-import pytest
 from pathlib import Path
 from typing import Optional
 
+import pytest
 
 # Script paths
 SCRIPTS_DIR = Path("/opt/ds01-infra/scripts/system")
@@ -102,9 +102,7 @@ class TestScriptSyntax:
 class TestAddUserToDocker:
     """Tests for add-user-to-docker.sh script."""
 
-    def run_script(
-        self, *args, env: Optional[dict] = None
-    ) -> subprocess.CompletedProcess:
+    def run_script(self, *args, env: Optional[dict] = None) -> subprocess.CompletedProcess:
         """Run add-user-to-docker.sh with arguments."""
         script_env = os.environ.copy()
         if env:
@@ -152,9 +150,7 @@ class TestAddUserToDocker:
 class TestAutoAddDockerGroup:
     """Tests for auto-add-docker-group.sh script."""
 
-    def run_script(
-        self, *args, env: Optional[dict] = None
-    ) -> subprocess.CompletedProcess:
+    def run_script(self, *args, env: Optional[dict] = None) -> subprocess.CompletedProcess:
         """Run auto-add-docker-group.sh with arguments."""
         script_env = os.environ.copy()
         if env:
@@ -215,9 +211,7 @@ class TestAutoAddDockerGroup:
 class TestFixDockerGroupVariants:
     """Tests for fix-docker-group-variants.sh script."""
 
-    def run_script(
-        self, *args, env: Optional[dict] = None
-    ) -> subprocess.CompletedProcess:
+    def run_script(self, *args, env: Optional[dict] = None) -> subprocess.CompletedProcess:
         """Run fix-docker-group-variants.sh with arguments."""
         script_env = os.environ.copy()
         if env:

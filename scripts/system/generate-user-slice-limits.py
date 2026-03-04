@@ -40,11 +40,12 @@ Example:
     sudo python3 generate-user-slice-limits.py --user alice
 """
 
-import sys
-import os
 import argparse
-import yaml
+import os
+import sys
 from pathlib import Path
+
+import yaml
 
 # Import username sanitization utility
 script_dir = Path(__file__).resolve().parent
@@ -56,14 +57,15 @@ try:
 except ImportError:
     # Fallback if library not available
     import re
+
     def sanitize_username_for_slice(username: str) -> str:
         if not username:
             return username
-        if '@' in username:
-            username = username.split('@')[0]
-        sanitized = username.replace('.', '_')
-        sanitized = re.sub(r'[^a-zA-Z0-9_:]', '_', sanitized)
-        sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+        if "@" in username:
+            username = username.split("@")[0]
+        sanitized = username.replace(".", "_")
+        sanitized = re.sub(r"[^a-zA-Z0-9_:]", "_", sanitized)
+        sanitized = re.sub(r"_+", "_", sanitized).strip("_")
         return sanitized
 
 
@@ -87,7 +89,7 @@ def load_group_members(config_dir: Path, group_name: str) -> list:
     try:
         with open(member_file) as f:
             for line in f:
-                line = line.split('#')[0].strip()
+                line = line.split("#")[0].strip()
                 if line:
                     members.append(line)
     except PermissionError:
@@ -103,7 +105,7 @@ def get_all_users_with_groups(config: dict, config_dir: Path) -> dict:
         dict: {username: group_name}
     """
     users = {}
-    groups = config.get('groups', {})
+    groups = config.get("groups", {})
 
     for group_name in groups:
         members = load_group_members(config_dir, group_name)
@@ -125,18 +127,18 @@ def get_aggregate_limits(config: dict, username: str, group: str) -> dict | None
         dict with cpu_quota, memory_max, memory_high, tasks_max or None
     """
     # Check user overrides first
-    user_overrides = config.get('user_overrides', {})
+    user_overrides = config.get("user_overrides", {})
     if username in user_overrides:
         override = user_overrides[username]
-        if 'aggregate' in override:
-            return override['aggregate']
+        if "aggregate" in override:
+            return override["aggregate"]
 
     # Check group aggregate
-    groups = config.get('groups', {})
+    groups = config.get("groups", {})
     if group in groups:
         group_config = groups[group]
-        if 'aggregate' in group_config:
-            return group_config['aggregate']
+        if "aggregate" in group_config:
+            return group_config["aggregate"]
 
     # No aggregate limits (admin or missing config)
     return None
@@ -183,7 +185,7 @@ def write_drop_in(username: str, group: str, limits: dict, dry_run: bool, verbos
     drop_in_dir.mkdir(parents=True, exist_ok=True)
 
     # Write drop-in file
-    with open(drop_in_file, 'w') as f:
+    with open(drop_in_file, "w") as f:
         f.write(content)
 
     if verbose:
@@ -209,7 +211,7 @@ def remove_stale_drop_ins(current_users: set, config_dir: Path, dry_run: bool, v
         if len(parts) < 3:
             continue
 
-        group = parts[1]
+        parts[1]
         sanitized_user = "-".join(parts[2:]).replace(".slice", "")
 
         # Check if this sanitized username matches any current user
@@ -225,6 +227,7 @@ def remove_stale_drop_ins(current_users: set, config_dir: Path, dry_run: bool, v
             else:
                 # Remove drop-in directory
                 import shutil
+
                 try:
                     shutil.rmtree(drop_in_dir)
                     if verbose:
@@ -237,12 +240,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate systemd drop-in files for per-user aggregate resource limits"
     )
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show what would be written without writing")
-    parser.add_argument("--verbose", action="store_true",
-                        help="Show detailed output")
-    parser.add_argument("--user", metavar="USERNAME",
-                        help="Only generate limits for specific user (for fast updates)")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show what would be written without writing"
+    )
+    parser.add_argument("--verbose", action="store_true", help="Show detailed output")
+    parser.add_argument(
+        "--user",
+        metavar="USERNAME",
+        help="Only generate limits for specific user (for fast updates)",
+    )
 
     args = parser.parse_args()
 
@@ -266,8 +272,8 @@ def main():
         sys.exit(1)
 
     # Check if aggregate limits are enabled
-    enforcement = config.get('enforcement', {})
-    if not enforcement.get('aggregate_limits', False):
+    enforcement = config.get("enforcement", {})
+    if not enforcement.get("aggregate_limits", False):
         print("Note: Aggregate limits disabled in config (enforcement.aggregate_limits: false)")
         if not args.dry_run:
             sys.exit(0)

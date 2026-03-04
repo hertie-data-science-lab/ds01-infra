@@ -6,15 +6,14 @@ This conftest.py provides fixtures specific to library unit tests.
 """
 
 import os
-import sys
 import shutil
-import tempfile
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from typing import Generator
 
 import pytest
-
 
 # Add scripts to Python path for imports
 INFRA_ROOT = Path("/opt/ds01-infra")
@@ -25,6 +24,7 @@ sys.path.insert(0, str(INFRA_ROOT / "scripts" / "lib"))
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def temp_dir() -> Generator[Path, None, None]:
@@ -50,6 +50,7 @@ def docker_scripts_dir() -> Path:
 # Helper Functions
 # =============================================================================
 
+
 def run_bash_script(script_path: Path, *args, env=None, timeout=30) -> subprocess.CompletedProcess:
     """Run a bash script and return the result."""
     script_env = os.environ.copy()
@@ -61,7 +62,7 @@ def run_bash_script(script_path: Path, *args, env=None, timeout=30) -> subproces
         capture_output=True,
         text=True,
         env=script_env,
-        timeout=timeout
+        timeout=timeout,
     )
 
 
@@ -72,11 +73,7 @@ def run_bash_code(code: str, env=None, timeout=10) -> subprocess.CompletedProces
         script_env.update(env)
 
     return subprocess.run(
-        ["bash", "-c", code],
-        capture_output=True,
-        text=True,
-        env=script_env,
-        timeout=timeout
+        ["bash", "-c", code], capture_output=True, text=True, env=script_env, timeout=timeout
     )
 
 

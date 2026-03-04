@@ -4,12 +4,11 @@ E2E Tests: Container Workflow
 Full end-to-end tests for container deploy/retire workflows
 """
 
-import pytest
-import subprocess
 import os
-import time
-import json
+import subprocess
 from pathlib import Path
+
+import pytest
 
 
 class TestContainerDeployRetire:
@@ -19,6 +18,7 @@ class TestContainerDeployRetire:
     def test_project_name(self):
         """Generate unique test project name."""
         import random
+
         return f"e2e-test-{random.randint(1000, 9999)}"
 
     @pytest.fixture
@@ -26,12 +26,9 @@ class TestContainerDeployRetire:
         """Fixture to clean up test containers after test."""
         yield test_project_name
         # Cleanup after test
-        user = os.environ.get("USER", "testuser")
+        os.environ.get("USER", "testuser")
         container_name = f"{test_project_name}._.{os.getuid()}"
-        subprocess.run(
-            ["docker", "rm", "-f", container_name],
-            capture_output=True
-        )
+        subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
 
     @pytest.mark.e2e
     @pytest.mark.requires_docker
@@ -39,17 +36,11 @@ class TestContainerDeployRetire:
     @pytest.mark.slow
     def test_deploy_creates_running_container(self, cleanup_container):
         """container-deploy creates a running container."""
-        project = cleanup_container
 
         # This would be a real deploy test
         # For now, verify the script exists and can show help
         deploy = Path("/opt/ds01-infra/scripts/user/orchestrators/container-deploy")
-        result = subprocess.run(
-            [str(deploy), "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        result = subprocess.run([str(deploy), "--help"], capture_output=True, text=True, timeout=10)
         # Script should at least run
         assert result.returncode in [0, 1]
 
@@ -83,10 +74,7 @@ class TestWizardWorkflows:
             pytest.skip("project-init not found")
 
         result = subprocess.run(
-            [str(project_init), "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
+            [str(project_init), "--help"], capture_output=True, text=True, timeout=10
         )
         assert result.returncode in [0, 1]
 
@@ -98,10 +86,7 @@ class TestWizardWorkflows:
             pytest.skip("user-setup not found")
 
         result = subprocess.run(
-            [str(user_setup), "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10
+            [str(user_setup), "--help"], capture_output=True, text=True, timeout=10
         )
         assert result.returncode in [0, 1]
 
@@ -112,8 +97,9 @@ class TestWizardWorkflows:
             script = Path(f"/opt/ds01-infra/scripts/user/{script_name}")
             if script.exists():
                 content = script.read_text()
-                assert "orchestration" in content.lower(), \
+                assert "orchestration" in content.lower(), (
                     f"{script_name} should set orchestration context"
+                )
 
 
 class TestDashboardE2E:
@@ -131,12 +117,7 @@ class TestDashboardE2E:
         """Dashboard default view executes and produces output."""
         dashboard = Path("/opt/ds01-infra/scripts/admin/dashboard")
 
-        result = subprocess.run(
-            [str(dashboard)],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
+        result = subprocess.run([str(dashboard)], capture_output=True, text=True, timeout=30)
         # Should produce output (may fail with IndexError on malformed log entries)
         # The important thing is it produces meaningful output before any crash
         assert len(result.stdout) > 100, "Dashboard should produce substantial output"
@@ -149,10 +130,7 @@ class TestDashboardE2E:
         dashboard = Path("/opt/ds01-infra/scripts/admin/dashboard")
 
         result = subprocess.run(
-            [str(dashboard), "interfaces"],
-            capture_output=True,
-            text=True,
-            timeout=30
+            [str(dashboard), "interfaces"], capture_output=True, text=True, timeout=30
         )
         # Should complete
         assert result.returncode == 0
@@ -169,12 +147,7 @@ class TestHealthCheckE2E:
         if not health_check.exists():
             pytest.skip("Health check not found")
 
-        result = subprocess.run(
-            [str(health_check)],
-            capture_output=True,
-            text=True,
-            timeout=120
-        )
+        result = subprocess.run([str(health_check)], capture_output=True, text=True, timeout=120)
         # Should complete with some status
         # 0 = all pass, 1 = warnings, 2 = failures
         assert result.returncode in [0, 1, 2]
@@ -191,8 +164,7 @@ class TestHealthCheckE2E:
         # Should check these components
         components = ["docker", "nvidia", "config", "cgroup"]
         for component in components:
-            assert component in content.lower(), \
-                f"Health check missing {component} validation"
+            assert component in content.lower(), f"Health check missing {component} validation"
 
 
 class TestCommandDiscovery:

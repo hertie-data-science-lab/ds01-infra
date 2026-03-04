@@ -19,10 +19,10 @@ Functions tested:
 
 import os
 import subprocess
-import pytest
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
+import pytest
 
 # Path to the init.sh library
 INIT_SH_PATH = Path("/opt/ds01-infra/scripts/lib/init.sh")
@@ -31,7 +31,9 @@ INIT_SH_PATH = Path("/opt/ds01-infra/scripts/lib/init.sh")
 class TestInitShLibrary:
     """Tests for init.sh bash library initialization."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """
         Helper to run a bash function from init.sh and return result.
         """
@@ -45,11 +47,7 @@ class TestInitShLibrary:
             run_env.update(env)
 
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_library_exists(self):
@@ -66,7 +64,9 @@ class TestInitShLibrary:
 class TestPathVariables:
     """Tests for path variable exports."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{INIT_SH_PATH}"
@@ -76,11 +76,7 @@ class TestPathVariables:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_ds01_root_is_set(self):
@@ -123,7 +119,9 @@ class TestPathVariables:
 class TestColorVariables:
     """Tests for ANSI color code exports."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{INIT_SH_PATH}"
@@ -133,11 +131,7 @@ class TestColorVariables:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_red_color_is_set(self):
@@ -187,7 +181,9 @@ class TestColorVariables:
 class TestLoggingFunctions:
     """Tests for logging helper functions."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{INIT_SH_PATH}"
@@ -197,11 +193,7 @@ class TestLoggingFunctions:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_log_info_outputs_message(self):
@@ -236,7 +228,9 @@ class TestLoggingFunctions:
 class TestDSO1HelperFunctions:
     """Tests for ds01_* helper functions."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{INIT_SH_PATH}"
@@ -246,11 +240,7 @@ class TestDSO1HelperFunctions:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_ds01_error_outputs_to_stderr(self):
@@ -287,7 +277,7 @@ class TestDSO1HelperFunctions:
 
     def test_ds01_current_user_returns_username(self):
         """ds01_current_user should return current username."""
-        result = self.run_bash_function('ds01_current_user')
+        result = self.run_bash_function("ds01_current_user")
         assert result.returncode == 0
         expected_user = os.environ.get("USER", os.getlogin())
         assert result.stdout.strip() == expected_user
@@ -296,7 +286,9 @@ class TestDSO1HelperFunctions:
 class TestUIDrawingFunctions:
     """Tests for UI drawing functions."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{INIT_SH_PATH}"
@@ -306,11 +298,7 @@ class TestUIDrawingFunctions:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_ds01_draw_header_outputs_box(self):
@@ -324,7 +312,7 @@ class TestUIDrawingFunctions:
 
     def test_ds01_draw_separator_outputs_line(self):
         """ds01_draw_separator should output a separator line."""
-        result = self.run_bash_function('ds01_draw_separator')
+        result = self.run_bash_function("ds01_draw_separator")
         assert result.returncode == 0
         # Should contain separator characters
         assert "━" in result.stdout or "-" in result.stdout
@@ -336,7 +324,9 @@ class TestResourceLimitFunctions:
     These tests validate the convenience functions that wrap get_resource_limits.py.
     """
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{INIT_SH_PATH}"
@@ -350,12 +340,12 @@ class TestResourceLimitFunctions:
             capture_output=True,
             text=True,
             env=run_env,
-            timeout=30  # Longer timeout for Python calls
+            timeout=30,  # Longer timeout for Python calls
         )
 
     def test_ds01_get_max_gpus_returns_value_or_default(self):
         """ds01_get_max_gpus should return a numeric value, 'unlimited', or default."""
-        result = self.run_bash_function('ds01_get_max_gpus')
+        result = self.run_bash_function("ds01_get_max_gpus")
         assert result.returncode == 0
         # Should return a number, "unlimited", or default "1"
         output = result.stdout.strip()
@@ -364,7 +354,7 @@ class TestResourceLimitFunctions:
 
     def test_ds01_get_idle_timeout_returns_value_or_default(self):
         """ds01_get_idle_timeout should return a duration string or default."""
-        result = self.run_bash_function('ds01_get_idle_timeout')
+        result = self.run_bash_function("ds01_get_idle_timeout")
         assert result.returncode == 0
         output = result.stdout.strip()
         # Should be a duration like "2h", "48h", "24h", etc. or default "2h"
@@ -372,7 +362,7 @@ class TestResourceLimitFunctions:
 
     def test_ds01_get_max_runtime_returns_value_or_default(self):
         """ds01_get_max_runtime should return a duration string or default."""
-        result = self.run_bash_function('ds01_get_max_runtime')
+        result = self.run_bash_function("ds01_get_max_runtime")
         assert result.returncode == 0
         output = result.stdout.strip()
         # Should be a duration or default "24h"
@@ -380,7 +370,7 @@ class TestResourceLimitFunctions:
 
     def test_ds01_get_max_containers_returns_value_or_default(self):
         """ds01_get_max_containers should return a numeric value or default."""
-        result = self.run_bash_function('ds01_get_max_containers')
+        result = self.run_bash_function("ds01_get_max_containers")
         assert result.returncode == 0
         output = result.stdout.strip()
         # Should return a number or default "3"
@@ -388,19 +378,21 @@ class TestResourceLimitFunctions:
 
     def test_ds01_allow_full_gpu_returns_boolean(self):
         """ds01_allow_full_gpu should return exit code based on permission."""
-        result = self.run_bash_function('ds01_allow_full_gpu && echo "allowed" || echo "not_allowed"')
+        result = self.run_bash_function(
+            'ds01_allow_full_gpu && echo "allowed" || echo "not_allowed"'
+        )
         assert result.returncode == 0
         assert result.stdout.strip() in ["allowed", "not_allowed"]
 
     def test_ds01_get_limit_function_exists(self):
         """ds01_get_limit should be callable."""
-        result = self.run_bash_function('type ds01_get_limit')
+        result = self.run_bash_function("type ds01_get_limit")
         assert result.returncode == 0
         assert "function" in result.stdout
 
     def test_ds01_get_config_function_exists(self):
         """ds01_get_config should be callable."""
-        result = self.run_bash_function('type ds01_get_config')
+        result = self.run_bash_function("type ds01_get_config")
         assert result.returncode == 0
         assert "function" in result.stdout
 
@@ -408,7 +400,9 @@ class TestResourceLimitFunctions:
 class TestDurationFunctions:
     """Tests for duration parsing and formatting functions."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{INIT_SH_PATH}"
@@ -418,11 +412,7 @@ class TestDurationFunctions:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_ds01_parse_duration_hours(self):
@@ -451,13 +441,13 @@ class TestDurationFunctions:
 
     def test_ds01_format_duration_function_exists(self):
         """ds01_format_duration should be callable."""
-        result = self.run_bash_function('type ds01_format_duration')
+        result = self.run_bash_function("type ds01_format_duration")
         assert result.returncode == 0
         assert "function" in result.stdout
 
     def test_ds01_format_duration_hours(self):
         """ds01_format_duration should format seconds to human-readable."""
-        result = self.run_bash_function('ds01_format_duration 7200')
+        result = self.run_bash_function("ds01_format_duration 7200")
         assert result.returncode == 0
         output = result.stdout.strip()
         # 7200 seconds should format to "2h" or similar
@@ -467,7 +457,9 @@ class TestDurationFunctions:
 class TestLogWithTimestamp:
     """Tests for ds01_log function with timestamp."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{INIT_SH_PATH}"
@@ -477,11 +469,7 @@ class TestLogWithTimestamp:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_ds01_log_includes_timestamp(self):
@@ -501,13 +489,16 @@ class TestLogWithTimestamp:
         output = result.stdout.strip()
         # Format: [YYYY-MM-DD HH:MM:SS]
         import re
-        assert re.search(r'\[\d{4}-\d{2}-\d{2}', output)
+
+        assert re.search(r"\[\d{4}-\d{2}-\d{2}", output)
 
 
 class TestRequireRoot:
     """Tests for ds01_require_root function."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{INIT_SH_PATH}"
@@ -517,11 +508,7 @@ class TestRequireRoot:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_ds01_require_root_exits_for_non_root(self):

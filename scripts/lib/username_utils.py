@@ -53,32 +53,33 @@ def sanitize_username_for_slice(username: str) -> str:
 
     # Strip domain part (everything after @) for cleaner container usernames
     # e.g., "c.fusarbassini@hertie-school.lan" -> "c.fusarbassini"
-    if '@' in sanitized:
-        sanitized = sanitized.split('@')[0]
+    if "@" in sanitized:
+        sanitized = sanitized.split("@")[0]
 
     # Replace dots with underscores (NOT hyphens - see docstring)
-    sanitized = sanitized.replace('.', '_')
+    sanitized = sanitized.replace(".", "_")
 
     # Replace any remaining invalid characters with underscores
     # Valid systemd chars: a-zA-Z0-9_:-
     # We use underscores to avoid hierarchy issues with hyphens
-    sanitized = re.sub(r'[^a-zA-Z0-9_:]', '_', sanitized)
+    sanitized = re.sub(r"[^a-zA-Z0-9_:]", "_", sanitized)
 
     # Collapse multiple consecutive underscores to single underscore
-    sanitized = re.sub(r'_+', '_', sanitized)
+    sanitized = re.sub(r"_+", "_", sanitized)
 
     # Trim leading and trailing underscores
-    sanitized = sanitized.strip('_')
+    sanitized = sanitized.strip("_")
 
     # Truncate to 32 characters (Linux username/groupname limit)
     # groupadd/useradd fail with names > 32 chars
     # Use hash suffix to avoid collisions when truncating
     if len(sanitized) > 32:
         import hashlib
+
         # Generate 4-char hash from original username to avoid collisions
         hash_suffix = hashlib.md5(username.encode()).hexdigest()[:4]
         # Truncate to 27 chars + underscore + 4-char hash = 32 chars
-        sanitized = sanitized[:27].rstrip('_') + '_' + hash_suffix
+        sanitized = sanitized[:27].rstrip("_") + "_" + hash_suffix
 
     return sanitized
 

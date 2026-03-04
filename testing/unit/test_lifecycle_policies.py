@@ -11,9 +11,8 @@ Tests for:
 import json
 import subprocess
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 import yaml
@@ -117,12 +116,8 @@ def parser(lifecycle_config):
 @pytest.fixture
 def exemptions_file(temp_dir):
     """Create a lifecycle-exemptions.yaml with test exemptions."""
-    future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
-    past = (datetime.now(timezone.utc) - timedelta(days=30)).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
+    future = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    past = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     exemptions = {
         "exemptions": [
@@ -306,54 +301,42 @@ class TestCheckExemption:
     @pytest.mark.unit
     def test_permanent_exemption_idle(self, parser_with_exemptions):
         """Permanent exemption for idle_timeout returns exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption(
-            "permanent_user", "idle_timeout"
-        )
+        exempt, reason = parser_with_exemptions.check_exemption("permanent_user", "idle_timeout")
         assert exempt is True
         assert "Permanent exemption" in reason
 
     @pytest.mark.unit
     def test_permanent_exemption_runtime(self, parser_with_exemptions):
         """Permanent exemption for max_runtime returns exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption(
-            "permanent_user", "max_runtime"
-        )
+        exempt, reason = parser_with_exemptions.check_exemption("permanent_user", "max_runtime")
         assert exempt is True
         assert "Permanent exemption" in reason
 
     @pytest.mark.unit
     def test_temporary_exemption_active(self, parser_with_exemptions):
         """Active (non-expired) temporary exemption returns exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption(
-            "temp_user", "idle_timeout"
-        )
+        exempt, reason = parser_with_exemptions.check_exemption("temp_user", "idle_timeout")
         assert exempt is True
         assert "Temporary exemption" in reason
 
     @pytest.mark.unit
     def test_temporary_exemption_wrong_type(self, parser_with_exemptions):
         """Temporary exemption for different enforcement type returns not exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption(
-            "temp_user", "max_runtime"
-        )
+        exempt, reason = parser_with_exemptions.check_exemption("temp_user", "max_runtime")
         assert exempt is False
         assert reason is None
 
     @pytest.mark.unit
     def test_expired_exemption(self, parser_with_exemptions):
         """Expired exemption returns not exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption(
-            "expired_user", "idle_timeout"
-        )
+        exempt, reason = parser_with_exemptions.check_exemption("expired_user", "idle_timeout")
         assert exempt is False
         assert reason is None
 
     @pytest.mark.unit
     def test_no_exemption(self, parser_with_exemptions):
         """User with no exemption returns not exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption(
-            "nonexistent_user", "idle_timeout"
-        )
+        exempt, reason = parser_with_exemptions.check_exemption("nonexistent_user", "idle_timeout")
         assert exempt is False
         assert reason is None
 
@@ -361,14 +344,10 @@ class TestCheckExemption:
     def test_partial_exemption_idle_only(self, parser_with_exemptions):
         """User exempt only from idle_timeout, not max_runtime."""
         # idle_only_user is exempt from idle_timeout only
-        exempt, reason = parser_with_exemptions.check_exemption(
-            "idle_only_user", "idle_timeout"
-        )
+        exempt, reason = parser_with_exemptions.check_exemption("idle_only_user", "idle_timeout")
         assert exempt is True
 
-        exempt, reason = parser_with_exemptions.check_exemption(
-            "idle_only_user", "max_runtime"
-        )
+        exempt, reason = parser_with_exemptions.check_exemption("idle_only_user", "max_runtime")
         assert exempt is False
 
     @pytest.mark.unit
@@ -406,9 +385,7 @@ class TestCheckExemption:
     @pytest.mark.unit
     def test_z_suffix_iso_date(self, temp_dir, lifecycle_config):
         """Handles ISO 8601 dates with Z suffix correctly."""
-        future = (datetime.now(timezone.utc) + timedelta(days=1)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
+        future = (datetime.now(timezone.utc) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         exemptions = {
             "exemptions": [
                 {

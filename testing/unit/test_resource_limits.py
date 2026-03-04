@@ -4,12 +4,11 @@ Unit Tests: Resource Limits Parser
 Tests get_resource_limits.py functionality with mocked config
 """
 
+import sys
+
 import pytest
 import yaml
-from pathlib import Path
-from unittest.mock import patch, mock_open
 
-import sys
 sys.path.insert(0, "/opt/ds01-infra/scripts/docker")
 
 
@@ -20,6 +19,7 @@ class TestResourceLimitParser:
     def parser_with_config(self, temp_config_file):
         """Create parser with test config file."""
         from get_resource_limits import ResourceLimitParser
+
         return ResourceLimitParser(config_path=str(temp_config_file))
 
     @pytest.fixture
@@ -164,10 +164,10 @@ class TestResourceLimitParser:
                 "max_cpus": 8,
                 "memory": "32g",
                 "idle_timeout": None,  # null = disabled
-                "priority": 50
+                "priority": 50,
             },
             "groups": {},
-            "user_overrides": {}
+            "user_overrides": {},
         }
 
         config_file = temp_dir / "null-config.yaml"
@@ -175,6 +175,7 @@ class TestResourceLimitParser:
             yaml.safe_dump(config, f)
 
         from get_resource_limits import ResourceLimitParser
+
         parser = ResourceLimitParser(str(config_file))
         limits = parser.get_user_limits("anyone")
 
@@ -188,12 +189,14 @@ class TestLifecycleLimitsJson:
     def parser_with_config(self, temp_config_file):
         """Create parser with test config file."""
         from get_resource_limits import ResourceLimitParser
+
         return ResourceLimitParser(config_path=str(temp_config_file))
 
     @pytest.mark.unit
     def test_lifecycle_json_returns_all_fields(self, parser_with_config):
         """Lifecycle JSON contains all expected fields."""
         import json
+
         result = parser_with_config.get_lifecycle_limits_json("student1")
         data = json.loads(result)
 
@@ -206,6 +209,7 @@ class TestLifecycleLimitsJson:
     def test_lifecycle_json_is_valid_json(self, parser_with_config):
         """Lifecycle JSON is valid JSON."""
         import json
+
         result = parser_with_config.get_lifecycle_limits_json("student1")
         # Should not raise
         data = json.loads(result)
@@ -219,25 +223,19 @@ class TestPoliciesMethods:
     def parser_with_policies(self, temp_dir):
         """Create parser with config containing policies."""
         config = {
-            "defaults": {
-                "max_mig_instances": 1,
-                "max_cpus": 8,
-                "memory": "32g",
-                "priority": 50
-            },
+            "defaults": {"max_mig_instances": 1, "max_cpus": 8, "memory": "32g", "priority": 50},
             "groups": {},
             "user_overrides": {},
-            "policies": {
-                "high_demand_threshold": 0.75,
-                "high_demand_idle_reduction": 0.6
-            }
+            "policies": {"high_demand_threshold": 0.75, "high_demand_idle_reduction": 0.6},
         }
         import yaml
+
         config_file = temp_dir / "policy-config.yaml"
         with open(config_file, "w") as f:
             yaml.safe_dump(config, f)
 
         from get_resource_limits import ResourceLimitParser
+
         return ResourceLimitParser(str(config_file))
 
     @pytest.mark.unit
@@ -270,6 +268,7 @@ class TestResourceLimitParserIntegration:
             pytest.skip("Real config file not found")
 
         from get_resource_limits import ResourceLimitParser
+
         parser = ResourceLimitParser(str(config_file))
 
         # Should not raise

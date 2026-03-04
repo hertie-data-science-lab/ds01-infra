@@ -29,21 +29,21 @@ Usage:
 
 import re
 import subprocess
-import json
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 
 class Colors:
     """ANSI color codes for terminal output."""
-    RED = '\033[0;31m'
-    GREEN = '\033[0;32m'
-    YELLOW = '\033[1;33m'
-    BLUE = '\033[0;34m'
-    CYAN = '\033[0;36m'
-    MAGENTA = '\033[0;35m'
-    BOLD = '\033[1m'
-    DIM = '\033[2m'
-    NC = '\033[0m'  # No Color / Reset
+
+    RED = "\033[0;31m"
+    GREEN = "\033[0;32m"
+    YELLOW = "\033[1;33m"
+    BLUE = "\033[0;34m"
+    CYAN = "\033[0;36m"
+    MAGENTA = "\033[0;35m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    NC = "\033[0m"  # No Color / Reset
 
 
 def parse_duration(duration: str) -> int:
@@ -80,11 +80,11 @@ def parse_duration(duration: str) -> int:
     duration = str(duration).strip().lower()
 
     # Special no-limit values
-    if duration in ('null', 'none', 'never', 'indefinite', ''):
+    if duration in ("null", "none", "never", "indefinite", ""):
         return -1
 
     # Extract numeric value and unit
-    match = re.match(r'^([0-9.]+)\s*([a-z]*)$', duration)
+    match = re.match(r"^([0-9.]+)\s*([a-z]*)$", duration)
     if not match:
         return 0
 
@@ -93,15 +93,15 @@ def parse_duration(duration: str) -> int:
     except ValueError:
         return 0
 
-    unit = match.group(2) or 's'  # Default to seconds if no unit
+    unit = match.group(2) or "s"  # Default to seconds if no unit
 
     # Convert to seconds
     multipliers = {
-        's': 1,
-        'm': 60,
-        'h': 3600,
-        'd': 86400,
-        'w': 604800,
+        "s": 1,
+        "m": 60,
+        "h": 3600,
+        "d": 86400,
+        "w": 604800,
     }
 
     multiplier = multipliers.get(unit, 0)
@@ -154,7 +154,7 @@ def format_duration(seconds: int) -> str:
     if seconds > 0 and not parts:  # Only show seconds if nothing else
         parts.append(f"{seconds}s")
 
-    return ' '.join(parts) if parts else '0s'
+    return " ".join(parts) if parts else "0s"
 
 
 def get_container_owner(container_name: str) -> Optional[str]:
@@ -174,19 +174,16 @@ def get_container_owner(container_name: str) -> Optional[str]:
         'alice'
     """
     # Extract UID from AIME naming convention
-    if '._.' not in container_name:
+    if "._." not in container_name:
         return None
 
     try:
-        uid = container_name.split('._.')[-1]
+        uid = container_name.split("._.")[-1]
         result = subprocess.run(
-            ['getent', 'passwd', uid],
-            capture_output=True,
-            text=True,
-            timeout=5
+            ["getent", "passwd", uid], capture_output=True, text=True, timeout=5
         )
         if result.returncode == 0 and result.stdout:
-            return result.stdout.split(':')[0]
+            return result.stdout.split(":")[0]
     except (subprocess.TimeoutExpired, Exception):
         pass
 
@@ -209,15 +206,20 @@ def get_container_gpu(container_name: str) -> Optional[str]:
     """
     try:
         result = subprocess.run(
-            ['docker', 'inspect', '--format',
-             '{{index .Config.Labels "ds01.gpu.allocated"}}', container_name],
+            [
+                "docker",
+                "inspect",
+                "--format",
+                '{{index .Config.Labels "ds01.gpu.allocated"}}',
+                container_name,
+            ],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
         )
         if result.returncode == 0:
             gpu = result.stdout.strip()
-            if gpu and gpu != '<no value>':
+            if gpu and gpu != "<no value>":
                 return gpu
     except (subprocess.TimeoutExpired, Exception):
         pass
@@ -244,20 +246,20 @@ def get_user_containers(username: str = None) -> List[Dict[str, Any]]:
     try:
         # Get all containers with AIME naming convention
         result = subprocess.run(
-            ['docker', 'ps', '-a', '--format', '{{.Names}}\t{{.Status}}'],
+            ["docker", "ps", "-a", "--format", "{{.Names}}\t{{.Status}}"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         if result.returncode != 0:
             return containers
 
-        for line in result.stdout.strip().split('\n'):
-            if not line or '._.' not in line:
+        for line in result.stdout.strip().split("\n"):
+            if not line or "._." not in line:
                 continue
 
-            parts = line.split('\t')
+            parts = line.split("\t")
             if len(parts) < 2:
                 continue
 
@@ -268,12 +270,14 @@ def get_user_containers(username: str = None) -> List[Dict[str, Any]]:
             if username and owner != username:
                 continue
 
-            containers.append({
-                'name': name,
-                'status': 'running' if status.startswith('Up') else 'stopped',
-                'owner': owner,
-                'gpu': get_container_gpu(name)
-            })
+            containers.append(
+                {
+                    "name": name,
+                    "status": "running" if status.startswith("Up") else "stopped",
+                    "owner": owner,
+                    "gpu": get_container_gpu(name),
+                }
+            )
 
     except (subprocess.TimeoutExpired, Exception):
         pass
@@ -297,11 +301,7 @@ def run_docker_command(args: List[str], timeout: int = 30) -> subprocess.Complet
         subprocess.CalledProcessError: If command fails
     """
     return subprocess.run(
-        ['docker'] + args,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=True
+        ["docker"] + args, capture_output=True, text=True, timeout=timeout, check=True
     )
 
 
@@ -355,7 +355,7 @@ def get_container_managed_from_labels(labels: Dict[str, str]) -> bool:
     return labels.get("ds01.managed") == "true" or labels.get("aime.mlc.DS01_MANAGED") == "true"
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Self-test when run directly
     import sys
 
@@ -400,7 +400,9 @@ if __name__ == '__main__':
 
     # Test Colors
     print("\nColors test:")
-    print(f"  {Colors.RED}RED{Colors.NC} {Colors.GREEN}GREEN{Colors.NC} {Colors.YELLOW}YELLOW{Colors.NC} {Colors.BLUE}BLUE{Colors.NC}")
+    print(
+        f"  {Colors.RED}RED{Colors.NC} {Colors.GREEN}GREEN{Colors.NC} {Colors.YELLOW}YELLOW{Colors.NC} {Colors.BLUE}BLUE{Colors.NC}"
+    )
 
     print("\n" + "=" * 50)
     if all_passed:

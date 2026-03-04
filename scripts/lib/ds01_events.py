@@ -39,9 +39,9 @@ Schema:
 
 from __future__ import annotations
 
-import sys
 import json
 import logging
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -63,49 +63,59 @@ EVENT_TYPES = {
     "container.start": ["user", "container"],
     "container.stop": ["user", "container", "reason"],
     "container.remove": ["user", "container", "gpu_released"],
-
     # GPU allocation
     "gpu.allocate": ["user", "container", "gpu", "priority", "container_type"],
     "gpu.release": ["user", "container", "gpu", "reason"],
     "gpu.reject": ["user", "container", "reason"],
     "gpu.hold": ["user", "container", "gpu", "duration"],
-
     # System events
     "health.check": ["status", "checks_passed", "checks_failed"],
     "health.fail": ["check", "message"],
     "system.startup": ["component"],
     "system.shutdown": ["component"],
-
     # Bare metal detection
     "bare_metal.detect": ["user", "pids", "message"],
     "bare_metal.warning": ["user", "pids", "message"],
-
     # Admin actions
     "admin.cleanup": ["containers_removed", "gpus_freed"],
     "admin.config_change": ["field", "old_value", "new_value"],
     "admin.user_override": ["user", "field", "value", "reason"],
-
     # Monitoring
     "monitor.idle_detect": ["user", "container", "idle_duration"],
     "monitor.runtime_exceed": ["user", "container", "runtime"],
     "monitor.gpu_stale": ["user", "container", "gpu", "stopped_duration"],
-
     # Workload detection (Phase 2)
-    "detection.container_discovered": ["user", "container_id", "name", "origin", "has_gpu", "image"],
+    "detection.container_discovered": [
+        "user",
+        "container_id",
+        "name",
+        "origin",
+        "has_gpu",
+        "image",
+    ],
     "detection.container_exited": ["user", "container_id", "name", "origin"],
-    "detection.container_status_changed": ["user", "container_id", "name", "old_status", "new_status"],
-    "detection.host_gpu_process_discovered": ["user", "pid", "cmdline", "gpu_memory_mb", "gpu_uuid"],
+    "detection.container_status_changed": [
+        "user",
+        "container_id",
+        "name",
+        "old_status",
+        "new_status",
+    ],
+    "detection.host_gpu_process_discovered": [
+        "user",
+        "pid",
+        "cmdline",
+        "gpu_memory_mb",
+        "gpu_uuid",
+    ],
     "detection.host_gpu_process_exited": ["user", "pid", "cmdline"],
-
     # Docker wrapper events
     "docker.intercept": ["command", "user", "container_type"],
     "docker.cgroup_inject": ["user", "cgroup_parent"],
     "docker.gpu_rewrite": ["user", "original", "rewritten"],
-
     # Authentication/Authorization
     "auth.sudo_grant": ["user", "command"],
     "auth.access_denied": ["user", "resource", "reason"],
-
     # Test/Verification events
     "test.selftest": ["source", "result"],
     "test.cli": ["source", "result"],
@@ -116,10 +126,7 @@ EVENT_TYPES = {
 
 
 def log_event(
-    event_type: str,
-    user: str | None = None,
-    source: str | None = None,
-    **details: Any
+    event_type: str, user: str | None = None, source: str | None = None, **details: Any
 ) -> bool:
     """
     Log a structured event to the DS01 event log.
@@ -152,7 +159,7 @@ def log_event(
     try:
         # Build event envelope
         event = {
-            "timestamp": datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "event_type": event_type,
             "schema_version": SCHEMA_VERSION,
         }
@@ -169,26 +176,26 @@ def log_event(
             event["details"] = details
 
         # Serialize to JSON
-        event_json = json.dumps(event, separators=(',', ':'))
+        event_json = json.dumps(event, separators=(",", ":"))
 
         # Enforce size constraint (PIPE_BUF for atomic writes)
         # PIPE_BUF is 4096 bytes - we use 4000 to leave margin for newline
-        event_bytes = event_json.encode('utf-8')
+        event_bytes = event_json.encode("utf-8")
         if len(event_bytes) > MAX_EVENT_SIZE - 96:  # Reserve 96 bytes for overhead
             print(
                 f"Warning: Event too large ({len(event_bytes)} bytes), truncating details",
-                file=sys.stderr
+                file=sys.stderr,
             )
             # Truncate details to fit
             event["details"] = {"truncated": True, "original_size": len(event_bytes)}
-            event_json = json.dumps(event, separators=(',', ':'))
-            event_bytes = event_json.encode('utf-8')
+            event_json = json.dumps(event, separators=(",", ":"))
+            event_bytes = event_json.encode("utf-8")
 
             # If still too large after truncation, fail-open (skip logging)
             if len(event_bytes) > MAX_EVENT_SIZE - 96:
                 print(
                     f"Warning: Event cannot be truncated below {MAX_EVENT_SIZE} bytes, skipping",
-                    file=sys.stderr
+                    file=sys.stderr,
                 )
                 return False
 
@@ -196,8 +203,8 @@ def log_event(
         EVENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
 
         # Append to file (atomic write for single line under PIPE_BUF)
-        with open(EVENTS_FILE, 'a') as f:
-            f.write(event_json + '\n')
+        with open(EVENTS_FILE, "a") as f:
+            f.write(event_json + "\n")
 
         return True
 
@@ -205,17 +212,13 @@ def log_event(
         # Permission errors are expected if log file isn't writable
         # Admin should run: sudo chmod 666 /var/log/ds01/events.jsonl
         print(
-            f"Warning: Event logging failed - permission denied on {EVENTS_FILE}",
-            file=sys.stderr
+            f"Warning: Event logging failed - permission denied on {EVENTS_FILE}", file=sys.stderr
         )
         return False
 
     except Exception as e:
         # Catch all other errors - never break the calling script
-        print(
-            f"Warning: Event logging failed: {type(e).__name__}: {e}",
-            file=sys.stderr
-        )
+        print(f"Warning: Event logging failed: {type(e).__name__}: {e}", file=sys.stderr)
         return False
 
 
@@ -236,7 +239,10 @@ def main() -> int:
         print("  log <event_type> [key=value ...]  - Log an event", file=sys.stderr)
         print("  types                             - List predefined event types", file=sys.stderr)
         print("\nExamples:", file=sys.stderr)
-        print("  ds01_events.py log container.create user=alice source=wrapper container=proj", file=sys.stderr)
+        print(
+            "  ds01_events.py log container.create user=alice source=wrapper container=proj",
+            file=sys.stderr,
+        )
         print("  ds01_events.py log test.cli source=verify result=success", file=sys.stderr)
         return 1
 
@@ -255,11 +261,14 @@ def main() -> int:
 
         # Parse key=value arguments
         for arg in sys.argv[3:]:
-            if '=' not in arg:
-                print(f"Warning: Ignoring malformed argument '{arg}' (expected key=value)", file=sys.stderr)
+            if "=" not in arg:
+                print(
+                    f"Warning: Ignoring malformed argument '{arg}' (expected key=value)",
+                    file=sys.stderr,
+                )
                 continue
 
-            key, value = arg.split('=', 1)
+            key, value = arg.split("=", 1)
 
             # Handle special fields
             if key == "user":

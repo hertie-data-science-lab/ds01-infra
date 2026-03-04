@@ -7,14 +7,11 @@ Tests that YAML, JSON, and configuration files are valid and correctly structure
 """
 
 import json
-import os
-import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pytest
 import yaml
-
 
 # =============================================================================
 # Paths
@@ -29,6 +26,7 @@ GRAFANA_DIR = MONITORING_ROOT / "grafana"
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def prometheus_config() -> Dict[str, Any]:
@@ -73,7 +71,9 @@ def grafana_dashboard_config() -> Dict[str, Any]:
 @pytest.fixture
 def grafana_dashboard() -> Dict[str, Any]:
     """Load and return Grafana dashboard JSON."""
-    dashboard_path = GRAFANA_DIR / "provisioning" / "dashboards" / "dashboards" / "ds01_overview.json"
+    dashboard_path = (
+        GRAFANA_DIR / "provisioning" / "dashboards" / "dashboards" / "ds01_overview.json"
+    )
     with open(dashboard_path) as f:
         return json.load(f)
 
@@ -89,6 +89,7 @@ def docker_compose() -> Dict[str, Any]:
 # =============================================================================
 # Test: YAML Files Are Valid
 # =============================================================================
+
 
 class TestYAMLValidity:
     """Tests that all YAML files are syntactically valid."""
@@ -164,12 +165,15 @@ class TestYAMLValidity:
 # Test: JSON Files Are Valid
 # =============================================================================
 
+
 class TestJSONValidity:
     """Tests that all JSON files are syntactically valid."""
 
     def test_grafana_dashboard_is_valid_json(self):
         """Grafana dashboard JSON should be valid."""
-        dashboard_path = GRAFANA_DIR / "provisioning" / "dashboards" / "dashboards" / "ds01_overview.json"
+        dashboard_path = (
+            GRAFANA_DIR / "provisioning" / "dashboards" / "dashboards" / "ds01_overview.json"
+        )
         assert dashboard_path.exists(), f"Dashboard not found: {dashboard_path}"
 
         with open(dashboard_path) as f:
@@ -199,6 +203,7 @@ class TestJSONValidity:
 # =============================================================================
 # Test: Prometheus Configuration
 # =============================================================================
+
 
 class TestPrometheusConfig:
     """Tests for Prometheus configuration validity."""
@@ -259,6 +264,7 @@ class TestPrometheusConfig:
 # Test: Alert Rules Configuration
 # =============================================================================
 
+
 class TestAlertRulesConfig:
     """Tests for Prometheus alert rules validity."""
 
@@ -279,7 +285,6 @@ class TestAlertRulesConfig:
     def test_rules_have_required_fields(self, alert_rules):
         """Each alert rule should have required fields."""
         required_fields = ["alert", "expr"]
-        optional_fields = ["for", "labels", "annotations"]
 
         groups = alert_rules.get("groups", [])
 
@@ -288,7 +293,9 @@ class TestAlertRulesConfig:
             for rule in rules:
                 # Check required fields
                 for field in required_fields:
-                    assert field in rule, f"Rule missing required field: {field} in {rule.get('alert', 'unknown')}"
+                    assert field in rule, (
+                        f"Rule missing required field: {field} in {rule.get('alert', 'unknown')}"
+                    )
 
     def test_rules_have_severity_labels(self, alert_rules):
         """Alert rules should have severity labels."""
@@ -298,12 +305,15 @@ class TestAlertRulesConfig:
             rules = group.get("rules", [])
             for rule in rules:
                 labels = rule.get("labels", {})
-                assert "severity" in labels, f"Rule '{rule.get('alert')}' should have severity label"
+                assert "severity" in labels, (
+                    f"Rule '{rule.get('alert')}' should have severity label"
+                )
 
                 # Severity should be valid
                 valid_severities = ["critical", "warning", "info"]
-                assert labels["severity"] in valid_severities, \
+                assert labels["severity"] in valid_severities, (
                     f"Invalid severity '{labels['severity']}' in rule '{rule.get('alert')}'"
+                )
 
     def test_rules_have_annotations(self, alert_rules):
         """Alert rules should have summary and description annotations."""
@@ -314,7 +324,9 @@ class TestAlertRulesConfig:
             for rule in rules:
                 annotations = rule.get("annotations", {})
                 assert "summary" in annotations, f"Rule '{rule.get('alert')}' should have summary"
-                assert "description" in annotations, f"Rule '{rule.get('alert')}' should have description"
+                assert "description" in annotations, (
+                    f"Rule '{rule.get('alert')}' should have description"
+                )
 
     def test_gpu_related_alerts_exist(self, alert_rules):
         """Should have GPU-related alerts."""
@@ -339,13 +351,15 @@ class TestAlertRulesConfig:
             all_alerts.extend([r.get("alert") for r in rules])
 
         # Check for exporter down alert
-        assert any("ExporterDown" in a or "Down" in a for a in all_alerts), \
+        assert any("ExporterDown" in a or "Down" in a for a in all_alerts), (
             "Should have exporter/service down alerts"
+        )
 
 
 # =============================================================================
 # Test: Alertmanager Configuration
 # =============================================================================
+
 
 class TestAlertmanagerConfig:
     """Tests for Alertmanager configuration validity."""
@@ -371,8 +385,9 @@ class TestAlertmanagerConfig:
         receivers = alertmanager_config.get("receivers", [])
         receiver_names = [r.get("name") for r in receivers]
 
-        assert default_receiver in receiver_names, \
+        assert default_receiver in receiver_names, (
             f"Default receiver '{default_receiver}' not found in receivers"
+        )
 
     def test_has_group_by(self, alertmanager_config):
         """Route should have group_by configuration."""
@@ -386,8 +401,9 @@ class TestAlertmanagerConfig:
         for rule in inhibit_rules:
             # Should have source and target matchers
             has_source = "source_match" in rule or "source_matchers" in rule
-            has_target = "target_match" in rule or "target_matchers" in rule or \
-                         "target_match_re" in rule
+            has_target = (
+                "target_match" in rule or "target_matchers" in rule or "target_match_re" in rule
+            )
 
             assert has_source, "Inhibit rule should have source matcher"
             assert has_target, "Inhibit rule should have target matcher"
@@ -396,6 +412,7 @@ class TestAlertmanagerConfig:
 # =============================================================================
 # Test: Grafana Configuration
 # =============================================================================
+
 
 class TestGrafanaConfig:
     """Tests for Grafana provisioning configuration."""
@@ -437,6 +454,7 @@ class TestGrafanaConfig:
 # Test: Docker Compose Configuration
 # =============================================================================
 
+
 class TestDockerComposeConfig:
     """Tests for docker-compose configuration."""
 
@@ -466,10 +484,12 @@ class TestDockerComposeConfig:
         # Check for state directory mount
         volume_paths = [v.split(":")[0] if ":" in v else v for v in volumes]
 
-        assert any("/var/lib/ds01" in v for v in volume_paths), \
+        assert any("/var/lib/ds01" in v for v in volume_paths), (
             "Exporter should mount /var/lib/ds01"
-        assert any("/var/log/ds01" in v for v in volume_paths), \
+        )
+        assert any("/var/log/ds01" in v for v in volume_paths), (
             "Exporter should mount /var/log/ds01"
+        )
 
     def test_services_have_restart_policy(self, docker_compose):
         """Services should have restart policy for production use."""
@@ -491,8 +511,9 @@ class TestDockerComposeConfig:
                     if len(parts) == 3:
                         # IP specified
                         ip = parts[0]
-                        assert ip in ["127.0.0.1", "localhost"], \
+                        assert ip in ["127.0.0.1", "localhost"], (
                             f"Service '{name}' port should be localhost-bound: {port}"
+                        )
 
     def test_has_network_defined(self, docker_compose):
         """Docker compose should define a network."""
@@ -516,6 +537,7 @@ class TestDockerComposeConfig:
 # =============================================================================
 # Test: Dashboard Content
 # =============================================================================
+
 
 class TestDashboardContent:
     """Tests for Grafana dashboard content."""
@@ -545,17 +567,31 @@ class TestDashboardContent:
     def test_dashboard_has_valid_panel_types(self, grafana_dashboard):
         """Dashboard panels should have valid Grafana panel types."""
         valid_types = [
-            "stat", "gauge", "graph", "timeseries", "table", "piechart",
-            "bargauge", "text", "row", "heatmap", "barchart", "histogram",
-            "logs", "news", "nodeGraph", "canvas"
+            "stat",
+            "gauge",
+            "graph",
+            "timeseries",
+            "table",
+            "piechart",
+            "bargauge",
+            "text",
+            "row",
+            "heatmap",
+            "barchart",
+            "histogram",
+            "logs",
+            "news",
+            "nodeGraph",
+            "canvas",
         ]
 
         panels = grafana_dashboard.get("panels", [])
 
         for panel in panels:
             panel_type = panel.get("type")
-            assert panel_type in valid_types, \
+            assert panel_type in valid_types, (
                 f"Invalid panel type '{panel_type}' in panel '{panel.get('title')}'"
+            )
 
     def test_dashboard_has_refresh_interval(self, grafana_dashboard):
         """Dashboard should have auto-refresh configured."""

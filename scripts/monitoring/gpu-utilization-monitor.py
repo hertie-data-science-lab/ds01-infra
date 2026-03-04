@@ -12,9 +12,9 @@ Usage:
     gpu-utilization-monitor.py --check-waste   # Check for wasted allocations
 """
 
-import subprocess
 import json
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -42,10 +42,8 @@ def _get_gpu_state_module():
     global _gpu_state_module
     if _gpu_state_module is None:
         import importlib.util
-        spec = importlib.util.spec_from_file_location(
-            'gpu_state_reader',
-            str(GPU_STATE_READER)
-        )
+
+        spec = importlib.util.spec_from_file_location("gpu_state_reader", str(GPU_STATE_READER))
         _gpu_state_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(_gpu_state_module)
     return _gpu_state_module
@@ -68,31 +66,33 @@ def get_gpu_utilization():
             [
                 "nvidia-smi",
                 "--query-gpu=index,name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu",
-                "--format=csv,noheader,nounits"
+                "--format=csv,noheader,nounits",
             ],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         if result.returncode != 0:
             return None
 
         gpus = []
-        for line in result.stdout.strip().split('\n'):
+        for line in result.stdout.strip().split("\n"):
             if not line.strip():
                 continue
-            parts = [p.strip() for p in line.split(',')]
+            parts = [p.strip() for p in line.split(",")]
             if len(parts) >= 7:
-                gpus.append({
-                    "index": int(parts[0]),
-                    "name": parts[1],
-                    "gpu_util_percent": int(parts[2]) if parts[2] != '[N/A]' else 0,
-                    "mem_util_percent": int(parts[3]) if parts[3] != '[N/A]' else 0,
-                    "mem_used_mb": int(parts[4]) if parts[4] != '[N/A]' else 0,
-                    "mem_total_mb": int(parts[5]) if parts[5] != '[N/A]' else 0,
-                    "temperature_c": int(parts[6]) if parts[6] != '[N/A]' else 0
-                })
+                gpus.append(
+                    {
+                        "index": int(parts[0]),
+                        "name": parts[1],
+                        "gpu_util_percent": int(parts[2]) if parts[2] != "[N/A]" else 0,
+                        "mem_util_percent": int(parts[3]) if parts[3] != "[N/A]" else 0,
+                        "mem_used_mb": int(parts[4]) if parts[4] != "[N/A]" else 0,
+                        "mem_total_mb": int(parts[5]) if parts[5] != "[N/A]" else 0,
+                        "temperature_c": int(parts[6]) if parts[6] != "[N/A]" else 0,
+                    }
+                )
         return gpus
     except Exception as e:
         print(f"Error getting GPU utilization: {e}", file=sys.stderr)
@@ -108,7 +108,7 @@ def get_container_gpu_allocations():
     try:
         gpu_state = _get_gpu_state_module()
         return gpu_state.get_gpu_allocations()
-    except Exception as e:
+    except Exception:
         # Fallback: Direct Docker query for resilience
         pass
 
@@ -117,19 +117,21 @@ def get_container_gpu_allocations():
         # Query containers with either label format
         result = subprocess.run(
             [
-                DOCKER_BIN, "ps",
-                "--format", "{{.Names}}|{{.Label \"ds01.user\"}}|{{.Label \"ds01.gpu.allocated\"}}|{{.Label \"ds01.gpu.uuid\"}}|{{.Label \"ds01.gpu.slots\"}}|{{.Label \"ds01.gpu.uuids\"}}"
+                DOCKER_BIN,
+                "ps",
+                "--format",
+                '{{.Names}}|{{.Label "ds01.user"}}|{{.Label "ds01.gpu.allocated"}}|{{.Label "ds01.gpu.uuid"}}|{{.Label "ds01.gpu.slots"}}|{{.Label "ds01.gpu.uuids"}}',
             ],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         allocations = []
-        for line in result.stdout.strip().split('\n'):
+        for line in result.stdout.strip().split("\n"):
             if not line.strip():
                 continue
-            parts = line.split('|')
+            parts = line.split("|")
             if len(parts) >= 3:
                 # Check for multi-GPU labels first (ds01.gpu.slots)
                 gpu_slots = parts[4] if len(parts) > 4 and parts[4] else ""
@@ -137,23 +139,29 @@ def get_container_gpu_allocations():
 
                 if gpu_slots:
                     # Multi-GPU: split into multiple entries
-                    slots_list = [s.strip() for s in gpu_slots.split(',') if s.strip()]
-                    uuids_list = [u.strip() for u in gpu_uuids.split(',') if u.strip()] if gpu_uuids else []
+                    slots_list = [s.strip() for s in gpu_slots.split(",") if s.strip()]
+                    uuids_list = (
+                        [u.strip() for u in gpu_uuids.split(",") if u.strip()] if gpu_uuids else []
+                    )
 
                     for i, slot in enumerate(slots_list):
-                        allocations.append({
+                        allocations.append(
+                            {
+                                "container": parts[0],
+                                "user": parts[1] if parts[1] else "unknown",
+                                "gpu_slot": slot,
+                                "gpu_uuid": uuids_list[i] if i < len(uuids_list) else "",
+                            }
+                        )
+                elif parts[2]:  # Single GPU: ds01.gpu.allocated
+                    allocations.append(
+                        {
                             "container": parts[0],
                             "user": parts[1] if parts[1] else "unknown",
-                            "gpu_slot": slot,
-                            "gpu_uuid": uuids_list[i] if i < len(uuids_list) else ""
-                        })
-                elif parts[2]:  # Single GPU: ds01.gpu.allocated
-                    allocations.append({
-                        "container": parts[0],
-                        "user": parts[1] if parts[1] else "unknown",
-                        "gpu_slot": parts[2],
-                        "gpu_uuid": parts[3] if len(parts) > 3 else ""
-                    })
+                            "gpu_slot": parts[2],
+                            "gpu_uuid": parts[3] if len(parts) > 3 else "",
+                        }
+                    )
         return allocations
     except Exception as e:
         print(f"Error getting container allocations: {e}", file=sys.stderr)
@@ -187,7 +195,7 @@ def record_utilization(gpus, allocations):
         "allocations": [
             {"container": a["container"], "user": a["user"], "gpu_slot": a["gpu_slot"]}
             for a in allocations
-        ]
+        ],
     }
 
     with open(UTILIZATION_LOG, "a") as f:
@@ -200,7 +208,7 @@ def check_wasted_allocations():
     """Check for GPUs that have been underutilized for too long."""
     if not UTILIZATION_LOG.exists():
         print("No utilization history available yet.")
-        print(f"Run 'sudo gpu-utilization-monitor.py --record' periodically to collect data.")
+        print("Run 'sudo gpu-utilization-monitor.py --record' periodically to collect data.")
         return []
 
     # Check read permission
@@ -226,7 +234,7 @@ def check_wasted_allocations():
 
     if len(history) < 3:  # Need at least a few data points
         print(f"Not enough data points yet ({len(history)} found, need 3+).")
-        print(f"Run 'sudo gpu-utilization-monitor.py --record' every 5 minutes to collect data.")
+        print("Run 'sudo gpu-utilization-monitor.py --record' every 5 minutes to collect data.")
         return []
 
     # Analyze each container's GPU usage
@@ -241,7 +249,7 @@ def check_wasted_allocations():
                     "user": alloc.get("user", "unknown"),
                     "gpu_slot": alloc.get("gpu_slot", ""),
                     "samples": 0,
-                    "low_util_samples": 0
+                    "low_util_samples": 0,
                 }
 
             # Check GPU utilization for this container's GPU
@@ -267,13 +275,15 @@ def check_wasted_allocations():
             continue
         waste_ratio = usage["low_util_samples"] / usage["samples"]
         if waste_ratio > 0.8:  # 80%+ of samples show low utilization
-            wasted.append({
-                "container": container,
-                "user": usage["user"],
-                "gpu_slot": usage["gpu_slot"],
-                "waste_ratio": waste_ratio,
-                "samples": usage["samples"]
-            })
+            wasted.append(
+                {
+                    "container": container,
+                    "user": usage["user"],
+                    "gpu_slot": usage["gpu_slot"],
+                    "waste_ratio": waste_ratio,
+                    "samples": usage["samples"],
+                }
+            )
 
     return wasted
 
@@ -285,7 +295,7 @@ def log_event(event_type, user, message):
             subprocess.run(
                 ["python3", str(EVENT_LOGGER), event_type, "--user", user, "--message", message],
                 capture_output=True,
-                timeout=5
+                timeout=5,
             )
         except Exception:
             pass
@@ -324,7 +334,9 @@ def format_utilization_display(gpus, allocations):
                 break
 
         lines.append(f"GPU {idx}: {gpu['name']}")
-        lines.append(f"  Utilization: {color}{util:3d}%{reset} | Memory: {mem_util:3d}% | Temp: {temp}C{container_info}")
+        lines.append(
+            f"  Utilization: {color}{util:3d}%{reset} | Memory: {mem_util:3d}% | Temp: {temp}C{container_info}"
+        )
 
         # Simple bar
         bar_width = 40
@@ -339,16 +351,21 @@ def format_utilization_display(gpus, allocations):
     avg_util = sum(g["gpu_util_percent"] for g in gpus) / total_gpus if total_gpus > 0 else 0
 
     lines.append("-" * 70)
-    lines.append(f"Total GPUs: {total_gpus} | Allocated: {allocated} | Avg Utilization: {avg_util:.1f}%")
+    lines.append(
+        f"Total GPUs: {total_gpus} | Allocated: {allocated} | Avg Utilization: {avg_util:.1f}%"
+    )
 
     return "\n".join(lines)
 
 
 def main():
     import argparse
+
     parser = argparse.ArgumentParser(description="DS01 GPU Utilization Monitor")
     parser.add_argument("--json", action="store_true", help="Output as JSON")
-    parser.add_argument("--record", action="store_true", help="Record to history log (requires sudo)")
+    parser.add_argument(
+        "--record", action="store_true", help="Record to history log (requires sudo)"
+    )
     parser.add_argument("--check-waste", action="store_true", help="Check for wasted allocations")
     args = parser.parse_args()
 
@@ -371,19 +388,21 @@ def main():
         if wasted:
             print(f"Found {len(wasted)} potentially wasted GPU allocation(s):")
             for w in wasted:
-                print(f"  - {w['container']} ({w['user']}): GPU {w['gpu_slot']} - {w['waste_ratio']*100:.0f}% idle")
-                log_event("alert.gpu_waste", w["user"], f"GPU {w['gpu_slot']} underutilized in {w['container']}")
+                print(
+                    f"  - {w['container']} ({w['user']}): GPU {w['gpu_slot']} - {w['waste_ratio'] * 100:.0f}% idle"
+                )
+                log_event(
+                    "alert.gpu_waste",
+                    w["user"],
+                    f"GPU {w['gpu_slot']} underutilized in {w['container']}",
+                )
         else:
             print("No wasted GPU allocations detected.")
         return
 
     # Output
     if args.json:
-        output = {
-            "timestamp": now_utc_iso(),
-            "gpus": gpus,
-            "allocations": allocations
-        }
+        output = {"timestamp": now_utc_iso(), "gpus": gpus, "allocations": allocations}
         print(json.dumps(output, indent=2))
     else:
         print(format_utilization_display(gpus, allocations))

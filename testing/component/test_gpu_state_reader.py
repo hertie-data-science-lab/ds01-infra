@@ -4,13 +4,12 @@ Component Tests: GPU State Reader
 Tests gpu-state-reader.py with real Docker (when available)
 """
 
-import pytest
 import subprocess
-import json
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-
 import sys
+from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, "/opt/ds01-infra/scripts/docker")
 
 
@@ -30,7 +29,7 @@ class TestGPUStateReaderExecution:
         result = subprocess.run(
             ["python3", "-m", "py_compile", str(self.GPU_STATE_READER)],
             capture_output=True,
-            text=True
+            text=True,
         )
         assert result.returncode == 0, f"Syntax error: {result.stderr}"
 
@@ -42,7 +41,7 @@ class TestGPUStateReaderExecution:
             ["python3", str(self.GPU_STATE_READER), "all"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
         # Should not crash (may have no containers)
         assert result.returncode == 0
@@ -55,7 +54,7 @@ class TestGPUStateReaderExecution:
             ["python3", str(self.GPU_STATE_READER), "by-interface"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
         assert result.returncode == 0
 
@@ -63,10 +62,7 @@ class TestGPUStateReaderExecution:
     def test_usage_shown(self):
         """GPU state reader shows usage when called with no args."""
         result = subprocess.run(
-            ["python3", str(self.GPU_STATE_READER)],
-            capture_output=True,
-            text=True,
-            timeout=10
+            ["python3", str(self.GPU_STATE_READER)], capture_output=True, text=True, timeout=10
         )
         # Should show usage
         assert "Usage" in result.stdout or "Commands" in result.stdout
@@ -81,8 +77,7 @@ class TestGPUStateReaderClass:
         try:
             # Import with careful handling of dependencies
             spec = __import__("importlib.util").util.spec_from_file_location(
-                "gpu_state_reader",
-                "/opt/ds01-infra/scripts/docker/gpu-state-reader.py"
+                "gpu_state_reader", "/opt/ds01-infra/scripts/docker/gpu-state-reader.py"
             )
             module = __import__("importlib.util").util.module_from_spec(spec)
             spec.loader.exec_module(module)
@@ -120,7 +115,7 @@ class TestGPUStateReaderWithMockDocker:
         mock_container_data["Config"]["Labels"]["ds01.interface"] = "orchestration"
 
         labels = mock_container_data["Config"]["Labels"]
-        name = mock_container_data["Name"].lstrip("/")
+        mock_container_data["Name"].lstrip("/")
 
         # Simulate detection logic
         if labels.get("ds01.interface") == "orchestration":
@@ -162,6 +157,7 @@ class TestGPUStateReaderWithMockDocker:
     def test_extract_user_from_cgroup_path(self, mock_container_data):
         """Extract user from cgroup parent path."""
         import re
+
         cgroup = mock_container_data["HostConfig"]["CgroupParent"]
 
         # Pattern: ds01-{group}-{user}.slice
@@ -185,17 +181,13 @@ class TestGPUStateReaderInterfaceCategories:
         # These should be constants in the module
         try:
             from gpu_state_reader import (
-                INTERFACE_ORCHESTRATION,
                 INTERFACE_ATOMIC,
                 INTERFACE_DOCKER,
-                INTERFACE_OTHER
+                INTERFACE_ORCHESTRATION,
+                INTERFACE_OTHER,
             )
-            actual = {
-                INTERFACE_ORCHESTRATION,
-                INTERFACE_ATOMIC,
-                INTERFACE_DOCKER,
-                INTERFACE_OTHER
-            }
+
+            actual = {INTERFACE_ORCHESTRATION, INTERFACE_ATOMIC, INTERFACE_DOCKER, INTERFACE_OTHER}
             assert actual == expected
         except ImportError:
             # Check by reading the file

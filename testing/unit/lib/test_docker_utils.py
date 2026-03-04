@@ -19,10 +19,10 @@ Functions tested:
 
 import os
 import subprocess
-import pytest
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
+import pytest
 
 # Path to the docker-utils.sh library
 DOCKER_UTILS_PATH = Path("/opt/ds01-infra/scripts/lib/docker-utils.sh")
@@ -31,7 +31,9 @@ DOCKER_UTILS_PATH = Path("/opt/ds01-infra/scripts/lib/docker-utils.sh")
 class TestDockerUtilsLibrary:
     """Tests for docker-utils.sh bash library functions."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """
         Helper to run a bash function from docker-utils.sh and return result.
 
@@ -52,11 +54,7 @@ class TestDockerUtilsLibrary:
             run_env.update(env)
 
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_library_exists(self):
@@ -73,7 +71,9 @@ class TestDockerUtilsLibrary:
 class TestContainerNameHelpers:
     """Tests for container name transformation functions."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{DOCKER_UTILS_PATH}"
@@ -83,11 +83,7 @@ class TestContainerNameHelpers:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_container_name_to_tag_with_explicit_user_id(self):
@@ -105,7 +101,9 @@ class TestContainerNameHelpers:
 
     def test_container_name_to_tag_with_hyphens(self):
         """ds01_container_name_to_tag should handle names with hyphens."""
-        result = self.run_bash_function('ds01_container_name_to_tag "my-complex-project-name" "2001"')
+        result = self.run_bash_function(
+            'ds01_container_name_to_tag "my-complex-project-name" "2001"'
+        )
         assert result.returncode == 0
         assert result.stdout.strip() == "my-complex-project-name._.2001"
 
@@ -137,7 +135,9 @@ class TestContainerNameHelpers:
 class TestContainerDetection:
     """Tests for container type detection functions."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{DOCKER_UTILS_PATH}"
@@ -147,28 +147,30 @@ class TestContainerDetection:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_is_aime_container_returns_true_for_aime_naming(self):
         """ds01_is_aime_container should return 0 for AIME naming convention."""
-        result = self.run_bash_function('ds01_is_aime_container "my-project._.1001" && echo "true" || echo "false"')
+        result = self.run_bash_function(
+            'ds01_is_aime_container "my-project._.1001" && echo "true" || echo "false"'
+        )
         assert result.returncode == 0
         assert result.stdout.strip() == "true"
 
     def test_is_aime_container_returns_false_for_non_aime_naming(self):
         """ds01_is_aime_container should return 1 for non-AIME naming."""
-        result = self.run_bash_function('ds01_is_aime_container "my-project" && echo "true" || echo "false"')
+        result = self.run_bash_function(
+            'ds01_is_aime_container "my-project" && echo "true" || echo "false"'
+        )
         assert result.returncode == 0
         assert result.stdout.strip() == "false"
 
     def test_is_aime_container_handles_docker_compose_names(self):
         """ds01_is_aime_container should return false for docker-compose names."""
-        result = self.run_bash_function('ds01_is_aime_container "myproject_web_1" && echo "true" || echo "false"')
+        result = self.run_bash_function(
+            'ds01_is_aime_container "myproject_web_1" && echo "true" || echo "false"'
+        )
         assert result.returncode == 0
         assert result.stdout.strip() == "false"
 
@@ -182,7 +184,9 @@ class TestContainerStateFunctions:
     They use longer timeouts to handle Docker daemon latency.
     """
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{DOCKER_UTILS_PATH}"
@@ -196,7 +200,7 @@ class TestContainerStateFunctions:
             capture_output=True,
             text=True,
             env=run_env,
-            timeout=30  # Longer timeout for Docker operations
+            timeout=30,  # Longer timeout for Docker operations
         )
 
     def test_container_exists_returns_false_for_nonexistent(self):
@@ -250,7 +254,9 @@ class TestContainerStateFunctions:
 class TestUserContainerFunctions:
     """Tests for user container listing functions (requires Docker)."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{DOCKER_UTILS_PATH}"
@@ -260,11 +266,7 @@ class TestUserContainerFunctions:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_get_user_containers_returns_empty_for_nonexistent_user(self):
@@ -276,7 +278,7 @@ class TestUserContainerFunctions:
 
     def test_count_user_containers_returns_zero_for_current_user_initially(self):
         """ds01_count_user_containers should work without error."""
-        result = self.run_bash_function('ds01_count_user_containers')
+        result = self.run_bash_function("ds01_count_user_containers")
         assert result.returncode == 0
         # Output should be a number (possibly 0)
         count = result.stdout.strip()
@@ -286,7 +288,9 @@ class TestUserContainerFunctions:
 class TestGetContainerLabelFunction:
     """Tests for the ds01_get_container_label function behavior."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{DOCKER_UTILS_PATH}"
@@ -296,11 +300,7 @@ class TestGetContainerLabelFunction:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_get_container_label_handles_no_value_placeholder(self):
@@ -312,7 +312,7 @@ class TestGetContainerLabelFunction:
         # The function internally handles this - we test the behavior
         # by checking that it returns empty string for a nonexistent container
         # (which would return '<no value>' from docker inspect)
-        result = self.run_bash_function('''
+        result = self.run_bash_function("""
         # Simulate what the function does with <no value>
         value="<no value>"
         if [[ "$value" == "<no value>" ]]; then
@@ -320,7 +320,7 @@ class TestGetContainerLabelFunction:
         else
             echo "$value"
         fi
-        ''')
+        """)
         assert result.returncode == 0
         assert result.stdout.strip() == ""
 
@@ -328,7 +328,9 @@ class TestGetContainerLabelFunction:
 class TestGPUSlotFunctions:
     """Tests for GPU slot retrieval functions."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{DOCKER_UTILS_PATH}"
@@ -338,11 +340,7 @@ class TestGPUSlotFunctions:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_get_container_gpu_uuids_fallback_logic(self):
@@ -352,10 +350,10 @@ class TestGPUSlotFunctions:
         to ds01.gpu.uuid (single GPU) for backward compatibility.
         """
         # Test that the function exists and the fallback logic is in place
-        result = self.run_bash_function('''
+        result = self.run_bash_function("""
         # Check the function contains fallback logic
         type ds01_get_container_gpu_uuids | grep -q "ds01.gpu.uuid" && echo "has_fallback" || echo "no_fallback"
-        ''')
+        """)
         assert result.returncode == 0
         assert "has_fallback" in result.stdout
 
@@ -364,10 +362,10 @@ class TestGPUSlotFunctions:
 
         The function first checks ds01.gpu.slots, then falls back to ds01.gpu.allocated.
         """
-        result = self.run_bash_function('''
+        result = self.run_bash_function("""
         # Check the function contains fallback logic
         type ds01_get_container_gpu_slots | grep -q "ds01.gpu.allocated" && echo "has_fallback" || echo "no_fallback"
-        ''')
+        """)
         assert result.returncode == 0
         assert "has_fallback" in result.stdout
 
@@ -375,7 +373,9 @@ class TestGPUSlotFunctions:
 class TestContainerOwnerFunction:
     """Tests for ds01_get_container_owner function."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{DOCKER_UTILS_PATH}"
@@ -385,11 +385,7 @@ class TestContainerOwnerFunction:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_get_container_owner_fallback_logic(self):
@@ -398,10 +394,10 @@ class TestContainerOwnerFunction:
         The function first checks ds01.user, then falls back to aime.mlc.USER
         for backward compatibility with existing AIME containers.
         """
-        result = self.run_bash_function('''
+        result = self.run_bash_function("""
         # Check the function contains fallback logic to AIME label
         type ds01_get_container_owner | grep -q "aime.mlc.USER" && echo "has_fallback" || echo "no_fallback"
-        ''')
+        """)
         assert result.returncode == 0
         assert "has_fallback" in result.stdout
 
@@ -409,7 +405,9 @@ class TestContainerOwnerFunction:
 class TestContainerInterfaceFunction:
     """Tests for ds01_get_container_interface function."""
 
-    def run_bash_function(self, function_call: str, env: Optional[Dict] = None) -> subprocess.CompletedProcess:
+    def run_bash_function(
+        self, function_call: str, env: Optional[Dict] = None
+    ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
         source "{DOCKER_UTILS_PATH}"
@@ -419,11 +417,7 @@ class TestContainerInterfaceFunction:
         if env:
             run_env.update(env)
         return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            env=run_env,
-            timeout=10
+            ["bash", "-c", script], capture_output=True, text=True, env=run_env, timeout=10
         )
 
     def test_get_container_interface_fallback_for_aime_naming(self):
@@ -432,18 +426,18 @@ class TestContainerInterfaceFunction:
         When ds01.interface label is not set, the function should detect
         AIME naming convention (name._.uid) and return 'atomic'.
         """
-        result = self.run_bash_function('''
+        result = self.run_bash_function("""
         # Check the function contains fallback logic for AIME naming
         type ds01_get_container_interface | grep -q "\\._\\." && echo "has_fallback" || echo "no_fallback"
-        ''')
+        """)
         assert result.returncode == 0
         assert "has_fallback" in result.stdout
 
     def test_get_container_interface_default_to_docker(self):
         """ds01_get_container_interface should default to 'docker' when no interface detected."""
-        result = self.run_bash_function('''
+        result = self.run_bash_function("""
         # Check the function has docker as default
         type ds01_get_container_interface | grep -q '"docker"' && echo "has_default" || echo "no_default"
-        ''')
+        """)
         assert result.returncode == 0
         assert "has_default" in result.stdout

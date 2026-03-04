@@ -10,15 +10,10 @@ import importlib.util
 import json
 import os
 import pwd
-import sys
-import tempfile
-import time
-from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # =============================================================================
 # Module Loading (handles hyphenated filenames)
@@ -85,9 +80,7 @@ def sample_container_data():
                 "ds01.managed": "true",
             }
         },
-        "HostConfig": {
-            "Binds": ["/home/testuser/project:/workspace:rw"]
-        },
+        "HostConfig": {"Binds": ["/home/testuser/project:/workspace:rw"]},
     }
 
 
@@ -103,9 +96,7 @@ def sample_aime_container_data():
                 "aime.mlc.DS01_MANAGED": "true",
             }
         },
-        "HostConfig": {
-            "Binds": []
-        },
+        "HostConfig": {"Binds": []},
     }
 
 
@@ -120,9 +111,7 @@ def sample_devcontainer_data():
                 "devcontainer.local_folder": "/home/developer/projects/myproject",
             }
         },
-        "HostConfig": {
-            "Binds": ["/home/developer/projects/myproject:/workspace:cached"]
-        },
+        "HostConfig": {"Binds": ["/home/developer/projects/myproject:/workspace:cached"]},
     }
 
 
@@ -138,9 +127,7 @@ def sample_compose_container_data():
                 "com.docker.compose.project.working_dir": "/home/researcher/myproject",
             }
         },
-        "HostConfig": {
-            "Binds": ["/home/researcher/myproject:/app:rw"]
-        },
+        "HostConfig": {"Binds": ["/home/researcher/myproject:/app:rw"]},
     }
 
 
@@ -150,12 +137,8 @@ def sample_unlabeled_container_data():
     return {
         "Id": "stu901vwx234stu901vwx234stu901vwx234stu901vwx234stu901vwx234stuv",
         "Name": "/random-container",
-        "Config": {
-            "Labels": {}
-        },
-        "HostConfig": {
-            "Binds": ["/home/someuser/data:/data:ro"]
-        },
+        "Config": {"Labels": {}},
+        "HostConfig": {"Binds": ["/home/someuser/data:/data:ro"]},
     }
 
 
@@ -194,7 +177,6 @@ class TestOwnerDetectionStrategies:
         tracker = tracker_module.ContainerOwnerTracker()
 
         # Mock the username resolution
-        original_resolve = tracker._resolve_username_to_uid
         tracker._resolve_username_to_uid = lambda x: 1001
 
         username, uid, method = tracker._detect_owner(sample_container_data)
@@ -253,9 +235,7 @@ class TestOwnerDetectionStrategies:
             "Id": "xyz456",
             "Name": "/plain-container",
             "Config": {"Labels": {}},
-            "HostConfig": {
-                "Binds": ["/home/mountuser/project:/workspace:rw"]
-            },
+            "HostConfig": {"Binds": ["/home/mountuser/project:/workspace:rw"]},
         }
 
         tracker = tracker_module.ContainerOwnerTracker()
@@ -393,7 +373,7 @@ class TestMountPathValidation:
         fake_userb_home = temp_dir / "home" / "userB"
         fake_userb_home.mkdir(parents=True)
 
-        current_uid = os.getuid()
+        os.getuid()
         userb_fake_uid = 9999  # Not the owner
 
         tracker = tracker_module.ContainerOwnerTracker()
@@ -442,10 +422,7 @@ class TestUIDResolution:
         getent_output = f"h.baker@hertie-school.lan:*:{unknown_uid}:999999::/home/h.baker:/bin/bash"
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=getent_output
-            )
+            mock_run.return_value = MagicMock(returncode=0, stdout=getent_output)
             tracker = tracker_module.ContainerOwnerTracker()
             result = tracker._resolve_uid_to_username(unknown_uid)
 
@@ -460,12 +437,8 @@ class TestUIDResolution:
         # Mock getent to return the UID
         getent_output = f"{domain_user}:*:{domain_uid}:999999::/home/h.baker:/bin/bash"
 
-        with patch("pwd.getpwnam", side_effect=KeyError()), \
-             patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=getent_output
-            )
+        with patch("pwd.getpwnam", side_effect=KeyError()), patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout=getent_output)
             tracker = tracker_module.ContainerOwnerTracker()
             result = tracker._resolve_username_to_uid(domain_user)
 
@@ -474,8 +447,7 @@ class TestUIDResolution:
     @pytest.mark.unit
     def test_returns_none_for_unresolvable_uid(self, tracker_module):
         """Returns None when UID cannot be resolved."""
-        with patch("pwd.getpwuid", side_effect=KeyError()), \
-             patch("subprocess.run") as mock_run:
+        with patch("pwd.getpwuid", side_effect=KeyError()), patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stdout="")
             tracker = tracker_module.ContainerOwnerTracker()
             result = tracker._resolve_uid_to_username(999999999)
@@ -485,8 +457,7 @@ class TestUIDResolution:
     @pytest.mark.unit
     def test_returns_none_for_unresolvable_username(self, tracker_module):
         """Returns None when username cannot be resolved."""
-        with patch("pwd.getpwnam", side_effect=KeyError()), \
-             patch("subprocess.run") as mock_run:
+        with patch("pwd.getpwnam", side_effect=KeyError()), patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1, stdout="")
             tracker = tracker_module.ContainerOwnerTracker()
             result = tracker._resolve_username_to_uid("nonexistent_user")
@@ -507,7 +478,7 @@ class TestInterfaceDetection:
         """Detects interface from ds01.interface label."""
         container_data = {
             "Name": "/test",
-            "Config": {"Labels": {"ds01.interface": "custom-interface"}}
+            "Config": {"Labels": {"ds01.interface": "custom-interface"}},
         }
         tracker = tracker_module.ContainerOwnerTracker()
         result = tracker._detect_interface(container_data)
@@ -516,10 +487,7 @@ class TestInterfaceDetection:
     @pytest.mark.unit
     def test_detects_ds01_managed_as_atomic(self, tracker_module):
         """DS01 managed containers detected as atomic interface."""
-        container_data = {
-            "Name": "/test",
-            "Config": {"Labels": {"ds01.managed": "true"}}
-        }
+        container_data = {"Name": "/test", "Config": {"Labels": {"ds01.managed": "true"}}}
         tracker = tracker_module.ContainerOwnerTracker()
         result = tracker._detect_interface(container_data)
         assert result == "atomic"
@@ -527,10 +495,7 @@ class TestInterfaceDetection:
     @pytest.mark.unit
     def test_detects_aime_managed_as_atomic(self, tracker_module):
         """AIME managed containers detected as atomic interface."""
-        container_data = {
-            "Name": "/test",
-            "Config": {"Labels": {"aime.mlc.DS01_MANAGED": "true"}}
-        }
+        container_data = {"Name": "/test", "Config": {"Labels": {"aime.mlc.DS01_MANAGED": "true"}}}
         tracker = tracker_module.ContainerOwnerTracker()
         result = tracker._detect_interface(container_data)
         assert result == "atomic"
@@ -538,10 +503,7 @@ class TestInterfaceDetection:
     @pytest.mark.unit
     def test_detects_aime_naming_as_atomic(self, tracker_module):
         """AIME naming convention (._.) detected as atomic interface."""
-        container_data = {
-            "Name": "/project._.1001",
-            "Config": {"Labels": {}}
-        }
+        container_data = {"Name": "/project._.1001", "Config": {"Labels": {}}}
         tracker = tracker_module.ContainerOwnerTracker()
         result = tracker._detect_interface(container_data)
         assert result == "atomic"
@@ -551,7 +513,7 @@ class TestInterfaceDetection:
         """Docker Compose containers detected."""
         container_data = {
             "Name": "/myproject-web-1",
-            "Config": {"Labels": {"com.docker.compose.project": "myproject"}}
+            "Config": {"Labels": {"com.docker.compose.project": "myproject"}},
         }
         tracker = tracker_module.ContainerOwnerTracker()
         result = tracker._detect_interface(container_data)
@@ -562,7 +524,7 @@ class TestInterfaceDetection:
         """VS Code devcontainers detected by labels."""
         container_data = {
             "Name": "/some-container",
-            "Config": {"Labels": {"devcontainer.local_folder": "/home/user/project"}}
+            "Config": {"Labels": {"devcontainer.local_folder": "/home/user/project"}},
         }
         tracker = tracker_module.ContainerOwnerTracker()
         result = tracker._detect_interface(container_data)
@@ -571,10 +533,7 @@ class TestInterfaceDetection:
     @pytest.mark.unit
     def test_detects_devcontainer_by_name_prefix(self, tracker_module):
         """VS Code devcontainers detected by vsc- name prefix."""
-        container_data = {
-            "Name": "/vsc-myproject-abc123",
-            "Config": {"Labels": {}}
-        }
+        container_data = {"Name": "/vsc-myproject-abc123", "Config": {"Labels": {}}}
         tracker = tracker_module.ContainerOwnerTracker()
         result = tracker._detect_interface(container_data)
         assert result == "devcontainer"
@@ -582,10 +541,7 @@ class TestInterfaceDetection:
     @pytest.mark.unit
     def test_default_interface_is_docker(self, tracker_module):
         """Unknown containers default to docker interface."""
-        container_data = {
-            "Name": "/random-container",
-            "Config": {"Labels": {}}
-        }
+        container_data = {"Name": "/random-container", "Config": {"Labels": {}}}
         tracker = tracker_module.ContainerOwnerTracker()
         result = tracker._detect_interface(container_data)
         assert result == "docker"
@@ -700,7 +656,9 @@ class TestJSONDataFormat:
         assert "test-container" in containers
 
     @pytest.mark.unit
-    def test_loads_existing_data(self, tracker_module, temp_ownership_file, existing_ownership_data):
+    def test_loads_existing_data(
+        self, tracker_module, temp_ownership_file, existing_ownership_data
+    ):
         """Tracker loads existing data on startup."""
         temp_ownership_file.parent.mkdir(parents=True, exist_ok=True)
         with open(temp_ownership_file, "w") as f:
@@ -907,9 +865,7 @@ class TestEdgeCases:
             "Id": "nonhome123",
             "Name": "/data-container",
             "Config": {"Labels": {}},
-            "HostConfig": {
-                "Binds": ["/var/data/project:/data:rw", "/tmp/cache:/cache:rw"]
-            },
+            "HostConfig": {"Binds": ["/var/data/project:/data:rw", "/tmp/cache:/cache:rw"]},
         }
 
         tracker = tracker_module.ContainerOwnerTracker()

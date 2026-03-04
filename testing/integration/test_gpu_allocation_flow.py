@@ -4,11 +4,11 @@ Integration Tests: GPU Allocation Flow
 Tests GPU allocator integration with state reader and config
 """
 
-import pytest
-import subprocess
 import json
+import subprocess
 from pathlib import Path
-from unittest.mock import patch
+
+import pytest
 
 
 class TestGPUAllocatorIntegration:
@@ -23,7 +23,10 @@ class TestGPUAllocatorIntegration:
 
         # Try to import and use allocator
         result = subprocess.run(
-            ["python3", "-c", f"""
+            [
+                "python3",
+                "-c",
+                f"""
 import sys
 sys.path.insert(0, '/opt/ds01-infra/scripts/docker')
 import yaml
@@ -35,9 +38,10 @@ with open('{config_file}') as f:
 # Verify structure
 assert 'defaults' in config
 print('CONFIG_OK')
-"""],
+""",
+            ],
             capture_output=True,
-            text=True
+            text=True,
         )
         assert "CONFIG_OK" in result.stdout
 
@@ -49,10 +53,7 @@ print('CONFIG_OK')
             pytest.skip("gpu_allocator_v2.py not found")
 
         result = subprocess.run(
-            ["python3", str(allocator), "status"],
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["python3", str(allocator), "status"], capture_output=True, text=True, timeout=30
         )
         # Should complete (may fail if no Docker, but shouldn't crash)
         assert result.returncode in [0, 1]
@@ -64,10 +65,7 @@ print('CONFIG_OK')
         state_reader = Path("/opt/ds01-infra/scripts/docker/gpu-state-reader.py")
 
         result = subprocess.run(
-            ["python3", str(state_reader), "all"],
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["python3", str(state_reader), "all"], capture_output=True, text=True, timeout=30
         )
         # Should execute successfully
         assert result.returncode == 0
@@ -90,7 +88,7 @@ class TestUserLimitEnforcement:
             ["python3", str(limits_script), "testuser"],
             capture_output=True,
             text=True,
-            env={**dict(__import__("os").environ), "RESOURCE_LIMITS_CONFIG": str(config_file)}
+            env={**dict(__import__("os").environ), "RESOURCE_LIMITS_CONFIG": str(config_file)},
         )
         # Should return some output
         assert result.returncode == 0 or "User:" in result.stdout
@@ -103,6 +101,7 @@ class TestUserLimitEnforcement:
             pytest.skip("Config file not found")
 
         import yaml
+
         with open(config_file) as f:
             config = yaml.safe_load(f)
 
@@ -127,7 +126,7 @@ class TestAllocationStateConsistency:
             ["python3", str(state_reader), "by-interface", "--json"],
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
 
         if result.returncode == 0 and result.stdout.strip():

@@ -18,13 +18,9 @@ Fix implementation:
 - If mismatch, clean up and fail with helpful message
 """
 
-import os
-import subprocess
-import pytest
 import re
+import subprocess
 from pathlib import Path
-from typing import Dict, Optional
-
 
 # Path to the mlc-create-wrapper.sh script
 MLC_CREATE_WRAPPER_PATH = Path("/opt/ds01-infra/scripts/docker/mlc-create-wrapper.sh")
@@ -59,7 +55,7 @@ class TestMlcCreateWrapperScript:
         # Look for the python3 call that creates the container
         python_create_pos = content.find('python3 "$MLC_PATCHED"')
         if python_create_pos == -1:
-            python_create_pos = content.find('$MLC_PATCHED')
+            python_create_pos = content.find("$MLC_PATCHED")
 
         # The race check section should be after the creation logic
         # (it's in the post-creation section of the script)
@@ -71,7 +67,7 @@ class TestRaceConditionCheckImplementation:
     def extract_race_condition_check(self) -> str:
         """Extract the race condition check code block."""
         content = MLC_CREATE_WRAPPER_PATH.read_text()
-        lines = content.split('\n')
+        lines = content.split("\n")
 
         # Find the section
         start_idx = None
@@ -85,69 +81,71 @@ class TestRaceConditionCheckImplementation:
                 break
 
         if start_idx and end_idx:
-            return '\n'.join(lines[start_idx:end_idx])
+            return "\n".join(lines[start_idx:end_idx])
         return ""
 
     def test_checks_docker_id_is_set(self):
         """Race condition check should only run if DOCKER_ID is set."""
         check = self.extract_race_condition_check()
         # Should check if DOCKER_ID is non-empty
-        assert '[ -n "$DOCKER_ID" ]' in check or \
-               '[[ -n "$DOCKER_ID" ]]' in check or \
-               'if [ -n "$DOCKER_ID"' in check
+        assert (
+            '[ -n "$DOCKER_ID" ]' in check
+            or '[[ -n "$DOCKER_ID" ]]' in check
+            or 'if [ -n "$DOCKER_ID"' in check
+        )
 
     def test_queries_gpu_uuids_label(self):
         """Check should query ds01.gpu.uuids label."""
         check = self.extract_race_condition_check()
-        assert 'ds01.gpu.uuids' in check
+        assert "ds01.gpu.uuids" in check
 
     def test_queries_gpu_uuid_label_as_fallback(self):
         """Check should fall back to ds01.gpu.uuid label."""
         check = self.extract_race_condition_check()
-        assert 'ds01.gpu.uuid' in check
+        assert "ds01.gpu.uuid" in check
 
     def test_uses_docker_inspect(self):
         """Check should use docker inspect to get labels."""
         check = self.extract_race_condition_check()
-        assert 'docker inspect' in check
+        assert "docker inspect" in check
 
     def test_compares_actual_vs_expected(self):
         """Check should compare actual GPU vs expected DOCKER_ID."""
         check = self.extract_race_condition_check()
         # Should compare ACTUAL_GPU with DOCKER_ID
-        assert 'ACTUAL_GPU' in check
-        assert 'DOCKER_ID' in check
+        assert "ACTUAL_GPU" in check
+        assert "DOCKER_ID" in check
 
     def test_handles_no_value_placeholder(self):
         """Check should handle Docker's '<no value>' placeholder."""
         check = self.extract_race_condition_check()
-        assert '<no value>' in check
+        assert "<no value>" in check
 
     def test_logs_error_on_mismatch(self):
         """Check should log error when race condition detected."""
         check = self.extract_race_condition_check()
-        assert 'race condition' in check.lower()
-        assert 'log_error' in check.lower() or 'ERROR' in check
+        assert "race condition" in check.lower()
+        assert "log_error" in check.lower() or "ERROR" in check
 
     def test_removes_conflicting_container(self):
         """Check should remove the conflicting container."""
         check = self.extract_race_condition_check()
-        assert 'docker rm' in check
+        assert "docker rm" in check
 
     def test_releases_gpu_allocation(self):
         """Check should release the GPU allocation."""
         check = self.extract_race_condition_check()
-        assert 'release' in check.lower()
+        assert "release" in check.lower()
 
     def test_exits_with_error(self):
         """Check should exit with error code."""
         check = self.extract_race_condition_check()
-        assert 'exit 1' in check
+        assert "exit 1" in check
 
     def test_suggests_retry(self):
         """Check should suggest retrying the command."""
         check = self.extract_race_condition_check()
-        assert 'retry' in check.lower() or 'container-deploy' in check
+        assert "retry" in check.lower() or "container-deploy" in check
 
 
 class TestRaceConditionMessages:
@@ -158,9 +156,9 @@ class TestRaceConditionMessages:
         content = MLC_CREATE_WRAPPER_PATH.read_text()
         # Find section between race condition check and docker update
         match = re.search(
-            r'# === GPU ALLOCATION RACE CONDITION CHECK ===.*?# Build docker update',
+            r"# === GPU ALLOCATION RACE CONDITION CHECK ===.*?# Build docker update",
             content,
-            re.DOTALL
+            re.DOTALL,
         )
         return match.group(0) if match else ""
 
@@ -168,20 +166,19 @@ class TestRaceConditionMessages:
         """Error message should show expected GPU ID."""
         section = self.get_race_condition_section()
         # Should show what GPU was expected
-        assert 'Expected GPU' in section or 'DOCKER_ID' in section
+        assert "Expected GPU" in section or "DOCKER_ID" in section
 
     def test_error_shows_actual_gpu(self):
         """Error message should show actual GPU in container."""
         section = self.get_race_condition_section()
         # Should show what GPU the container has
-        assert 'Container has' in section or 'ACTUAL_GPU' in section
+        assert "Container has" in section or "ACTUAL_GPU" in section
 
     def test_explains_the_situation(self):
         """Error message should explain the race condition."""
         section = self.get_race_condition_section()
         # Should explain that another container got the GPU
-        assert 'another container' in section.lower() or \
-               'same time' in section.lower()
+        assert "another container" in section.lower() or "same time" in section.lower()
 
 
 class TestRaceConditionScenarios:
@@ -189,17 +186,12 @@ class TestRaceConditionScenarios:
 
     def run_bash_test(self, script: str) -> subprocess.CompletedProcess:
         """Run a bash script and return result."""
-        return subprocess.run(
-            ["bash", "-c", script],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
+        return subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=10)
 
     def test_scenario_matching_gpus_passes(self):
         """When allocated GPU matches container label, should pass."""
         # Simulate the logic where GPUs match
-        result = self.run_bash_test('''
+        result = self.run_bash_test("""
         DOCKER_ID="GPU-abc123"
         ACTUAL_GPU="GPU-abc123"
 
@@ -209,14 +201,14 @@ class TestRaceConditionScenarios:
             exit 1
         fi
         echo "MATCH"
-        ''')
+        """)
 
         assert result.returncode == 0
         assert "MATCH" in result.stdout
 
     def test_scenario_mismatched_gpus_fails(self):
         """When allocated GPU differs from container label, should fail."""
-        result = self.run_bash_test('''
+        result = self.run_bash_test("""
         DOCKER_ID="GPU-abc123"
         ACTUAL_GPU="GPU-xyz789"
 
@@ -226,14 +218,14 @@ class TestRaceConditionScenarios:
             exit 1
         fi
         echo "MATCH"
-        ''')
+        """)
 
         assert result.returncode == 1
         assert "MISMATCH_DETECTED" in result.stdout
 
     def test_scenario_no_value_is_ignored(self):
         """When label returns '<no value>', should pass (no GPU label set)."""
-        result = self.run_bash_test('''
+        result = self.run_bash_test("""
         DOCKER_ID="GPU-abc123"
         ACTUAL_GPU="<no value>"
 
@@ -243,14 +235,14 @@ class TestRaceConditionScenarios:
             exit 1
         fi
         echo "PASS"
-        ''')
+        """)
 
         assert result.returncode == 0
         assert "PASS" in result.stdout
 
     def test_scenario_empty_actual_gpu_is_ignored(self):
         """When label is empty, should pass (no GPU allocated)."""
-        result = self.run_bash_test('''
+        result = self.run_bash_test("""
         DOCKER_ID="GPU-abc123"
         ACTUAL_GPU=""
 
@@ -260,7 +252,7 @@ class TestRaceConditionScenarios:
             exit 1
         fi
         echo "PASS"
-        ''')
+        """)
 
         assert result.returncode == 0
         assert "PASS" in result.stdout
@@ -272,33 +264,29 @@ class TestRaceConditionCleanup:
     def get_cleanup_commands(self) -> str:
         """Extract cleanup commands from race condition handler."""
         content = MLC_CREATE_WRAPPER_PATH.read_text()
-        match = re.search(
-            r'race condition detected.*?exit 1',
-            content,
-            re.DOTALL | re.IGNORECASE
-        )
+        match = re.search(r"race condition detected.*?exit 1", content, re.DOTALL | re.IGNORECASE)
         return match.group(0) if match else ""
 
     def test_cleanup_removes_container_forcefully(self):
         """Cleanup should use docker rm -f to force remove."""
         cleanup = self.get_cleanup_commands()
-        assert 'docker rm -f' in cleanup
+        assert "docker rm -f" in cleanup
 
     def test_cleanup_uses_container_tag(self):
         """Cleanup should remove the correct container by tag."""
         cleanup = self.get_cleanup_commands()
-        assert 'CONTAINER_TAG' in cleanup
+        assert "CONTAINER_TAG" in cleanup
 
     def test_cleanup_releases_allocation(self):
         """Cleanup should release the GPU allocation."""
         cleanup = self.get_cleanup_commands()
-        assert 'GPU_ALLOCATOR' in cleanup or 'release' in cleanup
+        assert "GPU_ALLOCATOR" in cleanup or "release" in cleanup
 
     def test_cleanup_suppresses_errors(self):
         """Cleanup commands should suppress errors (best effort)."""
         cleanup = self.get_cleanup_commands()
         # Should redirect stderr and/or use || true
-        assert '2>/dev/null' in cleanup or '|| true' in cleanup
+        assert "2>/dev/null" in cleanup or "|| true" in cleanup
 
 
 class TestRaceConditionIntegration:
@@ -310,11 +298,10 @@ class TestRaceConditionIntegration:
 
         # Find the race condition section
         section_start = content.find("GPU ALLOCATION RACE CONDITION CHECK")
-        next_lines = content[section_start:section_start+500]
+        next_lines = content[section_start : section_start + 500]
 
         # Should have conditional check
-        assert 'if [ -n "$DOCKER_ID" ]' in next_lines or \
-               'if [[ -n "$DOCKER_ID"' in next_lines
+        assert 'if [ -n "$DOCKER_ID" ]' in next_lines or 'if [[ -n "$DOCKER_ID"' in next_lines
 
     def test_fallback_label_check_order(self):
         """Should check multi-GPU label first, then single GPU label."""
@@ -322,9 +309,9 @@ class TestRaceConditionIntegration:
 
         # Find both label checks in the race condition section
         section_start = content.find("GPU ALLOCATION RACE CONDITION CHECK")
-        section = content[section_start:section_start+1000]
+        section = content[section_start : section_start + 1000]
 
-        uuids_pos = section.find('ds01.gpu.uuids')
+        uuids_pos = section.find("ds01.gpu.uuids")
         uuid_pos = section.find('ds01.gpu.uuid"')  # Include quote to avoid matching uuids
 
         assert uuids_pos > 0, "Should check ds01.gpu.uuids"

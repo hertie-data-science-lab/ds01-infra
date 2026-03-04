@@ -9,14 +9,10 @@ container ownership data while preserving tracker-detected owners.
 import importlib.util
 import json
 import os
-import sys
-import tempfile
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # =============================================================================
 # Module Loading (handles hyphenated filenames)
@@ -395,10 +391,7 @@ class TestAdminUsers:
         sync_module.RESOURCE_LIMITS = Path("/nonexistent")
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=getent_output
-            )
+            mock_run.return_value = MagicMock(returncode=0, stdout=getent_output)
 
             admins = sync_module.get_admin_users()
 
@@ -427,10 +420,7 @@ class TestAdminUsers:
         getent_output = "ds01-admin:x:1234:group-admin"
 
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=getent_output
-            )
+            mock_run.return_value = MagicMock(returncode=0, stdout=getent_output)
 
             admins = sync_module.get_admin_users()
 
