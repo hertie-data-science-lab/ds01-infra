@@ -1,0 +1,11 @@
+# ShellCheck configuration for DS01 infrastructure
+# Used by differential-shellcheck GitHub Action and local shellcheck runs
+
+# Can't follow non-constant source (dynamic source paths in DS01 scripts)
+disable=SC1090
+
+# Not following sourced files (source files not available at check time)
+disable=SC1091
+
+# Variable referenced but not assigned (variables set via sourced init scripts)
+disable=SC2154

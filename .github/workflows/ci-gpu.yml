@@ -1,0 +1,15 @@
+name: GPU CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  gpu-tests:
+    name: Full test suite (GPU + runtime)
+    runs-on: [self-hosted, linux, gpu]
+    steps:
+      - name: Run runtime tests against live system
+        working-directory: /opt/ds01-infra/testing
+        run: sudo pytest . -m "runtime" -v --tb=short

@@ -15,12 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source repo (ds01-infra)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           path: source
 
       - name: Checkout target repo (ds01-hub)
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           repository: hertie-data-science-lab/ds01-hub
           ssh-key: ${{ secrets.DOCS_DEPLOY_KEY }}
