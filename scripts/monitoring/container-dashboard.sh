@@ -1,15 +1,12 @@
-# File: /opt/ds01-infra/scripts/monitoring/container-dashboard.sh
 #!/bin/bash
 # Real-time resource monitoring dashboard for DS01 containers
 
 # TODO NEED TO IMPLEMENT THIS
 # File: /usr/local/bin/ds01-dashboard
-#!/bin/bash
 # Symlink to container dashboard
 #exec /opt/ds01-infra/scripts/monitoring/container-dashboard.sh "$@"
 
 REFRESH_INTERVAL=2
-BLUE='\033[0;34m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
@@ -17,10 +14,10 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# Get terminal size
+# Get terminal size (updates terminal state for layout)
 get_terminal_size() {
-    TERM_ROWS=$(tput lines)
-    TERM_COLS=$(tput cols)
+    tput lines > /dev/null
+    tput cols > /dev/null
 }
 
 # Draw header
@@ -58,7 +55,8 @@ get_idle_time() {
     
     if [ -f "$state_file" ]; then
         source "$state_file"
-        local now=$(date +%s)
+        local now
+        now=$(date +%s)
         local idle_seconds=$((now - LAST_ACTIVITY))
         local idle_hours=$((idle_seconds / 3600))
         echo "${idle_hours}h"
@@ -70,7 +68,7 @@ get_idle_time() {
 # Color code based on usage percentage
 usage_color() {
     local usage=$1
-    local value=$(echo "$usage" | sed 's/%//')
+    local value="${usage//%/}"
     
     if (( $(echo "$value >= 80" | bc -l) )); then
         echo -e "${RED}${usage}${NC}"
@@ -92,8 +90,10 @@ draw_containers() {
     echo "────────────────────────────────────────────────────────────────────────────────────────────────"
     
     # Get current user's containers
-    local current_user=$(whoami)
-    local containers=$(docker ps -a --filter "label=ds01.user=$current_user" --format "{{.Names}}")
+    local current_user
+    current_user=$(whoami)
+    local containers
+    containers=$(docker ps -a --filter "label=ds01.user=$current_user" --format "{{.Names}}")
     
     if [ -z "$containers" ]; then
         echo "No containers found"
@@ -102,21 +102,29 @@ draw_containers() {
     
     for container in $containers; do
         # Get container info
-        local short_name=$(echo "$container" | cut -d'.' -f1)
-        local username=$(docker inspect "$container" --format='{{index .Config.Labels "ds01.user"}}' 2>/dev/null)
-        local status=$(docker inspect "$container" --format='{{.State.Status}}' 2>/dev/null)
+        local short_name
+        short_name=$(echo "$container" | cut -d'.' -f1)
+        local username
+        username=$(docker inspect "$container" --format='{{index .Config.Labels "ds01.user"}}' 2>/dev/null)
+        local status
+        status=$(docker inspect "$container" --format='{{.State.Status}}' 2>/dev/null)
         
         if [ "$status" = "running" ]; then
             # Get real-time stats
-            local stats=$(docker stats "$container" --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}" 2>/dev/null)
-            
-            local cpu=$(echo "$stats" | cut -d'|' -f1)
-            local mem=$(echo "$stats" | cut -d'|' -f2)
-            local mem_perc=$(echo "$stats" | cut -d'|' -f3)
-            local net=$(echo "$stats" | cut -d'|' -f4)
-            
-            local gpu=$(get_gpu_allocation "$container")
-            local idle=$(get_idle_time "$container")
+            local stats
+            stats=$(docker stats "$container" --no-stream --format "{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}" 2>/dev/null)
+
+            local cpu
+            cpu=$(echo "$stats" | cut -d'|' -f1)
+            local mem_perc
+            mem_perc=$(echo "$stats" | cut -d'|' -f3)
+            local net
+            net=$(echo "$stats" | cut -d'|' -f4)
+
+            local gpu
+            gpu=$(get_gpu_allocation "$container")
+            local idle
+            idle=$(get_idle_time "$container")
             
             # Color code values
             cpu=$(usage_color "$cpu")
@@ -125,7 +133,6 @@ draw_containers() {
             local status_color="${GREEN}running${NC}"
         else
             local cpu="-"
-            local mem="-"
             local mem_perc="-"
             local net="-"
             local gpu="-"
@@ -149,16 +156,19 @@ draw_gpu_status() {
         nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu \
             --format=csv,noheader,nounits | while IFS=, read -r idx name util mem_used mem_total temp; do
             
-            util=$(echo $util | xargs)
-            mem_used=$(echo $mem_used | xargs)
-            mem_total=$(echo $mem_total | xargs)
-            temp=$(echo $temp | xargs)
+            util=$(echo "$util" | xargs)
+            mem_used=$(echo "$mem_used" | xargs)
+            mem_total=$(echo "$mem_total" | xargs)
+            temp=$(echo "$temp" | xargs)
             
             # Calculate memory percentage
+            local mem_perc
             mem_perc=$(echo "scale=1; $mem_used * 100 / $mem_total" | bc)
-            
+
             # Color code
+            local util_colored
             util_colored=$(usage_color "${util}%")
+            local mem_colored
             mem_colored=$(usage_color "${mem_perc}%")
             
             echo -e "  GPU${idx}: ${name}"
@@ -176,16 +186,20 @@ draw_summary() {
     echo ""
     
     # Count containers by status
-    local current_user=$(whoami)
-    local total=$(docker ps -a --filter "label=ds01.user=$current_user" --format "{{.Names}}" | wc -l)
-    local running=$(docker ps --filter "label=ds01.user=$current_user" --format "{{.Names}}" | wc -l)
+    local current_user
+    current_user=$(whoami)
+    local total
+    total=$(docker ps -a --filter "label=ds01.user=$current_user" --format "{{.Names}}" | wc -l)
+    local running
+    running=$(docker ps --filter "label=ds01.user=$current_user" --format "{{.Names}}" | wc -l)
     local stopped=$((total - running))
     
     echo -e "  Containers: $total total  |  ${GREEN}$running running${NC}  |  ${YELLOW}$stopped stopped${NC}"
     echo ""
     
     # Disk usage for workspace
-    local workspace_usage=$(du -sh ~/workspace 2>/dev/null | cut -f1)
+    local workspace_usage
+    workspace_usage=$(du -sh ~/workspace 2>/dev/null | cut -f1)
     echo "  Workspace: $workspace_usage used in ~/workspace"
     echo ""
 }
@@ -220,7 +234,7 @@ main() {
         draw_footer
         
         # Wait for refresh interval or user input
-        read -t $REFRESH_INTERVAL -n 1 key 2>/dev/null || true
+        read -r -t $REFRESH_INTERVAL -n 1 key 2>/dev/null || true
         
         if [[ "$key" == "q" ]] || [[ "$key" == "Q" ]]; then
             break
