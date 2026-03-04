@@ -279,7 +279,7 @@ class TestDSO1HelperFunctions:
         """ds01_current_user should return current username."""
         result = self.run_bash_function("ds01_current_user")
         assert result.returncode == 0
-        expected_user = os.environ.get("USER", os.getlogin())
+        expected_user = os.environ.get("USER", getattr(os, "getlogin", lambda: "runner")())
         assert result.stdout.strip() == expected_user
 
 
