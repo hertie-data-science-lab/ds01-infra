@@ -179,7 +179,9 @@ class TestEventLoggerExceptionHandling(TestExceptionHandlingPatterns):
             f"Found bare except at lines: {[h['line'] for h in bare_excepts]}"
         )
 
-    @pytest.mark.xfail(reason="event-logger.py does not explicitly catch PermissionError — uses broad OSError")
+    @pytest.mark.xfail(
+        reason="event-logger.py does not explicitly catch PermissionError — uses broad OSError"
+    )
     def test_log_method_handles_permission_error(self):
         """log() method should handle PermissionError specifically."""
         content = EVENT_LOGGER_PATH.read_text()
@@ -274,7 +276,9 @@ class TestGpuStateReaderExceptionHandling(TestExceptionHandlingPatterns):
 class TestExceptionHandlingFunctionality:
     """Functional tests for exception handling behavior."""
 
-    @pytest.mark.xfail(reason="event-logger.py uses EventReader class, not EventLogger — API changed")
+    @pytest.mark.xfail(
+        reason="event-logger.py uses EventReader class, not EventLogger — API changed"
+    )
     def test_event_logger_handles_missing_directory(self, temp_dir):
         """EventLogger should handle missing log directory."""
         sys.path.insert(0, str(EVENT_LOGGER_PATH.parent))
@@ -295,7 +299,9 @@ class TestExceptionHandlingFunctionality:
         logger.log("test.event", user="test")
         # Result depends on permissions, but should not raise
 
-    @pytest.mark.xfail(reason="event-logger.py uses EventReader class, not EventLogger — API changed")
+    @pytest.mark.xfail(
+        reason="event-logger.py uses EventReader class, not EventLogger — API changed"
+    )
     def test_event_logger_handles_write_failure(self, temp_dir):
         """EventLogger should handle write failures gracefully."""
         sys.path.insert(0, str(EVENT_LOGGER_PATH.parent))

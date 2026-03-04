@@ -26,7 +26,9 @@ class TestContainerLifecycleScripts:
     ]
 
     @pytest.mark.integration
-    @pytest.mark.xfail(reason="container-create/container-deploy scripts not yet implemented (v1.1 Phase 14)")
+    @pytest.mark.xfail(
+        reason="container-create/container-deploy scripts not yet implemented (v1.1 Phase 14)"
+    )
     def test_all_lifecycle_scripts_exist(self):
         """All container lifecycle scripts exist."""
         for script in self.LIFECYCLE_SCRIPTS:
