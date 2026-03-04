@@ -89,12 +89,19 @@ def test_container(request):
     """Create a simple test container, clean up after."""
     name = f"ds01-lifecycle-test-{int(time.time())}"
     real_docker(
-        "run", "-d",
-        "--name", name,
-        "--label", "ds01.user=test-lifecycle",
-        "--label", "ds01.managed=true",
-        "--label", "ds01.interface=orchestration",
-        "alpine:latest", "sleep", "3600",
+        "run",
+        "-d",
+        "--name",
+        name,
+        "--label",
+        "ds01.user=test-lifecycle",
+        "--label",
+        "ds01.managed=true",
+        "--label",
+        "ds01.interface=orchestration",
+        "alpine:latest",
+        "sleep",
+        "3600",
     )
     yield name
     # Cleanup
@@ -172,8 +179,10 @@ class TestLiveExemptionEnforcement:
             capture_output=True,
             text=True,
             timeout=60,
-            env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-                 "DRY_RUN": "1"},
+            env={
+                "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "DRY_RUN": "1",
+            },
         )
         # Script should complete without error
         # (may or may not find running containers to check)

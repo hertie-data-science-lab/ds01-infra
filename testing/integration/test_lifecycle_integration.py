@@ -92,12 +92,17 @@ class TestConfigResolverIntegration:
 
         # Researcher should have different idle_detection_window
         researcher_yaml = raw["groups"]["researcher"]["policies"]
-        assert researcher_policies["idle_detection_window"] == researcher_yaml["idle_detection_window"]
+        assert (
+            researcher_policies["idle_detection_window"] == researcher_yaml["idle_detection_window"]
+        )
 
         # If student and researcher differ in config, they should differ in resolution
         student_yaml = raw["groups"]["student"]["policies"]
         if student_yaml["idle_detection_window"] != researcher_yaml["idle_detection_window"]:
-            assert student_policies["idle_detection_window"] != researcher_policies["idle_detection_window"]
+            assert (
+                student_policies["idle_detection_window"]
+                != researcher_policies["idle_detection_window"]
+            )
 
 
 # =============================================================================

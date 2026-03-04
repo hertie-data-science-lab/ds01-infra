@@ -22,9 +22,10 @@ Usage:
 """
 
 import argparse
-import time
-import sys
 import os
+import sys
+import time
+
 
 def stress_test_pytorch(device_id: int, target_util: int = 100, duration: int = None):
     """Run stress test using PyTorch"""
@@ -34,7 +35,10 @@ def stress_test_pytorch(device_id: int, target_util: int = 100, duration: int = 
         print("ERROR: PyTorch not installed.", file=sys.stderr)
         print("", file=sys.stderr)
         print("Install PyTorch with:", file=sys.stderr)
-        print("  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121", file=sys.stderr)
+        print(
+            "  pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121",
+            file=sys.stderr,
+        )
         print("", file=sys.stderr)
         print("Or see monitoring/requirements.txt for other options", file=sys.stderr)
         return False
@@ -53,7 +57,6 @@ def stress_test_pytorch(device_id: int, target_util: int = 100, duration: int = 
 
         # Determine matrix size based on target utilization
         # Larger matrices = higher utilization
-        base_size = 4096
         if target_util < 30:
             matrix_size = 2048
             sleep_time = 0.5
@@ -79,7 +82,7 @@ def stress_test_pytorch(device_id: int, target_util: int = 100, duration: int = 
 
         while True:
             # Perform matrix multiplication
-            c = torch.matmul(a, b)
+            torch.matmul(a, b)
 
             # Force synchronization to ensure compute completes
             torch.cuda.synchronize()
@@ -108,6 +111,7 @@ def stress_test_pytorch(device_id: int, target_util: int = 100, duration: int = 
         return False
 
     return True
+
 
 def stress_test_cupy(device_id: int, target_util: int = 100, duration: int = None):
     """Run stress test using CuPy (fallback if PyTorch unavailable)"""
@@ -148,7 +152,7 @@ def stress_test_cupy(device_id: int, target_util: int = 100, duration: int = Non
 
             while True:
                 # Perform matrix multiplication
-                c = cp.matmul(a, b)
+                cp.matmul(a, b)
 
                 # Force synchronization
                 cp.cuda.Stream.null.synchronize()
@@ -175,6 +179,7 @@ def stress_test_cupy(device_id: int, target_util: int = 100, duration: int = Non
 
     return True
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="GPU stress test for DS01 dashboard validation",
@@ -199,33 +204,36 @@ Examples:
   pkill -f gpu-stress-test.py
 
 Note: Use nvidia-smi to see CUDA device IDs for MIG instances
-        """
+        """,
     )
     parser.add_argument(
-        "--device", "-d",
+        "--device",
+        "-d",
         type=int,
         required=True,
-        help="CUDA device ID to stress test (see nvidia-smi)"
+        help="CUDA device ID to stress test (see nvidia-smi)",
     )
     parser.add_argument(
-        "--target-util", "-u",
+        "--target-util",
+        "-u",
         type=int,
         default=100,
         choices=range(10, 101),
         metavar="10-100",
-        help="Target GPU utilization percentage (default: 100)"
+        help="Target GPU utilization percentage (default: 100)",
     )
     parser.add_argument(
-        "--duration", "-t",
+        "--duration",
+        "-t",
         type=int,
         default=None,
-        help="Duration in seconds (default: infinite, stop with Ctrl+C)"
+        help="Duration in seconds (default: infinite, stop with Ctrl+C)",
     )
     parser.add_argument(
         "--backend",
         choices=["pytorch", "cupy"],
         default="pytorch",
-        help="Backend to use for compute (default: pytorch)"
+        help="Backend to use for compute (default: pytorch)",
     )
 
     args = parser.parse_args()
@@ -242,6 +250,7 @@ Note: Use nvidia-smi to see CUDA device IDs for MIG instances
         success = stress_test_cupy(args.device, args.target_util, args.duration)
 
     sys.exit(0 if success else 1)
+
 
 if __name__ == "__main__":
     main()

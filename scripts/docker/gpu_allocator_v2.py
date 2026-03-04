@@ -11,16 +11,17 @@ Updated for DS01 Layered Architecture:
 - GPU hold behavior varies by interface
 """
 
-import sys
-import json
-import yaml
-import subprocess
-import importlib.util
 import fcntl
+import importlib.util
+import json
 import signal
-from pathlib import Path
+import subprocess
+import sys
 from datetime import datetime
-from typing import Optional, Dict, Tuple
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+
+import yaml
 
 # Interface constants (from gpu-state-reader.py)
 INTERFACE_ORCHESTRATION = "orchestration"
@@ -39,13 +40,15 @@ try:
 except ImportError:
     # Fallback if library not available
     import re as _re
+
     def sanitize_username_for_slice(username: str) -> str:
         if not username:
             return username
-        sanitized = username.replace('@', '-at-').replace('.', '-')
-        sanitized = _re.sub(r'[^a-zA-Z0-9_:-]', '-', sanitized)
-        sanitized = _re.sub(r'-+', '-', sanitized).strip('-')
+        sanitized = username.replace("@", "-at-").replace(".", "-")
+        sanitized = _re.sub(r"[^a-zA-Z0-9_:-]", "-", sanitized)
+        sanitized = _re.sub(r"-+", "-", sanitized).strip("-")
         return sanitized
+
 
 # Import event logging (with safe fallback - allocator must work even if logging fails)
 try:
@@ -55,14 +58,19 @@ except ImportError:
     def log_event(*args, **kwargs) -> bool:
         return False
 
+
 # Dynamic import for gpu-state-reader.py
-spec = importlib.util.spec_from_file_location('gpu_state_reader', str(SCRIPT_DIR / 'gpu-state-reader.py'))
+spec = importlib.util.spec_from_file_location(
+    "gpu_state_reader", str(SCRIPT_DIR / "gpu-state-reader.py")
+)
 gpu_state_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gpu_state_module)
 GPUStateReader = gpu_state_module.GPUStateReader
 
 # Dynamic import for gpu-availability-checker.py
-spec = importlib.util.spec_from_file_location('gpu_availability_checker', str(SCRIPT_DIR / 'gpu-availability-checker.py'))
+spec = importlib.util.spec_from_file_location(
+    "gpu_availability_checker", str(SCRIPT_DIR / "gpu-availability-checker.py")
+)
 gpu_avail_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gpu_avail_module)
 GPUAvailabilityChecker = gpu_avail_module.GPUAvailabilityChecker
@@ -70,7 +78,7 @@ GPUAvailabilityChecker = gpu_avail_module.GPUAvailabilityChecker
 
 class GPUAllocatorSmart:
     # Safe defaults for fail-open when config loading fails
-    SAFE_DEFAULTS = {'max_mig_instances': 1, 'allow_full_gpu': False, 'priority': 10}
+    SAFE_DEFAULTS = {"max_mig_instances": 1, "allow_full_gpu": False, "priority": 10}
 
     def __init__(self, config_path="/opt/ds01-infra/config/runtime/resource-limits.yaml"):
         self.config_path = Path(config_path)
@@ -90,10 +98,14 @@ class GPUAllocatorSmart:
         try:
             sys.path.insert(0, str(Path(__file__).parent))
             from get_resource_limits import ResourceLimitParser
+
             self.resource_parser = ResourceLimitParser(config_path)
         except ImportError:
             # Fail-open: if parser unavailable, disable aggregate checking
-            print("Warning: ResourceLimitParser unavailable, aggregate GPU quota disabled", file=sys.stderr)
+            print(
+                "Warning: ResourceLimitParser unavailable, aggregate GPU quota disabled",
+                file=sys.stderr,
+            )
             self.resource_parser = None
 
     def _timeout_handler(self, signum, frame):
@@ -114,7 +126,7 @@ class GPUAllocatorSmart:
         signal.alarm(timeout)
 
         try:
-            self._lock_fd = open(self.lock_file, 'w')
+            self._lock_fd = open(self.lock_file, "w")
             fcntl.flock(self._lock_fd, fcntl.LOCK_EX)
             signal.alarm(0)  # Cancel alarm on success
             return True
@@ -125,16 +137,18 @@ class GPUAllocatorSmart:
                 "gpu.allocation.lock_timeout",
                 source="gpu_allocator",
                 error=f"{timeout}s timeout exceeded",
-                severity="warning"
+                severity="warning",
             )
-            print(f"Warning: GPU allocator lock timeout ({timeout}s), continuing without lock",
-                  file=sys.stderr)
+            print(
+                f"Warning: GPU allocator lock timeout ({timeout}s), continuing without lock",
+                file=sys.stderr,
+            )
             self._lock_fd = None
             return False
 
     def _release_lock(self):
         """Release the exclusive lock"""
-        if hasattr(self, '_lock_fd') and self._lock_fd:
+        if hasattr(self, "_lock_fd") and self._lock_fd:
             fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
             self._lock_fd.close()
             self._lock_fd = None
@@ -153,19 +167,19 @@ class GPUAllocatorSmart:
 
         # Load group members from config/groups/{group}.members files
         groups_dir = self.config_path.parent / "groups"
-        for group_name in (config.get('groups') or {}):
+        for group_name in config.get("groups") or {}:
             member_file = groups_dir / f"{group_name}.members"
             try:
                 if member_file.exists():
                     members = []
                     with open(member_file) as f:
                         for line in f:
-                            line = line.split('#')[0].strip()
+                            line = line.split("#")[0].strip()
                             if line:
                                 members.append(line)
                     if members:
-                        inline = config['groups'][group_name].get('members', [])
-                        config['groups'][group_name]['members'] = list(set(members + inline))
+                        inline = config["groups"][group_name].get("members", [])
+                        config["groups"][group_name]["members"] = list(set(members + inline))
             except (PermissionError, IOError):
                 pass  # Fall back to inline members if file unreadable
 
@@ -177,12 +191,12 @@ class GPUAllocatorSmart:
         Supports both original and sanitized usernames in config lookups.
         Tries original username first, then sanitized form.
         """
-        defaults = self.config.get('defaults', {}) or {}
-        groups = self.config.get('groups', {}) or {}
+        defaults = self.config.get("defaults", {}) or {}
+        groups = self.config.get("groups", {}) or {}
         sanitized = sanitize_username_for_slice(username)
 
         # Check user_overrides first (highest priority) - try original, then sanitized
-        user_overrides = self.config.get('user_overrides', {}) or {}
+        user_overrides = self.config.get("user_overrides", {}) or {}
         override_key = None
         if username in user_overrides:
             override_key = username
@@ -192,33 +206,33 @@ class GPUAllocatorSmart:
         if override_key:
             base_limits = defaults.copy()
             base_limits.update(user_overrides[override_key])
-            base_limits['_group'] = 'override'
+            base_limits["_group"] = "override"
             return base_limits
 
         # Check groups - try original, then sanitized
         for group_name, group_config in groups.items():
             if group_config:
-                members = group_config.get('members', [])
+                members = group_config.get("members", [])
                 if username in members or (sanitized != username and sanitized in members):
                     base_limits = defaults.copy()
-                    group_limits = {k: v for k, v in group_config.items() if k != 'members'}
+                    group_limits = {k: v for k, v in group_config.items() if k != "members"}
                     base_limits.update(group_limits)
-                    base_limits['_group'] = group_name
+                    base_limits["_group"] = group_name
                     return base_limits
 
         # Default group
-        default_group = self.config.get('default_group', 'student')
+        default_group = self.config.get("default_group", "student")
         if default_group in groups:
             base_limits = defaults.copy()
             group_config = groups[default_group]
-            group_limits = {k: v for k, v in group_config.items() if k != 'members'}
+            group_limits = {k: v for k, v in group_config.items() if k != "members"}
             base_limits.update(group_limits)
-            base_limits['_group'] = default_group
+            base_limits["_group"] = default_group
             return base_limits
 
         # Fallback to defaults only
         base_limits = defaults.copy()
-        base_limits['_group'] = 'default'
+        base_limits["_group"] = "default"
         # Fail-open: if config failed to load or is empty, return safe defaults
         return base_limits if base_limits else self.SAFE_DEFAULTS.copy()
 
@@ -226,20 +240,22 @@ class GPUAllocatorSmart:
         """Check if user is allowed to use full (non-MIG) GPUs"""
         limits = self._get_user_limits(username)
         # Default to False - students and default users cannot use full GPUs
-        return limits.get('allow_full_gpu', False)
+        return limits.get("allow_full_gpu", False)
 
     def _is_full_gpu(self, gpu_slot: str) -> bool:
         """Check if a GPU slot is a full GPU (not MIG instance)"""
         # Full GPU slots don't have a decimal (e.g., "0", "1")
         # MIG slots have decimal (e.g., "1.0", "1.2")
-        return '.' not in str(gpu_slot)
+        return "." not in str(gpu_slot)
 
     def _get_user_priority(self, username: str) -> int:
         """Get user's allocation priority"""
         limits = self._get_user_limits(username)
-        return limits.get('priority', 10)
+        return limits.get("priority", 10)
 
-    def _check_aggregate_gpu_quota(self, username: str, requested_count: int) -> Tuple[bool, Optional[str]]:
+    def _check_aggregate_gpu_quota(
+        self, username: str, requested_count: int
+    ) -> Tuple[bool, Optional[str]]:
         """Check if user is within aggregate GPU quota (per-user total cap).
 
         This is the first layer of GPU quota enforcement - checks total GPU usage
@@ -268,7 +284,7 @@ class GPUAllocatorSmart:
                 return True, None
 
             # No gpu_limit in aggregate section = unlimited
-            gpu_limit = aggregate.get('gpu_limit')
+            gpu_limit = aggregate.get("gpu_limit")
             if gpu_limit is None or gpu_limit == "unlimited":
                 return True, None
 
@@ -278,7 +294,9 @@ class GPUAllocatorSmart:
 
             # Check if new allocation would exceed limit
             if current_count + requested_count > gpu_limit:
-                error_msg = f"AGGREGATE_GPU_QUOTA_EXCEEDED ({current_count}+{requested_count}>{gpu_limit})"
+                error_msg = (
+                    f"AGGREGATE_GPU_QUOTA_EXCEEDED ({current_count}+{requested_count}>{gpu_limit})"
+                )
                 return False, error_msg
 
             return True, None
@@ -288,8 +306,14 @@ class GPUAllocatorSmart:
             print(f"Warning: Aggregate GPU quota check failed: {e}", file=sys.stderr)
             return True, None
 
-    def _log_event(self, event_type: str, user: str, container: str,
-                   gpu_id: Optional[str] = None, reason: str = ""):
+    def _log_event(
+        self,
+        event_type: str,
+        user: str,
+        container: str,
+        gpu_id: Optional[str] = None,
+        reason: str = "",
+    ):
         """Log event to centralized event logger (events.jsonl)"""
         # Map legacy event types to new event types
         event_map = {
@@ -300,14 +324,20 @@ class GPUAllocatorSmart:
         mapped_type = event_map.get(event_type, f"gpu.{event_type.lower()}")
 
         # Build event-logger.py command
-        event_logger = str(SCRIPT_DIR / 'event-logger.py')
-        args = ['python3', event_logger, 'log', mapped_type,
-                f'user={user}', f'container={container}']
+        event_logger = str(SCRIPT_DIR / "event-logger.py")
+        args = [
+            "python3",
+            event_logger,
+            "log",
+            mapped_type,
+            f"user={user}",
+            f"container={container}",
+        ]
 
         if gpu_id:
-            args.append(f'gpu={gpu_id}')
+            args.append(f"gpu={gpu_id}")
         if reason:
-            args.append(f'reason={reason}')
+            args.append(f"reason={reason}")
 
         # Log to centralized event system (fail silently - logging should never block allocation)
         try:
@@ -320,7 +350,7 @@ class GPUAllocatorSmart:
         timestamp = datetime.now().isoformat()
         log_entry = f"{timestamp}|{event_type}|{user}|{container}|{gpu_id or 'N/A'}|{reason}\n"
         try:
-            with open(self.log_file, 'a') as f:
+            with open(self.log_file, "a") as f:
                 f.write(log_entry)
         except (IOError, OSError) as e:
             # Log failures to stderr for debugging, but don't block
@@ -333,28 +363,34 @@ class GPUAllocatorSmart:
         """
         try:
             result = subprocess.run(
-                ['docker', 'inspect', '--format',
-                 '{{index .Config.Labels "ds01.interface"}}|||'
-                 '{{index .Config.Labels "ds01.managed"}}|||'
-                 '{{.Name}}'],
-                capture_output=True, text=True, check=True
+                [
+                    "docker",
+                    "inspect",
+                    "--format",
+                    '{{index .Config.Labels "ds01.interface"}}|||'
+                    '{{index .Config.Labels "ds01.managed"}}|||'
+                    "{{.Name}}",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
             )
             output = result.stdout.strip()
-            parts = output.split('|||')
-            interface_label = parts[0] if len(parts) > 0 else ''
-            managed_label = parts[1] if len(parts) > 1 else ''
-            name = parts[2].lstrip('/') if len(parts) > 2 else ''
+            parts = output.split("|||")
+            interface_label = parts[0] if len(parts) > 0 else ""
+            managed_label = parts[1] if len(parts) > 1 else ""
+            name = parts[2].lstrip("/") if len(parts) > 2 else ""
 
             # Explicit interface label
-            if interface_label and interface_label != '<no value>':
+            if interface_label and interface_label != "<no value>":
                 return interface_label
 
             # DS01 managed but no explicit interface -> atomic (backward compat)
-            if managed_label == 'true':
+            if managed_label == "true":
                 return INTERFACE_ATOMIC
 
             # AIME naming convention
-            if '._.' in name:
+            if "._." in name:
                 return INTERFACE_ATOMIC
 
             # Default: docker direct
@@ -363,9 +399,13 @@ class GPUAllocatorSmart:
         except subprocess.CalledProcessError:
             return INTERFACE_DOCKER
 
-    def allocate_gpu(self, username: str, container: str,
-                     max_gpus: Optional[int] = None,
-                     require_full_gpu: bool = False) -> Tuple[Optional[str], str]:
+    def allocate_gpu(
+        self,
+        username: str,
+        container: str,
+        max_gpus: Optional[int] = None,
+        require_full_gpu: bool = False,
+    ) -> Tuple[Optional[str], str]:
         """
         Allocate GPU for a container (stateless - reads from Docker).
         Uses file lock to prevent race conditions.
@@ -388,21 +428,21 @@ class GPUAllocatorSmart:
             # Check if container already has GPU (read from Docker)
             container_gpu = self.state_reader.get_container_gpu(container)
             if container_gpu:
-                gpu_slot = container_gpu['gpu_slot']
+                gpu_slot = container_gpu["gpu_slot"]
                 return gpu_slot, "ALREADY_ALLOCATED"
 
             # Get user's limits
             limits = self._get_user_limits(username)
 
             if max_gpus is None:
-                max_gpus = limits.get('max_mig_instances', 1)
+                max_gpus = limits.get("max_mig_instances", 1)
                 # Handle unlimited
                 if max_gpus is None or max_gpus == "unlimited":
                     max_gpus = 999
 
             # Check full GPU permission if requesting full GPU
             if require_full_gpu and not self._can_use_full_gpu(username):
-                group = limits.get('_group', 'default')
+                group = limits.get("_group", "default")
                 reason = f"FULL_GPU_NOT_ALLOWED (group={group}, allow_full_gpu=false)"
                 self._log_event("REJECTED", username, container, reason=reason)
 
@@ -412,7 +452,7 @@ class GPUAllocatorSmart:
                     user=username,
                     source="gpu_allocator",
                     container=container,
-                    reason=reason
+                    reason=reason,
                 )
 
                 return None, reason
@@ -428,7 +468,7 @@ class GPUAllocatorSmart:
                     user=username,
                     source="gpu_allocator",
                     container=container,
-                    reason=agg_error
+                    reason=agg_error,
                 )
 
                 return None, agg_error
@@ -447,7 +487,7 @@ class GPUAllocatorSmart:
                     user=username,
                     source="gpu_allocator",
                     container=container,
-                    reason=reason
+                    reason=reason,
                 )
 
                 return None, reason
@@ -456,12 +496,15 @@ class GPUAllocatorSmart:
             # Pass allow_full_gpu to availability checker so it can filter appropriately
             allow_full = self._can_use_full_gpu(username)
             suggestion = self.availability_checker.suggest_gpu_for_user(
-                username, max_gpus, self._get_user_priority(username),
-                require_full_gpu=require_full_gpu, allow_full_gpu=allow_full
+                username,
+                max_gpus,
+                self._get_user_priority(username),
+                require_full_gpu=require_full_gpu,
+                allow_full_gpu=allow_full,
             )
 
-            if not suggestion['success']:
-                reason = suggestion['error']
+            if not suggestion["success"]:
+                reason = suggestion["error"]
                 self._log_event("REJECTED", username, container, reason=reason)
 
                 # Log to centralized event system (best-effort)
@@ -470,12 +513,12 @@ class GPUAllocatorSmart:
                     user=username,
                     source="gpu_allocator",
                     container=container,
-                    reason=reason
+                    reason=reason,
                 )
 
                 return None, reason
 
-            gpu_slot = suggestion['gpu_slot']
+            gpu_slot = suggestion["gpu_slot"]
 
             # Double-check full GPU permission (belt and suspenders)
             if self._is_full_gpu(gpu_slot) and not allow_full:
@@ -488,7 +531,7 @@ class GPUAllocatorSmart:
                     user=username,
                     source="gpu_allocator",
                     container=container,
-                    reason=reason
+                    reason=reason,
                 )
 
                 return None, reason
@@ -504,7 +547,7 @@ class GPUAllocatorSmart:
                 source="gpu_allocator",
                 container=container,
                 gpu_uuid=gpu_slot,
-                reason=reason
+                reason=reason,
             )
 
             return gpu_slot, "SUCCESS"
@@ -516,9 +559,9 @@ class GPUAllocatorSmart:
             # Always release the lock
             self._release_lock()
 
-    def allocate_multi_gpu(self, username: str, container: str,
-                           num_migs: int = 1,
-                           prefer_full_gpu: bool = False) -> Tuple[list, int, str]:
+    def allocate_multi_gpu(
+        self, username: str, container: str, num_migs: int = 1, prefer_full_gpu: bool = False
+    ) -> Tuple[list, int, str]:
         """
         Allocate multiple MIG instances or full GPUs for a container.
         Supports distributed containers across multiple GPU slots.
@@ -542,23 +585,23 @@ class GPUAllocatorSmart:
             # Check if container already has GPU(s)
             container_gpu = self.state_reader.get_container_gpu(container)
             if container_gpu:
-                gpu_slot = container_gpu['gpu_slot']
+                gpu_slot = container_gpu["gpu_slot"]
                 return [gpu_slot], 1, "ALREADY_ALLOCATED"
 
             # Get user's limits
             limits = self._get_user_limits(username)
 
             # Get mig_instances_per_gpu from config
-            gpu_config = self.config.get('gpu_allocation', {})
-            mig_per_gpu = gpu_config.get('mig_instances_per_gpu', 4)
+            gpu_config = self.config.get("gpu_allocation", {})
+            mig_per_gpu = gpu_config.get("mig_instances_per_gpu", 4)
 
             # Get max MIG instances total and per container
-            max_mig_total = limits.get('max_mig_instances', 2)
+            max_mig_total = limits.get("max_mig_instances", 2)
             # Handle None (unlimited) - check key presence, not truthiness
-            if 'max_mig_per_container' in limits:
-                max_mig_per_container = limits['max_mig_per_container']
-            elif 'max_gpus_per_container' in limits:
-                max_mig_per_container = limits['max_gpus_per_container']
+            if "max_mig_per_container" in limits:
+                max_mig_per_container = limits["max_mig_per_container"]
+            elif "max_gpus_per_container" in limits:
+                max_mig_per_container = limits["max_gpus_per_container"]
             else:
                 max_mig_per_container = 1
 
@@ -604,20 +647,23 @@ class GPUAllocatorSmart:
 
                 for _ in range(num_full_gpus):
                     suggestion = self.availability_checker.suggest_gpu_for_user(
-                        username, max_mig_total, self._get_user_priority(username),
-                        require_full_gpu=True, allow_full_gpu=True,
-                        exclude_slots=allocated_slots
+                        username,
+                        max_mig_total,
+                        self._get_user_priority(username),
+                        require_full_gpu=True,
+                        allow_full_gpu=True,
+                        exclude_slots=allocated_slots,
                     )
-                    if suggestion['success']:
+                    if suggestion["success"]:
                         # Handle virtual full GPU (all MIG slots from one physical GPU)
-                        mig_slots = suggestion.get('mig_slots', [])
+                        mig_slots = suggestion.get("mig_slots", [])
                         if mig_slots:
                             # Virtual full GPU: use individual MIG slots for Docker
                             allocated_slots.extend(mig_slots)
                             total_mig_equiv += len(mig_slots)
                         else:
                             # Real full GPU: use the GPU slot directly
-                            allocated_slots.append(suggestion['gpu_slot'])
+                            allocated_slots.append(suggestion["gpu_slot"])
                             total_mig_equiv += mig_per_gpu
                     else:
                         # No more full GPUs available, try MIGs
@@ -627,28 +673,34 @@ class GPUAllocatorSmart:
                 # Allocate remaining MIGs
                 for _ in range(remaining_migs_needed):
                     suggestion = self.availability_checker.suggest_gpu_for_user(
-                        username, max_mig_total, self._get_user_priority(username),
-                        require_full_gpu=False, allow_full_gpu=can_use_full,
-                        exclude_slots=allocated_slots
+                        username,
+                        max_mig_total,
+                        self._get_user_priority(username),
+                        require_full_gpu=False,
+                        allow_full_gpu=can_use_full,
+                        exclude_slots=allocated_slots,
                     )
-                    if suggestion['success']:
-                        allocated_slots.append(suggestion['gpu_slot'])
+                    if suggestion["success"]:
+                        allocated_slots.append(suggestion["gpu_slot"])
                         total_mig_equiv += 1
                     else:
                         # Can't allocate remaining, release what we got and fail
-                        reason = suggestion.get('error', 'NO_GPU_AVAILABLE')
+                        reason = suggestion.get("error", "NO_GPU_AVAILABLE")
                         self._log_event("REJECTED", username, container, reason=reason)
                         return [], 0, reason
             else:
                 # Allocate MIGs first (default behavior)
                 for _ in range(num_migs):
                     suggestion = self.availability_checker.suggest_gpu_for_user(
-                        username, max_mig_total, self._get_user_priority(username),
-                        require_full_gpu=False, allow_full_gpu=can_use_full,
-                        exclude_slots=allocated_slots
+                        username,
+                        max_mig_total,
+                        self._get_user_priority(username),
+                        require_full_gpu=False,
+                        allow_full_gpu=can_use_full,
+                        exclude_slots=allocated_slots,
                     )
-                    if suggestion['success']:
-                        slot = suggestion['gpu_slot']
+                    if suggestion["success"]:
+                        slot = suggestion["gpu_slot"]
                         allocated_slots.append(slot)
                         # Full GPU counts as mig_per_gpu equivalents
                         if self._is_full_gpu(slot):
@@ -656,7 +708,7 @@ class GPUAllocatorSmart:
                         else:
                             total_mig_equiv += 1
                     else:
-                        reason = suggestion.get('error', 'NO_GPU_AVAILABLE')
+                        reason = suggestion.get("error", "NO_GPU_AVAILABLE")
                         self._log_event("REJECTED", username, container, reason=reason)
                         return [], 0, reason
 
@@ -666,7 +718,7 @@ class GPUAllocatorSmart:
                 return [], 0, reason
 
             # Log allocation
-            slots_str = ','.join(allocated_slots)
+            slots_str = ",".join(allocated_slots)
             reason = f"ALLOCATED ({total_mig_equiv} MIG-equiv, slots: {slots_str})"
             self._log_event("ALLOCATED", username, container, slots_str, reason)
 
@@ -679,7 +731,7 @@ class GPUAllocatorSmart:
         """Calculate total MIG-equivalents from a list of allocations."""
         total = 0
         for alloc in allocations:
-            gpu_slot = alloc.get('gpu_slot', '')
+            gpu_slot = alloc.get("gpu_slot", "")
             if self._is_full_gpu(gpu_slot):
                 total += mig_per_gpu
             else:
@@ -694,20 +746,18 @@ class GPUAllocatorSmart:
         # Device permissions are 0666 so all users can query nvidia-smi directly
         try:
             result = subprocess.run(
-                ['/usr/bin/nvidia-smi', '-L'],
-                capture_output=True,
-                text=True,
-                check=True
+                ["/usr/bin/nvidia-smi", "-L"], capture_output=True, text=True, check=True
             )
             nvidia_output = result.stdout
 
             # Parse output to find UUID for this slot
             import re
+
             current_gpu = None
             current_gpu_uuid = None
-            for line in nvidia_output.split('\n'):
+            for line in nvidia_output.split("\n"):
                 # Match full GPU line: "GPU 0: NVIDIA A100 (UUID: GPU-xxx)"
-                gpu_match = re.match(r'GPU (\d+):\s+[^(]+\(UUID:\s+(GPU-[a-f0-9-]+)\)', line)
+                gpu_match = re.match(r"GPU (\d+):\s+[^(]+\(UUID:\s+(GPU-[a-f0-9-]+)\)", line)
                 if gpu_match:
                     current_gpu = gpu_match.group(1)
                     current_gpu_uuid = gpu_match.group(2)
@@ -718,7 +768,9 @@ class GPUAllocatorSmart:
                     continue
 
                 # Match MIG line: "  MIG 1g.10gb Device 0: (UUID: MIG-xxx)"
-                mig_match = re.match(r'\s+MIG\s+\S+\s+Device\s+(\d+):\s+\(UUID:\s+(MIG-[a-f0-9-]+)\)', line)
+                mig_match = re.match(
+                    r"\s+MIG\s+\S+\s+Device\s+(\d+):\s+\(UUID:\s+(MIG-[a-f0-9-]+)\)", line
+                )
                 if mig_match and current_gpu is not None:
                     device_id = mig_match.group(1)
                     uuid = mig_match.group(2)
@@ -752,11 +804,11 @@ class GPUAllocatorSmart:
         if not container_gpu:
             return None, "NOT_ALLOCATED"
 
-        gpu_slot = container_gpu['gpu_slot']
-        username = container_gpu['user']
+        gpu_slot = container_gpu["gpu_slot"]
+        username = container_gpu["user"]
 
         # Log release to legacy log
-        reason = f"RELEASED (container removed/stopped)"
+        reason = "RELEASED (container removed/stopped)"
         self._log_event("RELEASED", username, container, gpu_slot, reason)
 
         # Log to centralized event system (best-effort)
@@ -766,7 +818,7 @@ class GPUAllocatorSmart:
             source="gpu_allocator",
             container=container,
             gpu_uuid=gpu_slot,
-            reason=reason
+            reason=reason,
         )
 
         return gpu_slot, "SUCCESS"
@@ -782,11 +834,11 @@ class GPUAllocatorSmart:
         summary = self.availability_checker.get_allocation_summary()
 
         return {
-            'total_gpus': summary['total_gpus'],
-            'allocated': summary['allocated'],
-            'available': summary['available'],
-            'utilization_percent': summary['utilization_percent'],
-            'allocations': allocations,
+            "total_gpus": summary["total_gpus"],
+            "allocated": summary["allocated"],
+            "available": summary["available"],
+            "utilization_percent": summary["utilization_percent"],
+            "allocations": allocations,
         }
 
     def get_user_gpu_count(self, username: str) -> int:
@@ -809,18 +861,18 @@ class GPUAllocatorSmart:
             Max MIG instances allowed for this user/container_type combo
         """
         user_limits = self._get_user_limits(username)
-        user_group = user_limits.get('_group', 'student')
+        user_group = user_limits.get("_group", "student")
 
         # Get container type config from config file
-        container_types = self.config.get('container_types', {}) or {}
+        container_types = self.config.get("container_types", {}) or {}
         type_config = container_types.get(container_type, {}) or {}
-        mig_config = type_config.get('default_mig_count', {})
+        mig_config = type_config.get("default_mig_count", {})
 
         # Look up by group, fall back to student, then to 1
         if isinstance(mig_config, dict):
             limit = mig_config.get(user_group)
             if limit is None:
-                limit = mig_config.get('student', 1)
+                limit = mig_config.get("student", 1)
             # Handle unlimited (None or "unlimited")
             if limit is None or limit == "unlimited":
                 return 999
@@ -831,7 +883,7 @@ class GPUAllocatorSmart:
             return int(mig_config)
         else:
             # No container_types config - fall back to user's max_mig_instances
-            max_mig = user_limits.get('max_mig_instances', 1)
+            max_mig = user_limits.get("max_mig_instances", 1)
             if max_mig is None or max_mig == "unlimited":
                 return 999
             return int(max_mig)
@@ -863,45 +915,52 @@ class GPUAllocatorSmart:
             allowed, agg_error = self._check_aggregate_gpu_quota(username, 1)
             if not allowed:
                 # Convert to QUOTA_EXCEEDED format for docker-wrapper.sh
-                self._log_event("REJECTED", username, f"external-{container_type}",
-                               reason=agg_error)
+                self._log_event(
+                    "REJECTED", username, f"external-{container_type}", reason=agg_error
+                )
                 return None, agg_error
 
             # SECOND LAYER: Check per-container limit (immediate fail if at quota)
             current_count = self.get_user_gpu_count(username)
             if current_count >= max_allowed:
                 reason = f"QUOTA_EXCEEDED:{current_count}/{max_allowed}"
-                self._log_event("REJECTED", username, f"external-{container_type}",
-                               reason=reason)
+                self._log_event("REJECTED", username, f"external-{container_type}", reason=reason)
                 return None, reason
 
             # Find available GPU using availability checker
             allow_full = self._can_use_full_gpu(username)
             suggestion = self.availability_checker.suggest_gpu_for_user(
-                username, max_allowed, self._get_user_priority(username),
-                require_full_gpu=False, allow_full_gpu=allow_full
+                username,
+                max_allowed,
+                self._get_user_priority(username),
+                require_full_gpu=False,
+                allow_full_gpu=allow_full,
             )
 
-            if not suggestion['success']:
-                reason = suggestion.get('error', 'NO_GPU_AVAILABLE')
+            if not suggestion["success"]:
+                reason = suggestion.get("error", "NO_GPU_AVAILABLE")
                 # Don't log as REJECTED here - the wrapper will retry
                 return None, reason
 
-            gpu_slot = suggestion['gpu_slot']
+            gpu_slot = suggestion["gpu_slot"]
 
             # Double-check full GPU permission (belt and suspenders)
             if self._is_full_gpu(gpu_slot) and not allow_full:
                 reason = f"FULL_GPU_NOT_ALLOWED (got slot {gpu_slot}, user cannot use full GPUs)"
-                self._log_event("REJECTED", username, f"external-{container_type}",
-                               reason=reason)
+                self._log_event("REJECTED", username, f"external-{container_type}", reason=reason)
                 return None, reason
 
             # Get Docker-compatible device ID
             docker_id = self.get_docker_id(gpu_slot)
 
             # Log allocation
-            self._log_event("ALLOCATED", username, f"external-{container_type}",
-                           gpu_slot, f"External container allocation, slot={gpu_slot}")
+            self._log_event(
+                "ALLOCATED",
+                username,
+                f"external-{container_type}",
+                gpu_slot,
+                f"External container allocation, slot={gpu_slot}",
+            )
 
             return docker_id, "SUCCESS"
 
@@ -926,8 +985,8 @@ class GPUAllocatorSmart:
         Returns:
             List of (container, reason) tuples for removed containers
         """
-        from datetime import timedelta
         import re
+        from datetime import timedelta
 
         def parse_duration(duration_str: str) -> Optional[timedelta]:
             """Parse duration string like '24h', '0.5h', '1d' to timedelta"""
@@ -937,16 +996,16 @@ class GPUAllocatorSmart:
             duration_str = str(duration_str).strip().lower()
 
             # Extract numeric value (supporting decimals)
-            match = re.search(r'([\d.]+)', duration_str)
+            match = re.search(r"([\d.]+)", duration_str)
             if not match:
                 return None
             value = float(match.group(1))
 
-            if 'h' in duration_str:
+            if "h" in duration_str:
                 return timedelta(hours=value)
-            elif 'd' in duration_str:
+            elif "d" in duration_str:
                 return timedelta(days=value)
-            elif 'm' in duration_str:
+            elif "m" in duration_str:
                 return timedelta(minutes=value)
             else:
                 # Default to hours
@@ -959,15 +1018,23 @@ class GPUAllocatorSmart:
         all_allocations = self.state_reader.get_all_allocations()
 
         for gpu_slot, gpu_info in all_allocations.items():
-            for container in gpu_info['containers']:
+            for container in gpu_info["containers"]:
                 # Get username from Docker label (not UID from container name)
                 try:
                     result = subprocess.run(
-                        ['docker', 'inspect', '--format', '{{index .Config.Labels "ds01.user"}}', container],
-                        capture_output=True, text=True, check=True
+                        [
+                            "docker",
+                            "inspect",
+                            "--format",
+                            '{{index .Config.Labels "ds01.user"}}',
+                            container,
+                        ],
+                        capture_output=True,
+                        text=True,
+                        check=True,
                     )
                     user = result.stdout.strip()
-                    if not user or user == '<no value>':
+                    if not user or user == "<no value>":
                         user = None
                 except subprocess.CalledProcessError:
                     user = None
@@ -982,47 +1049,65 @@ class GPUAllocatorSmart:
                 # Check if container is stopped
                 try:
                     result = subprocess.run(
-                        ['docker', 'inspect', '--format', '{{.State.Running}}', container],
-                        capture_output=True, text=True, check=True
+                        ["docker", "inspect", "--format", "{{.State.Running}}", container],
+                        capture_output=True,
+                        text=True,
+                        check=True,
                     )
-                    is_running = result.stdout.strip() == 'true'
+                    is_running = result.stdout.strip() == "true"
 
                     if is_running:
                         continue  # Skip running containers
 
                     # Container is stopped - get FinishedAt timestamp from Docker state (automatic)
                     result = subprocess.run(
-                        ['docker', 'inspect', '--format', '{{.State.FinishedAt}}', container],
-                        capture_output=True, text=True, check=True
+                        ["docker", "inspect", "--format", "{{.State.FinishedAt}}", container],
+                        capture_output=True,
+                        text=True,
+                        check=True,
                     )
                     finished_at_str = result.stdout.strip()
 
-                    if not finished_at_str or finished_at_str == '0001-01-01T00:00:00Z':
+                    if not finished_at_str or finished_at_str == "0001-01-01T00:00:00Z":
                         # Container never ran or invalid state - remove immediately (stale allocation)
-                        subprocess.run(['docker', 'rm', '-f', container], check=True)
+                        subprocess.run(["docker", "rm", "-f", container], check=True)
                         removed.append((container, "Invalid FinishedAt - stale allocation"))
-                        self._log_event("REMOVED_STALE", user or "unknown", container, gpu_slot,
-                                       reason="Invalid FinishedAt")
+                        self._log_event(
+                            "REMOVED_STALE",
+                            user or "unknown",
+                            container,
+                            gpu_slot,
+                            reason="Invalid FinishedAt",
+                        )
                         continue
 
                     # Parse stopped timestamp (remove Z suffix and parse)
-                    stopped_at = datetime.fromisoformat(finished_at_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                    stopped_at = datetime.fromisoformat(
+                        finished_at_str.replace("Z", "+00:00")
+                    ).replace(tzinfo=None)
                     elapsed = now - stopped_at
 
                     # INTERFACE-SPECIFIC STATE HANDLING
                     if interface == INTERFACE_ORCHESTRATION:
                         # Orchestration Interface: Binary state model
                         # Stopped containers should be removed immediately (no limbo state)
-                        subprocess.run(['docker', 'rm', '-f', container], check=True)
-                        removed.append((container, f"Orchestration interface - binary state (stopped→removed)"))
-                        self._log_event("REMOVED_STALE", user or "unknown", container, gpu_slot,
-                                       reason=f"Orchestration binary state: stopped→removed")
+                        subprocess.run(["docker", "rm", "-f", container], check=True)
+                        removed.append(
+                            (container, "Orchestration interface - binary state (stopped→removed)")
+                        )
+                        self._log_event(
+                            "REMOVED_STALE",
+                            user or "unknown",
+                            container,
+                            gpu_slot,
+                            reason="Orchestration binary state: stopped→removed",
+                        )
                         continue
 
                     # Atomic/Docker/Other: Full state model with hold timeout
                     if user:
                         limits = self._get_user_limits(user)
-                        hold_timeout_str = limits.get('gpu_hold_after_stop')
+                        hold_timeout_str = limits.get("gpu_hold_after_stop")
                         hold_timeout = parse_duration(hold_timeout_str)
 
                         if hold_timeout is None:
@@ -1032,10 +1117,20 @@ class GPUAllocatorSmart:
                         # Check if timeout exceeded
                         if elapsed > hold_timeout:
                             # Remove container (automatically releases GPU)
-                            subprocess.run(['docker', 'rm', '-f', container], check=True)
-                            removed.append((container, f"Timeout exceeded ({elapsed.total_seconds():.0f}s > {hold_timeout.total_seconds():.0f}s)"))
-                            self._log_event("REMOVED_STALE", user, container, gpu_slot,
-                                           reason=f"Timeout exceeded: {elapsed.total_seconds():.0f}s")
+                            subprocess.run(["docker", "rm", "-f", container], check=True)
+                            removed.append(
+                                (
+                                    container,
+                                    f"Timeout exceeded ({elapsed.total_seconds():.0f}s > {hold_timeout.total_seconds():.0f}s)",
+                                )
+                            )
+                            self._log_event(
+                                "REMOVED_STALE",
+                                user,
+                                container,
+                                gpu_slot,
+                                reason=f"Timeout exceeded: {elapsed.total_seconds():.0f}s",
+                            )
 
                 except subprocess.CalledProcessError:
                     # Container doesn't exist anymore - already removed
@@ -1052,43 +1147,55 @@ def main():
     """CLI interface"""
     import argparse
 
-    parser = argparse.ArgumentParser(description='GPU Allocator Smart - Stateless GPU allocation')
-    subparsers = parser.add_subparsers(dest='command', help='Command')
+    parser = argparse.ArgumentParser(description="GPU Allocator Smart - Stateless GPU allocation")
+    subparsers = parser.add_subparsers(dest="command", help="Command")
 
     # allocate command
-    parser_allocate = subparsers.add_parser('allocate', help='Allocate GPU to container')
-    parser_allocate.add_argument('user', help='Username')
-    parser_allocate.add_argument('container', help='Container name (full tag)')
-    parser_allocate.add_argument('max_gpus', type=int, help='Max GPUs for user')
-    parser_allocate.add_argument('priority', type=int, help='User priority')
+    parser_allocate = subparsers.add_parser("allocate", help="Allocate GPU to container")
+    parser_allocate.add_argument("user", help="Username")
+    parser_allocate.add_argument("container", help="Container name (full tag)")
+    parser_allocate.add_argument("max_gpus", type=int, help="Max GPUs for user")
+    parser_allocate.add_argument("priority", type=int, help="User priority")
 
     # release command
-    parser_release = subparsers.add_parser('release', help='Release GPU from container')
-    parser_release.add_argument('container', help='Container name')
+    parser_release = subparsers.add_parser("release", help="Release GPU from container")
+    parser_release.add_argument("container", help="Container name")
 
     # status command
-    parser_status = subparsers.add_parser('status', help='Show GPU allocation status')
+    subparsers.add_parser("status", help="Show GPU allocation status")
 
     # user-count command
-    parser_count = subparsers.add_parser('user-count', help='Show GPU count for user')
-    parser_count.add_argument('user', help='Username')
+    parser_count = subparsers.add_parser("user-count", help="Show GPU count for user")
+    parser_count.add_argument("user", help="Username")
 
     # release-stale command
-    parser_stale = subparsers.add_parser('release-stale', help='Release stale GPU allocations from stopped containers')
-    parser_stale.add_argument('user', nargs='?', help='Optional: username to filter (default: all users)')
+    parser_stale = subparsers.add_parser(
+        "release-stale", help="Release stale GPU allocations from stopped containers"
+    )
+    parser_stale.add_argument(
+        "user", nargs="?", help="Optional: username to filter (default: all users)"
+    )
 
     # allocate-multi command (NEW: multi-GPU allocation for distributed containers)
-    parser_multi = subparsers.add_parser('allocate-multi', help='Allocate multiple MIG instances or GPUs to container')
-    parser_multi.add_argument('user', help='Username')
-    parser_multi.add_argument('container', help='Container name (full tag)')
-    parser_multi.add_argument('num_migs', type=int, help='Number of MIG-equivalents to allocate')
-    parser_multi.add_argument('--prefer-full', action='store_true', help='Prefer full GPUs over MIGs')
+    parser_multi = subparsers.add_parser(
+        "allocate-multi", help="Allocate multiple MIG instances or GPUs to container"
+    )
+    parser_multi.add_argument("user", help="Username")
+    parser_multi.add_argument("container", help="Container name (full tag)")
+    parser_multi.add_argument("num_migs", type=int, help="Number of MIG-equivalents to allocate")
+    parser_multi.add_argument(
+        "--prefer-full", action="store_true", help="Prefer full GPUs over MIGs"
+    )
 
     # allocate-external command (for docker-wrapper.sh - external containers like devcontainers, compose)
-    parser_external = subparsers.add_parser('allocate-external',
-        help='Allocate GPU for external container (devcontainer, compose, docker run)')
-    parser_external.add_argument('user', help='Username')
-    parser_external.add_argument('container_type', help='Container type (devcontainer, compose, docker, unknown)')
+    parser_external = subparsers.add_parser(
+        "allocate-external",
+        help="Allocate GPU for external container (devcontainer, compose, docker run)",
+    )
+    parser_external.add_argument("user", help="Username")
+    parser_external.add_argument(
+        "container_type", help="Container type (devcontainer, compose, docker, unknown)"
+    )
 
     args = parser.parse_args()
 
@@ -1098,7 +1205,7 @@ def main():
 
     allocator = GPUAllocatorSmart()
 
-    if args.command == 'allocate':
+    if args.command == "allocate":
         gpu_id, reason = allocator.allocate_gpu(args.user, args.container, args.max_gpus)
 
         if gpu_id and reason not in ["ALREADY_ALLOCATED"]:
@@ -1113,30 +1220,32 @@ def main():
             print(f"✗ Allocation failed: {reason}")
             sys.exit(1)
 
-    elif args.command == 'release':
+    elif args.command == "release":
         gpu_id, reason = allocator.release_gpu(args.container)
         if gpu_id:
             print(f"✓ Released GPU/MIG {gpu_id} from {args.container}")
         else:
             print(f"✗ No GPU allocated to {args.container}")
 
-    elif args.command == 'status':
+    elif args.command == "status":
         status = allocator.get_status()
-        print(f"\nGPU Status: {status['allocated']}/{status['total_gpus']} allocated ({status['utilization_percent']:.1f}% utilization)\n")
+        print(
+            f"\nGPU Status: {status['allocated']}/{status['total_gpus']} allocated ({status['utilization_percent']:.1f}% utilization)\n"
+        )
 
-        for gpu_slot, info in sorted(status['allocations'].items()):
-            containers = ', '.join(info['containers']) if info['containers'] else 'none'
+        for gpu_slot, info in sorted(status["allocations"].items()):
+            containers = ", ".join(info["containers"]) if info["containers"] else "none"
             print(f"GPU/MIG {gpu_slot}:")
             print(f"  UUID: {info['uuid']}")
             print(f"  Containers: {containers}")
             print()
 
-    elif args.command == 'user-count':
+    elif args.command == "user-count":
         count = allocator.get_user_gpu_count(args.user)
         print(count)
 
-    elif args.command == 'release-stale':
-        username = args.user if hasattr(args, 'user') and args.user else None
+    elif args.command == "release-stale":
+        username = args.user if hasattr(args, "user") and args.user else None
         removed = allocator.release_stale_allocations(username)
 
         if removed:
@@ -1146,25 +1255,26 @@ def main():
         else:
             print("✓ No stale containers found")
 
-    elif args.command == 'allocate-multi':
+    elif args.command == "allocate-multi":
         gpu_slots, mig_equiv, reason = allocator.allocate_multi_gpu(
-            args.user, args.container, args.num_migs,
-            prefer_full_gpu=args.prefer_full
+            args.user, args.container, args.num_migs, prefer_full_gpu=args.prefer_full
         )
 
         if gpu_slots and reason == "SUCCESS":
             # Get Docker IDs for all slots
             docker_ids = [allocator.get_docker_id(slot) for slot in gpu_slots]
-            slots_str = ','.join(gpu_slots)
-            docker_ids_str = ','.join(docker_ids)
-            print(f"✓ Allocated {len(gpu_slots)} GPU/MIG ({mig_equiv} MIG-equiv) to {args.container}")
+            slots_str = ",".join(gpu_slots)
+            docker_ids_str = ",".join(docker_ids)
+            print(
+                f"✓ Allocated {len(gpu_slots)} GPU/MIG ({mig_equiv} MIG-equiv) to {args.container}"
+            )
             print(f"GPU_SLOTS={slots_str}")
             print(f"DOCKER_IDS={docker_ids_str}")  # For mlc-create-wrapper parsing
             print(f"MIG_EQUIV={mig_equiv}")
         elif reason == "ALREADY_ALLOCATED":
-            slots_str = ','.join(gpu_slots)
+            slots_str = ",".join(gpu_slots)
             docker_ids = [allocator.get_docker_id(slot) for slot in gpu_slots]
-            docker_ids_str = ','.join(docker_ids)
+            docker_ids_str = ",".join(docker_ids)
             print(f"⚠ Container {args.container} already has GPU(s) {slots_str} allocated")
             print(f"GPU_SLOTS={slots_str}")
             print(f"DOCKER_IDS={docker_ids_str}")
@@ -1172,25 +1282,25 @@ def main():
             print(f"✗ Allocation failed: {reason}")
             sys.exit(1)
 
-    elif args.command == 'allocate-external':
+    elif args.command == "allocate-external":
         # For docker-wrapper.sh - external containers (devcontainer, compose, docker run)
         docker_id, reason = allocator.allocate_external(args.user, args.container_type)
 
         if docker_id and reason == "SUCCESS":
             # Output format expected by docker-wrapper.sh
             print(f"DOCKER_ID={docker_id}")
-            print(f"STATUS=SUCCESS")
+            print("STATUS=SUCCESS")
         elif reason.startswith("QUOTA_EXCEEDED"):
             # Quota exceeded - wrapper should fail immediately (no retry)
-            print(f"STATUS=QUOTA_EXCEEDED")
+            print("STATUS=QUOTA_EXCEEDED")
             print(f"REASON={reason}")
             sys.exit(1)
         else:
             # Other failure (e.g., no GPU available) - wrapper may retry
-            print(f"STATUS=FAILED")
+            print("STATUS=FAILED")
             print(f"REASON={reason}")
             sys.exit(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

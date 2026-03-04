@@ -4,10 +4,11 @@ Component Tests: Bare Metal Process Detector
 Tests detect-bare-metal.py functionality
 """
 
-import pytest
-import subprocess
 import json
+import subprocess
 from pathlib import Path
+
+import pytest
 
 
 class TestBaremetalDetectorScript:
@@ -24,9 +25,7 @@ class TestBaremetalDetectorScript:
     def test_script_syntax(self):
         """Bare metal detector has valid Python syntax."""
         result = subprocess.run(
-            ["python3", "-m", "py_compile", str(self.DETECTOR)],
-            capture_output=True,
-            text=True
+            ["python3", "-m", "py_compile", str(self.DETECTOR)], capture_output=True, text=True
         )
         assert result.returncode == 0, f"Syntax error: {result.stderr}"
 
@@ -34,10 +33,7 @@ class TestBaremetalDetectorScript:
     def test_basic_execution(self):
         """Bare metal detector executes without crash."""
         result = subprocess.run(
-            ["python3", str(self.DETECTOR)],
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["python3", str(self.DETECTOR)], capture_output=True, text=True, timeout=30
         )
         # Should complete successfully
         assert result.returncode == 0
@@ -46,10 +42,7 @@ class TestBaremetalDetectorScript:
     def test_json_output(self):
         """Bare metal detector outputs valid JSON with --json."""
         result = subprocess.run(
-            ["python3", str(self.DETECTOR), "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["python3", str(self.DETECTOR), "--json"], capture_output=True, text=True, timeout=30
         )
         assert result.returncode == 0
 
@@ -61,10 +54,7 @@ class TestBaremetalDetectorScript:
     def test_json_has_expected_fields(self):
         """JSON output has expected fields."""
         result = subprocess.run(
-            ["python3", str(self.DETECTOR), "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["python3", str(self.DETECTOR), "--json"], capture_output=True, text=True, timeout=30
         )
         data = json.loads(result.stdout)
 
@@ -114,10 +104,7 @@ class TestBaremetalDetectorIntegration:
     def test_excludes_container_processes(self):
         """Detector excludes processes inside containers."""
         result = subprocess.run(
-            ["python3", str(self.DETECTOR), "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["python3", str(self.DETECTOR), "--json"], capture_output=True, text=True, timeout=30
         )
         data = json.loads(result.stdout)
 
@@ -131,19 +118,17 @@ class TestBaremetalDetectorIntegration:
     def test_current_python_process_not_detected(self):
         """The test's own Python process is not detected as bare metal."""
         import os
+
         my_pid = os.getpid()
 
         result = subprocess.run(
-            ["python3", str(self.DETECTOR), "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30
+            ["python3", str(self.DETECTOR), "--json"], capture_output=True, text=True, timeout=30
         )
         data = json.loads(result.stdout)
 
         # Our process might be detected but should be categorized correctly
         processes = data.get("processes", [])
-        my_proc = [p for p in processes if p.get("pid") == my_pid]
+        [p for p in processes if p.get("pid") == my_pid]
 
         # Either not detected (system process) or correctly identified
         # This test is informational

@@ -15,11 +15,10 @@ Usage:
     gpu-queue-manager.py clean                               # Remove old entries
 """
 
-import json
-import os
-import sys
 import fcntl
+import json
 import subprocess
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -42,14 +41,14 @@ def load_queue():
         if not QUEUE_FILE.exists():
             return []
 
-        with open(QUEUE_FILE, 'r') as f:
+        with open(QUEUE_FILE, "r") as f:
             fcntl.flock(f.fileno(), fcntl.LOCK_SH)
             data = json.load(f)
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
             return data
     except PermissionError:
-        print(f"Note: Cannot read queue file (permission denied)", file=sys.stderr)
-        print(f"  The queue may be empty or requires admin access.", file=sys.stderr)
+        print("Note: Cannot read queue file (permission denied)", file=sys.stderr)
+        print("  The queue may be empty or requires admin access.", file=sys.stderr)
         return []
     except (json.JSONDecodeError, IOError):
         return []
@@ -59,7 +58,7 @@ def save_queue(queue):
     """Save the queue file with locking."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
 
-    with open(QUEUE_FILE, 'w') as f:
+    with open(QUEUE_FILE, "w") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         json.dump(queue, f, indent=2)
         fcntl.flock(f.fileno(), fcntl.LOCK_UN)
@@ -72,7 +71,7 @@ def log_event(event_type, user, message):
             subprocess.run(
                 ["python3", str(EVENT_LOGGER), event_type, "--user", user, "--message", message],
                 capture_output=True,
-                timeout=5
+                timeout=5,
             )
         except Exception:
             pass
@@ -95,7 +94,7 @@ def add_to_queue(user, container, max_gpus):
         "max_gpus": max_gpus,
         "requested_at": datetime.now(tz=None).isoformat() + "Z",
         "notified": False,
-        "notification_sent_at": None
+        "notification_sent_at": None,
     }
 
     queue.append(entry)
@@ -105,7 +104,7 @@ def add_to_queue(user, container, max_gpus):
     log_event("queue.joined", user, f"Joined GPU queue at position {position}")
 
     print(f"Added to GPU queue at position {position}")
-    print(f"You'll be notified when a GPU becomes available.")
+    print("You'll be notified when a GPU becomes available.")
     print(f"Check your position: gpu-queue-manager.py position {user}")
 
     return True
@@ -162,7 +161,9 @@ def list_queue():
 
         notified = " (notified)" if entry.get("notified") else ""
 
-        print(f"{i:<4} {entry['user']:<15} {entry['container']:<20} {entry.get('max_gpus', 1):<5} {waiting}{notified}")
+        print(
+            f"{i:<4} {entry['user']:<15} {entry['container']:<20} {entry.get('max_gpus', 1):<5} {waiting}{notified}"
+        )
 
     print("-" * 70)
     print(f"Total: {len(queue)} user(s) waiting")
@@ -175,15 +176,17 @@ def get_position(user):
     positions = []
     for i, entry in enumerate(queue, 1):
         if entry["user"] == user:
-            positions.append({
-                "position": i,
-                "container": entry["container"],
-                "max_gpus": entry.get("max_gpus", 1),
-                "notified": entry.get("notified", False)
-            })
+            positions.append(
+                {
+                    "position": i,
+                    "container": entry["container"],
+                    "max_gpus": entry.get("max_gpus", 1),
+                    "notified": entry.get("notified", False),
+                }
+            )
 
     if not positions:
-        print(f"You are not in the GPU queue.")
+        print("You are not in the GPU queue.")
         return None
 
     print(f"Queue positions for {user}:")
@@ -204,7 +207,7 @@ def check_gpu_available(user, max_gpus):
             ["python3", str(GPU_AVAILABILITY_CHECKER), user, "--count"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         if result.returncode == 0:
@@ -225,14 +228,14 @@ def create_notification(user, container, position):
         "type": "gpu_available",
         "message": f"GPU now available! You were #{position} in queue for '{container}'. Run: container-deploy {container}",
         "created_at": datetime.now(tz=None).isoformat() + "Z",
-        "updated_at": datetime.now(tz=None).isoformat() + "Z"
+        "updated_at": datetime.now(tz=None).isoformat() + "Z",
     }
 
     # Load existing alerts
     alerts = []
     if alerts_file.exists():
         try:
-            with open(alerts_file, 'r') as f:
+            with open(alerts_file, "r") as f:
                 alerts = json.load(f)
         except (json.JSONDecodeError, IOError):
             alerts = []
@@ -247,7 +250,7 @@ def create_notification(user, container, position):
         # Add new alert
         alerts.append(alert)
 
-    with open(alerts_file, 'w') as f:
+    with open(alerts_file, "w") as f:
         json.dump(alerts, f, indent=2)
 
     alerts_file.chmod(0o644)
@@ -306,7 +309,9 @@ def clean_queue():
             notified_at = entry.get("notification_sent_at", "")
             if notified_at:
                 try:
-                    dt = datetime.fromisoformat(notified_at.replace("Z", "+00:00").replace("+00:00", ""))
+                    dt = datetime.fromisoformat(
+                        notified_at.replace("Z", "+00:00").replace("+00:00", "")
+                    )
                     if dt.replace(tzinfo=None) > cutoff:
                         new_queue.append(entry)
                 except Exception:

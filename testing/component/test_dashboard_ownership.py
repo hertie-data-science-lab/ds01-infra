@@ -6,17 +6,13 @@ Tests for the dashboard's integration with the container ownership tracking file
 Focuses on the _load_ownership_file() method and extract_owner() fallback.
 """
 
-import importlib.util
 import importlib.machinery
+import importlib.util
 import json
-import os
-import sys
 import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # =============================================================================
 # Module Loading
@@ -209,7 +205,7 @@ class TestExtractOwnerFallback:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="labeled-container"
+            container_name="labeled-container",
         )
 
         assert result == "explicit-ds01-user"
@@ -229,7 +225,7 @@ class TestExtractOwnerFallback:
             aime_user_upper="aime-user",
             aime_username="",
             devcontainer_path="",
-            container_name="labeled-container"
+            container_name="labeled-container",
         )
 
         assert result == "aime-user"
@@ -249,7 +245,7 @@ class TestExtractOwnerFallback:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="/home/devcontainer-user/project",
-            container_name="labeled-container"
+            container_name="labeled-container",
         )
 
         assert result == "devcontainer-user"
@@ -269,7 +265,7 @@ class TestExtractOwnerFallback:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="mount-detected"
+            container_name="mount-detected",
         )
 
         assert result == "mount-user"
@@ -289,7 +285,7 @@ class TestExtractOwnerFallback:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="unknown-container"
+            container_name="unknown-container",
         )
 
         assert result == "(other)"
@@ -309,7 +305,7 @@ class TestExtractOwnerFallback:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name=""
+            container_name="",
         )
 
         assert result == "(other)"
@@ -347,7 +343,7 @@ class TestDashboardOwnershipEdgeCases:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="domain-container"
+            container_name="domain-container",
         )
 
         assert result == "h.baker@hertie-school.lan"
@@ -376,7 +372,7 @@ class TestDashboardOwnershipEdgeCases:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="projet-numero-1"
+            container_name="projet-numero-1",
         )
 
         assert result == "test-user"
@@ -405,7 +401,7 @@ class TestDashboardOwnershipEdgeCases:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="incomplete-container"
+            container_name="incomplete-container",
         )
 
         # Should return (other) since owner is None/missing
@@ -435,7 +431,7 @@ class TestDashboardOwnershipEdgeCases:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="null-owner-container"
+            container_name="null-owner-container",
         )
 
         # Should return (other) since owner is None

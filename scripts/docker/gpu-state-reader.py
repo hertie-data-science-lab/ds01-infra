@@ -10,13 +10,12 @@ Updated for DS01 Layered Architecture:
 - Interface detection via ds01.interface label and naming patterns
 """
 
-import subprocess
 import json
 import re
+import subprocess
 import sys
-from pathlib import Path
-from typing import Dict, List, Optional, Set
 from collections import defaultdict
+from typing import Dict, List, Optional
 
 # Real Docker binary - bypasses the wrapper at /usr/local/bin/docker
 # The wrapper filters 'docker ps' for non-admin users, which would cause
@@ -54,6 +53,7 @@ class GPUStateReader:
         if self._config is None:
             try:
                 import yaml
+
                 with open(self.config_path) as f:
                     self._config = yaml.safe_load(f)
             except FileNotFoundError:
@@ -69,16 +69,16 @@ class GPUStateReader:
     def _get_mig_instances_per_gpu(self) -> int:
         """Get mig_instances_per_gpu from config (default: 4)"""
         config = self._load_config()
-        gpu_config = config.get('gpu_allocation', {})
-        return gpu_config.get('mig_instances_per_gpu', 4)
+        gpu_config = config.get("gpu_allocation", {})
+        return gpu_config.get("mig_instances_per_gpu", 4)
 
     def _is_full_gpu(self, gpu_slot: str) -> bool:
         """Check if a GPU slot is a full GPU (not MIG instance)"""
         slot_str = str(gpu_slot)
         # MIG UUIDs start with "MIG-" and don't contain dots
-        if slot_str.startswith('MIG-'):
+        if slot_str.startswith("MIG-"):
             return False
-        return '.' not in slot_str
+        return "." not in slot_str
 
     def _get_mig_uuid_to_slot_mapping(self) -> Dict[str, str]:
         """
@@ -94,10 +94,7 @@ class GPUStateReader:
         # Device permissions are 0666 so all users can query nvidia-smi directly
         try:
             result = subprocess.run(
-                ["/usr/bin/nvidia-smi", "-L"],
-                capture_output=True,
-                text=True,
-                check=True
+                ["/usr/bin/nvidia-smi", "-L"], capture_output=True, text=True, check=True
             )
             nvidia_output = result.stdout
         except (subprocess.CalledProcessError, FileNotFoundError):
@@ -112,9 +109,9 @@ class GPUStateReader:
 
         try:
             current_gpu = None
-            for line in nvidia_output.split('\n'):
+            for line in nvidia_output.split("\n"):
                 # Match GPU line: "GPU 0: NVIDIA A100 (UUID: GPU-xxx)"
-                gpu_match = re.match(r'GPU (\d+):\s+[^(]+\(UUID:\s+(GPU-[a-f0-9-]+)\)', line)
+                gpu_match = re.match(r"GPU (\d+):\s+[^(]+\(UUID:\s+(GPU-[a-f0-9-]+)\)", line)
                 if gpu_match:
                     current_gpu = gpu_match.group(1)
                     gpu_uuid = gpu_match.group(2)
@@ -122,7 +119,9 @@ class GPUStateReader:
                     continue
 
                 # Match MIG line: "  MIG 1g.10gb Device 0: (UUID: MIG-xxx)"
-                mig_match = re.match(r'\s+MIG\s+\S+\s+Device\s+(\d+):\s+\(UUID:\s+(MIG-[a-f0-9-]+)\)', line)
+                mig_match = re.match(
+                    r"\s+MIG\s+\S+\s+Device\s+(\d+):\s+\(UUID:\s+(MIG-[a-f0-9-]+)\)", line
+                )
                 if mig_match and current_gpu is not None:
                     device_id = mig_match.group(1)
                     uuid = mig_match.group(2)
@@ -138,10 +137,7 @@ class GPUStateReader:
         """Get docker inspect output for a container."""
         try:
             result = subprocess.run(
-                [DOCKER_BIN, "inspect", container_name],
-                capture_output=True,
-                text=True,
-                check=True
+                [DOCKER_BIN, "inspect", container_name], capture_output=True, text=True, check=True
             )
             data = json.loads(result.stdout)
             return data[0] if data else None
@@ -160,44 +156,51 @@ class GPUStateReader:
 
         Returns: INTERFACE_ORCHESTRATION, INTERFACE_ATOMIC, INTERFACE_DOCKER, or INTERFACE_OTHER
         """
-        labels = container_data.get('Config', {}).get('Labels', {}) or {}
-        name = container_data.get('Name', '').lstrip('/')
+        labels = container_data.get("Config", {}).get("Labels", {}) or {}
+        name = container_data.get("Name", "").lstrip("/")
 
         # 1. Explicit ds01.interface label
-        interface_label = labels.get('ds01.interface', '')
+        interface_label = labels.get("ds01.interface", "")
         if interface_label:
-            if interface_label == 'orchestration':
+            if interface_label == "orchestration":
                 return INTERFACE_ORCHESTRATION
-            elif interface_label == 'atomic':
+            elif interface_label == "atomic":
                 return INTERFACE_ATOMIC
             # Other explicit values fall through
 
         # 2. DS01 managed label (from mlc-create-wrapper)
-        if labels.get('ds01.managed') == 'true':
+        if labels.get("ds01.managed") == "true":
             # Has DS01 label but no explicit interface -> atomic (backward compat)
             return INTERFACE_ATOMIC
 
         # 3. AIME naming convention (name._.uid)
-        if '._.' in name:
+        if "._." in name:
             return INTERFACE_ATOMIC
 
         # 4. Tool-specific detection for "Other" interface
         # VS Code Dev Containers
-        if (name.startswith('vscode-') or
-            'devcontainer' in labels or
-            labels.get('devcontainer.metadata')):
+        if (
+            name.startswith("vscode-")
+            or "devcontainer" in labels
+            or labels.get("devcontainer.metadata")
+        ):
             return INTERFACE_OTHER
 
         # Docker Compose
-        if (labels.get('com.docker.compose.project') or
-            labels.get('com.docker.compose.service') or
-            '_' in name and name.endswith(('_1', '_2', '_3'))):
+        if (
+            labels.get("com.docker.compose.project")
+            or labels.get("com.docker.compose.service")
+            or "_" in name
+            and name.endswith(("_1", "_2", "_3"))
+        ):
             return INTERFACE_OTHER
 
         # JupyterHub
-        if (name.startswith('jupyterhub-') or
-            name.startswith('jupyter-') or
-            labels.get('hub.jupyter.org/username')):
+        if (
+            name.startswith("jupyterhub-")
+            or name.startswith("jupyter-")
+            or labels.get("hub.jupyter.org/username")
+        ):
             return INTERFACE_OTHER
 
         # 5. Default: Docker direct
@@ -217,7 +220,7 @@ class GPUStateReader:
 
         # Pattern: ds01-{group}-{sanitized_username}.slice
         # Sanitized usernames can contain hyphens, so use .+ for the username part
-        match = re.match(r'ds01-(\w+)-(.+)\.slice', cgroup_parent)
+        match = re.match(r"ds01-(\w+)-(.+)\.slice", cgroup_parent)
         if match:
             return match.group(2)  # Return sanitized username
         return None
@@ -234,19 +237,19 @@ class GPUStateReader:
         """
         try:
             # Get HostConfig.DeviceRequests (used for single MIG with --gpus)
-            device_requests = container_data.get('HostConfig', {}).get('DeviceRequests', [])
+            device_requests = container_data.get("HostConfig", {}).get("DeviceRequests", [])
             device_ids = []
 
             if device_requests:
                 # Look for GPU device IDs in first DeviceRequest
                 first_request = device_requests[0]
-                device_ids = first_request.get('DeviceIDs', [])
+                device_ids = first_request.get("DeviceIDs", [])
 
             # If no DeviceRequests, check DS01 labels (used for multi-MIG with --runtime=nvidia)
-            labels = container_data.get('Config', {}).get('Labels', {}) or {}
-            if not device_ids and labels.get('ds01.gpu.uuids'):
+            labels = container_data.get("Config", {}).get("Labels", {}) or {}
+            if not device_ids and labels.get("ds01.gpu.uuids"):
                 # Multi-MIG: read from labels
-                device_ids = labels.get('ds01.gpu.uuids', '').split(',')
+                device_ids = labels.get("ds01.gpu.uuids", "").split(",")
                 device_ids = [uid.strip() for uid in device_ids if uid.strip()]
 
             if not device_ids:
@@ -275,34 +278,34 @@ class GPUStateReader:
             gpu_slot = gpu_slots[0] if gpu_slots else gpu_uuid
 
             # Extract additional info from Docker labels (labels already loaded above)
-            allocated_at = labels.get('ds01.gpu.allocated_at', '')
-            priority = labels.get('ds01.gpu.priority', '')
+            allocated_at = labels.get("ds01.gpu.allocated_at", "")
+            priority = labels.get("ds01.gpu.priority", "")
             # TODO: Remove aime.mlc.USER fallback when no legacy containers remain (Phase 7 migration)
-            user = labels.get('ds01.user') or labels.get('aime.mlc.USER', '')
-            container_name = container_data.get('Name', '').lstrip('/')
+            user = labels.get("ds01.user") or labels.get("aime.mlc.USER", "")
+            container_name = container_data.get("Name", "").lstrip("/")
 
             # Detect interface
             interface = self._detect_interface(container_data)
 
             # Fall back to cgroup-based user detection if label not set
             if not user:
-                cgroup_parent = container_data.get('HostConfig', {}).get('CgroupParent', '')
-                user = self._extract_user_from_cgroup(cgroup_parent) or ''
+                cgroup_parent = container_data.get("HostConfig", {}).get("CgroupParent", "")
+                user = self._extract_user_from_cgroup(cgroup_parent) or ""
 
             return {
-                'container_name': container_name,
-                'gpu_uuid': gpu_uuid,           # Primary GPU UUID (backward compat)
-                'gpu_slot': gpu_slot,           # Primary GPU slot (backward compat)
-                'gpu_uuids': gpu_uuids,         # All GPU UUIDs
-                'gpu_slots': gpu_slots,         # All GPU slots
-                'mig_equiv': mig_equiv,         # Total MIG-equivalents
-                'allocated_at': allocated_at,
-                'priority': priority,
-                'user': user,
-                'interface': interface
+                "container_name": container_name,
+                "gpu_uuid": gpu_uuid,  # Primary GPU UUID (backward compat)
+                "gpu_slot": gpu_slot,  # Primary GPU slot (backward compat)
+                "gpu_uuids": gpu_uuids,  # All GPU UUIDs
+                "gpu_slots": gpu_slots,  # All GPU slots
+                "mig_equiv": mig_equiv,  # Total MIG-equivalents
+                "allocated_at": allocated_at,
+                "priority": priority,
+                "user": user,
+                "interface": interface,
             }
 
-        except (KeyError, IndexError, TypeError) as e:
+        except (KeyError, IndexError, TypeError):
             # Malformed container data - return None
             return None
         except subprocess.CalledProcessError:
@@ -316,7 +319,7 @@ class GPUStateReader:
         because they are intentionally created outside DS01 tracking.
         """
         # Check for explicit protected label
-        if labels.get(INFRASTRUCTURE_LABEL) == 'true':
+        if labels.get(INFRASTRUCTURE_LABEL) == "true":
             return True
 
         # Check against known infrastructure patterns
@@ -339,15 +342,15 @@ class GPUStateReader:
         Returns username if extractable from /home/<username>/..., else None.
         """
         # Priority 1: devcontainer.local_folder
-        path = labels.get('devcontainer.local_folder', '')
+        path = labels.get("devcontainer.local_folder", "")
 
         # Priority 2: com.docker.compose.project.working_dir
         if not path:
-            path = labels.get('com.docker.compose.project.working_dir', '')
+            path = labels.get("com.docker.compose.project.working_dir", "")
 
         # Extract username from path like /home/h.baker@hertie-school.lan/...
-        if path and path.startswith('/home/'):
-            parts = path.split('/')
+        if path and path.startswith("/home/"):
+            parts = path.split("/")
             if len(parts) >= 3:
                 return parts[2]  # The username part after /home/
 
@@ -364,40 +367,36 @@ class GPUStateReader:
         Returns None if container has no GPU access.
         """
         try:
-            device_requests = container_data.get('HostConfig', {}).get('DeviceRequests', [])
+            device_requests = container_data.get("HostConfig", {}).get("DeviceRequests", [])
 
             if not device_requests:
                 return None
 
             for request in device_requests:
-                driver = request.get('Driver', '')
-                caps = request.get('Capabilities', [])
+                driver = request.get("Driver", "")
+                caps = request.get("Capabilities", [])
 
                 # Check if this is an NVIDIA GPU request
-                is_nvidia = driver == 'nvidia' or any('gpu' in cap for cap in caps)
+                is_nvidia = driver == "nvidia" or any("gpu" in cap for cap in caps)
 
                 if is_nvidia:
-                    device_ids = request.get('DeviceIDs', [])
-                    count = request.get('Count', 0)
+                    device_ids = request.get("DeviceIDs", [])
+                    count = request.get("Count", 0)
 
                     if device_ids:
                         return {
-                            'gpu_count': len(device_ids),
-                            'gpu_uuids': device_ids,
-                            'access_type': 'specific'
+                            "gpu_count": len(device_ids),
+                            "gpu_uuids": device_ids,
+                            "access_type": "specific",
                         }
                     elif count == -1:
                         return {
-                            'gpu_count': -1,  # All GPUs
-                            'gpu_uuids': [],
-                            'access_type': 'all'
+                            "gpu_count": -1,  # All GPUs
+                            "gpu_uuids": [],
+                            "access_type": "all",
                         }
                     elif count > 0:
-                        return {
-                            'gpu_count': count,
-                            'gpu_uuids': [],
-                            'access_type': 'count'
-                        }
+                        return {"gpu_count": count, "gpu_uuids": [], "access_type": "count"}
 
             return None
 
@@ -428,10 +427,10 @@ class GPUStateReader:
                 [DOCKER_BIN, "ps", "-a", "--format", "{{.Names}}"],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
 
-            for name in result.stdout.split('\n'):
+            for name in result.stdout.split("\n"):
                 name = name.strip()
                 if not name:
                     continue
@@ -440,13 +439,13 @@ class GPUStateReader:
                 if not container_data:
                     continue
 
-                labels = container_data.get('Config', {}).get('Labels', {}) or {}
-                cgroup_parent = container_data.get('HostConfig', {}).get('CgroupParent', '')
+                labels = container_data.get("Config", {}).get("Labels", {}) or {}
+                cgroup_parent = container_data.get("HostConfig", {}).get("CgroupParent", "")
 
                 # Skip if it's tracked by DS01
-                in_ds01_slice = cgroup_parent.startswith('ds01')
-                has_ds01_labels = any(k.startswith('ds01.') for k in labels.keys())
-                has_aime_naming = '._.' in name
+                in_ds01_slice = cgroup_parent.startswith("ds01")
+                has_ds01_labels = any(k.startswith("ds01.") for k in labels.keys())
+                has_aime_naming = "._." in name
 
                 if in_ds01_slice or has_ds01_labels or has_aime_naming:
                     continue
@@ -461,28 +460,30 @@ class GPUStateReader:
                     continue
 
                 # Get container state
-                state = container_data.get('State', {})
-                is_running = state.get('Running', False)
-                status = state.get('Status', 'unknown')
+                state = container_data.get("State", {})
+                is_running = state.get("Running", False)
+                status = state.get("Status", "unknown")
 
                 # Try to detect owner
-                user = self._extract_owner_from_compose(labels) or 'unknown'
+                user = self._extract_owner_from_compose(labels) or "unknown"
 
-                unmanaged.append({
-                    'name': name,
-                    'user': user,
-                    'gpu_count': gpu_info['gpu_count'],
-                    'gpu_uuids': gpu_info['gpu_uuids'],
-                    'access_type': gpu_info['access_type'],
-                    'running': is_running,
-                    'status': status,
-                    'cgroup_parent': cgroup_parent,
-                    'labels': {
-                        'compose_project': labels.get('com.docker.compose.project', ''),
-                        'compose_service': labels.get('com.docker.compose.service', ''),
-                        'devcontainer': labels.get('devcontainer.local_folder', ''),
+                unmanaged.append(
+                    {
+                        "name": name,
+                        "user": user,
+                        "gpu_count": gpu_info["gpu_count"],
+                        "gpu_uuids": gpu_info["gpu_uuids"],
+                        "access_type": gpu_info["access_type"],
+                        "running": is_running,
+                        "status": status,
+                        "cgroup_parent": cgroup_parent,
+                        "labels": {
+                            "compose_project": labels.get("com.docker.compose.project", ""),
+                            "compose_service": labels.get("com.docker.compose.service", ""),
+                            "devcontainer": labels.get("devcontainer.local_folder", ""),
+                        },
                     }
-                })
+                )
 
         except subprocess.CalledProcessError:
             pass
@@ -495,15 +496,17 @@ class GPUStateReader:
         Now tracks ALL containers in ds01.slice (all interfaces).
         Returns dict structured like old gpu-state.json for compatibility.
         """
-        allocations = defaultdict(lambda: {
-            'type': 'mig_instance',
-            'containers': [],
-            'users': defaultdict(int),
-            'uuid': '',
-            'profile': '',
-            'docker_id': '',
-            'interfaces': defaultdict(int)  # Track containers by interface
-        })
+        allocations = defaultdict(
+            lambda: {
+                "type": "mig_instance",
+                "containers": [],
+                "users": defaultdict(int),
+                "uuid": "",
+                "profile": "",
+                "docker_id": "",
+                "interfaces": defaultdict(int),  # Track containers by interface
+            }
+        )
 
         # Get ALL containers (not just AIME naming convention)
         container_names = self._get_all_ds01_containers()
@@ -521,32 +524,34 @@ class GPUStateReader:
             if not gpu_info:
                 continue  # Container has no GPU
 
-            user = gpu_info['user']
-            interface = gpu_info.get('interface', INTERFACE_DOCKER)
+            user = gpu_info["user"]
+            interface = gpu_info.get("interface", INTERFACE_DOCKER)
 
             # Process ALL gpu_slots for multi-MIG containers
-            all_gpu_slots = gpu_info.get('gpu_slots', [gpu_info['gpu_slot']])
-            all_gpu_uuids = gpu_info.get('gpu_uuids', [gpu_info['gpu_uuid']])
+            all_gpu_slots = gpu_info.get("gpu_slots", [gpu_info["gpu_slot"]])
+            all_gpu_uuids = gpu_info.get("gpu_uuids", [gpu_info["gpu_uuid"]])
 
             for i, gpu_slot in enumerate(all_gpu_slots):
-                gpu_uuid = all_gpu_uuids[i] if i < len(all_gpu_uuids) else ''
+                gpu_uuid = all_gpu_uuids[i] if i < len(all_gpu_uuids) else ""
 
                 # Add to allocations
-                allocations[gpu_slot]['containers'].append(container_name)
-                allocations[gpu_slot]['users'][user] += 1
-                allocations[gpu_slot]['uuid'] = gpu_uuid
-                allocations[gpu_slot]['docker_id'] = gpu_uuid
-                allocations[gpu_slot]['interfaces'][interface] += 1
+                allocations[gpu_slot]["containers"].append(container_name)
+                allocations[gpu_slot]["users"][user] += 1
+                allocations[gpu_slot]["uuid"] = gpu_uuid
+                allocations[gpu_slot]["docker_id"] = gpu_uuid
+                allocations[gpu_slot]["interfaces"][interface] += 1
 
                 # Try to determine profile from UUID or slot
-                if 'MIG' in gpu_uuid:
-                    allocations[gpu_slot]['profile'] = '1g.10gb'  # Default, could parse from nvidia-smi
+                if "MIG" in gpu_uuid:
+                    allocations[gpu_slot]["profile"] = (
+                        "1g.10gb"  # Default, could parse from nvidia-smi
+                    )
 
         # Convert defaultdict to regular dict
         result = {}
         for k, v in allocations.items():
-            v['users'] = dict(v['users'])
-            v['interfaces'] = dict(v['interfaces'])
+            v["users"] = dict(v["users"])
+            v["interfaces"] = dict(v["interfaces"])
             result[k] = v
 
         return result
@@ -568,10 +573,10 @@ class GPUStateReader:
                 [DOCKER_BIN, "ps", "-a", "--format", "{{.Names}}"],
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
 
-            for name in result.stdout.split('\n'):
+            for name in result.stdout.split("\n"):
                 name = name.strip()
                 if not name:
                     continue
@@ -579,17 +584,17 @@ class GPUStateReader:
                 # Check if container is in ds01 slice hierarchy
                 container_data = self._get_container_inspect(name)
                 if container_data:
-                    cgroup_parent = container_data.get('HostConfig', {}).get('CgroupParent', '')
+                    cgroup_parent = container_data.get("HostConfig", {}).get("CgroupParent", "")
 
                     # Include if:
                     # 1. In ds01.slice hierarchy
                     # 2. Has ds01.* labels
                     # 3. Has AIME naming convention (legacy support)
-                    labels = container_data.get('Config', {}).get('Labels', {}) or {}
+                    labels = container_data.get("Config", {}).get("Labels", {}) or {}
 
-                    in_ds01_slice = cgroup_parent.startswith('ds01')
-                    has_ds01_labels = any(k.startswith('ds01.') for k in labels.keys())
-                    has_aime_naming = '._.' in name
+                    in_ds01_slice = cgroup_parent.startswith("ds01")
+                    has_ds01_labels = any(k.startswith("ds01.") for k in labels.keys())
+                    has_aime_naming = "._." in name
 
                     if in_ds01_slice or has_ds01_labels or has_aime_naming:
                         container_names.append(name)
@@ -608,7 +613,7 @@ class GPUStateReader:
             INTERFACE_ORCHESTRATION: [],
             INTERFACE_ATOMIC: [],
             INTERFACE_DOCKER: [],
-            INTERFACE_OTHER: []
+            INTERFACE_OTHER: [],
         }
 
         container_names = self._get_all_ds01_containers()
@@ -625,26 +630,26 @@ class GPUStateReader:
             gpu_info = self._extract_gpu_from_container(container_data)
 
             # Get container state
-            state = container_data.get('State', {})
-            is_running = state.get('Running', False)
-            status = state.get('Status', 'unknown')
+            state = container_data.get("State", {})
+            is_running = state.get("Running", False)
+            status = state.get("Status", "unknown")
 
             # Get user
-            labels = container_data.get('Config', {}).get('Labels', {}) or {}
+            labels = container_data.get("Config", {}).get("Labels", {}) or {}
             # TODO: Remove aime.mlc.USER fallback when no legacy containers remain (Phase 7 migration)
-            user = labels.get('ds01.user') or labels.get('aime.mlc.USER', '')
+            user = labels.get("ds01.user") or labels.get("aime.mlc.USER", "")
             if not user:
-                cgroup_parent = container_data.get('HostConfig', {}).get('CgroupParent', '')
-                user = self._extract_user_from_cgroup(cgroup_parent) or 'unknown'
+                cgroup_parent = container_data.get("HostConfig", {}).get("CgroupParent", "")
+                user = self._extract_user_from_cgroup(cgroup_parent) or "unknown"
 
             container_info = {
-                'name': container_name,
-                'user': user,
-                'status': status,
-                'running': is_running,
-                'gpu': gpu_info['gpu_slot'] if gpu_info else None,
-                'gpu_uuid': gpu_info['gpu_uuid'] if gpu_info else None,
-                'interface': interface
+                "name": container_name,
+                "user": user,
+                "status": status,
+                "running": is_running,
+                "gpu": gpu_info["gpu_slot"] if gpu_info else None,
+                "gpu_uuid": gpu_info["gpu_uuid"] if gpu_info else None,
+                "interface": interface,
             }
 
             by_interface[interface].append(container_info)
@@ -683,7 +688,7 @@ class GPUStateReader:
                 continue
 
             # Get user from labels or cgroup
-            container_user = gpu_info['user']
+            container_user = gpu_info["user"]
             if not container_user:
                 continue
 
@@ -691,22 +696,24 @@ class GPUStateReader:
                 continue
 
             # Get status
-            state = container_data.get('State', {})
-            is_running = state.get('Running', False)
-            status = state.get('Status', 'unknown')
-            interface = gpu_info.get('interface', INTERFACE_DOCKER)
+            state = container_data.get("State", {})
+            is_running = state.get("Running", False)
+            status = state.get("Status", "unknown")
+            interface = gpu_info.get("interface", INTERFACE_DOCKER)
 
-            user_allocations.append({
-                'container': container_name,
-                'gpu_slot': gpu_info['gpu_slot'],           # Primary slot (backward compat)
-                'gpu_uuid': gpu_info['gpu_uuid'],           # Primary UUID (backward compat)
-                'gpu_slots': gpu_info.get('gpu_slots', [gpu_info['gpu_slot']]),  # All slots
-                'gpu_uuids': gpu_info.get('gpu_uuids', [gpu_info['gpu_uuid']]),  # All UUIDs
-                'mig_equiv': gpu_info.get('mig_equiv', 1),  # MIG-equivalents
-                'status': status,
-                'running': is_running,
-                'interface': interface
-            })
+            user_allocations.append(
+                {
+                    "container": container_name,
+                    "gpu_slot": gpu_info["gpu_slot"],  # Primary slot (backward compat)
+                    "gpu_uuid": gpu_info["gpu_uuid"],  # Primary UUID (backward compat)
+                    "gpu_slots": gpu_info.get("gpu_slots", [gpu_info["gpu_slot"]]),  # All slots
+                    "gpu_uuids": gpu_info.get("gpu_uuids", [gpu_info["gpu_uuid"]]),  # All UUIDs
+                    "mig_equiv": gpu_info.get("mig_equiv", 1),  # MIG-equivalents
+                    "status": status,
+                    "running": is_running,
+                    "interface": interface,
+                }
+            )
 
         return user_allocations
 
@@ -715,7 +722,7 @@ class GPUStateReader:
         Get total MIG-equivalents allocated to a user across all containers.
         """
         allocations = self.get_user_allocations(username)
-        return sum(alloc.get('mig_equiv', 1) for alloc in allocations)
+        return sum(alloc.get("mig_equiv", 1) for alloc in allocations)
 
     def get_user_gpu_count(self, username: str) -> int:
         """
@@ -733,7 +740,7 @@ class GPUStateReader:
         # Count distinct GPU slots across all containers
         all_slots = set()
         for alloc in allocations:
-            for slot in alloc.get('gpu_slots', [alloc.get('gpu_slot')]):
+            for slot in alloc.get("gpu_slots", [alloc.get("gpu_slot")]):
                 if slot:
                     all_slots.add(slot)
         return len(all_slots)
@@ -746,6 +753,7 @@ class GPUStateReader:
 # ============================================================================
 
 _reader_instance = None
+
 
 def get_reader() -> GPUStateReader:
     """Get singleton GPUStateReader instance."""
@@ -766,17 +774,19 @@ def get_mig_allocations() -> List[Dict]:
     result = []
     for slot, data in allocations.items():
         # Only include MIG slots (format: X.Y)
-        if '.' in str(slot):
-            for container in data.get('containers', []):
+        if "." in str(slot):
+            for container in data.get("containers", []):
                 # Find user for this container
-                users = data.get('users', {})
-                user = list(users.keys())[0] if users else 'unknown'
-                result.append({
-                    'container': container,
-                    'user': user,
-                    'mig_slot': slot,
-                    'mig_uuid': data.get('uuid', '')
-                })
+                users = data.get("users", {})
+                user = list(users.keys())[0] if users else "unknown"
+                result.append(
+                    {
+                        "container": container,
+                        "user": user,
+                        "mig_slot": slot,
+                        "mig_uuid": data.get("uuid", ""),
+                    }
+                )
     return result
 
 
@@ -791,16 +801,18 @@ def get_gpu_allocations() -> List[Dict]:
     result = []
     for slot, data in allocations.items():
         # Only include full GPU slots (no decimal point)
-        if '.' not in str(slot):
-            for container in data.get('containers', []):
-                users = data.get('users', {})
-                user = list(users.keys())[0] if users else 'unknown'
-                result.append({
-                    'container': container,
-                    'user': user,
-                    'gpu_slot': slot,
-                    'gpu_uuid': data.get('uuid', '')
-                })
+        if "." not in str(slot):
+            for container in data.get("containers", []):
+                users = data.get("users", {})
+                user = list(users.keys())[0] if users else "unknown"
+                result.append(
+                    {
+                        "container": container,
+                        "user": user,
+                        "gpu_slot": slot,
+                        "gpu_uuid": data.get("uuid", ""),
+                    }
+                )
     return result
 
 
@@ -824,15 +836,17 @@ def get_all_allocations_flat() -> List[Dict]:
 
     result = []
     for slot, data in allocations.items():
-        for container in data.get('containers', []):
-            users = data.get('users', {})
-            user = list(users.keys())[0] if users else 'unknown'
-            result.append({
-                'container': container,
-                'user': user,
-                'gpu_slot': str(slot),
-                'gpu_uuid': data.get('uuid', '')
-            })
+        for container in data.get("containers", []):
+            users = data.get("users", {})
+            user = list(users.keys())[0] if users else "unknown"
+            result.append(
+                {
+                    "container": container,
+                    "user": user,
+                    "gpu_slot": str(slot),
+                    "gpu_uuid": data.get("uuid", ""),
+                }
+            )
     return result
 
 
@@ -876,9 +890,11 @@ def main():
         for gpu_slot, data in sorted(allocations.items()):
             print(f"\nGPU/MIG {gpu_slot}:")
             print(f"  UUID: {data['uuid']}")
-            print(f"  Containers: {', '.join(data['containers']) if data['containers'] else 'none'}")
+            print(
+                f"  Containers: {', '.join(data['containers']) if data['containers'] else 'none'}"
+            )
             print(f"  Users: {dict(data['users'])}")
-            if data.get('interfaces'):
+            if data.get("interfaces"):
                 print(f"  Interfaces: {dict(data['interfaces'])}")
 
     elif command == "by-interface":
@@ -888,7 +904,7 @@ def main():
             INTERFACE_ORCHESTRATION: "DS01 ORCHESTRATION",
             INTERFACE_ATOMIC: "DS01 ATOMIC",
             INTERFACE_DOCKER: "DOCKER DIRECT",
-            INTERFACE_OTHER: "OTHER (VS Code, Compose, etc.)"
+            INTERFACE_OTHER: "OTHER (VS Code, Compose, etc.)",
         }
 
         for interface, containers in by_interface.items():
@@ -896,8 +912,8 @@ def main():
             if not containers:
                 print("  (none)")
             for c in containers:
-                status = "🟢" if c['running'] else "○"
-                gpu = f"GPU:{c['gpu']}" if c['gpu'] else "no GPU"
+                status = "🟢" if c["running"] else "○"
+                gpu = f"GPU:{c['gpu']}" if c["gpu"] else "no GPU"
                 print(f"  {status} {c['name']} [{c['user']}] {gpu}")
 
     elif command == "json":
@@ -923,11 +939,11 @@ def main():
         total_mig = reader.get_user_mig_total(username)
         print(f"GPU allocations for {username} (total: {total_mig} MIG-equiv):")
         for alloc in allocations:
-            status = "🟢" if alloc['running'] else "○"
+            status = "🟢" if alloc["running"] else "○"
             interface = f"[{alloc.get('interface', '?')}]"
-            mig_equiv = alloc.get('mig_equiv', 1)
-            gpu_slots = alloc.get('gpu_slots', [alloc['gpu_slot']])
-            slots_str = ','.join(gpu_slots) if len(gpu_slots) > 1 else alloc['gpu_slot']
+            mig_equiv = alloc.get("mig_equiv", 1)
+            gpu_slots = alloc.get("gpu_slots", [alloc["gpu_slot"]])
+            slots_str = ",".join(gpu_slots) if len(gpu_slots) > 1 else alloc["gpu_slot"]
             mig_info = f"({mig_equiv} MIG-equiv)" if mig_equiv > 1 else ""
             print(f"  {status} {alloc['container']}: GPU {slots_str} {mig_info} {interface}")
 
@@ -949,15 +965,17 @@ def main():
             print(f"\n⚠️  UNMANAGED GPU CONTAINERS ({len(unmanaged)}):")
             print("   (These containers bypass DS01 tracking and resource limits)\n")
             for c in unmanaged:
-                status = "🟢" if c['running'] else "○"
-                gpu_str = "all GPUs" if c['gpu_count'] == -1 else f"{c['gpu_count']} GPU(s)"
-                access_warning = " ⚠️ UNRESTRICTED" if c['access_type'] == 'all' else ""
+                status = "🟢" if c["running"] else "○"
+                gpu_str = "all GPUs" if c["gpu_count"] == -1 else f"{c['gpu_count']} GPU(s)"
+                access_warning = " ⚠️ UNRESTRICTED" if c["access_type"] == "all" else ""
                 print(f"  {status} {c['name']}")
                 print(f"      User: {c['user']}")
                 print(f"      GPUs: {gpu_str}{access_warning}")
-                if c['labels']['compose_project']:
-                    print(f"      Compose: {c['labels']['compose_project']}/{c['labels']['compose_service']}")
-                if c['labels']['devcontainer']:
+                if c["labels"]["compose_project"]:
+                    print(
+                        f"      Compose: {c['labels']['compose_project']}/{c['labels']['compose_service']}"
+                    )
+                if c["labels"]["devcontainer"]:
                     print(f"      DevContainer: {c['labels']['devcontainer']}")
                 print()
 

@@ -22,17 +22,17 @@ from pathlib import Path
 
 # Allowed commit types (conventional commits)
 ALLOWED_TYPES = {
-    "feat",      # New feature
-    "fix",       # Bug fix
-    "docs",      # Documentation only
+    "feat",  # New feature
+    "fix",  # Bug fix
+    "docs",  # Documentation only
     "refactor",  # Code change without feature/fix
-    "test",      # Adding/updating tests
-    "chore",     # Maintenance tasks
-    "ci",        # CI/CD changes
-    "perf",      # Performance improvement
-    "build",     # Build system changes
-    "style",     # Code style (formatting, etc.)
-    "revert",    # Revert previous commit
+    "test",  # Adding/updating tests
+    "chore",  # Maintenance tasks
+    "ci",  # CI/CD changes
+    "perf",  # Performance improvement
+    "build",  # Build system changes
+    "style",  # Code style (formatting, etc.)
+    "revert",  # Revert previous commit
 }
 
 # Conventional commit pattern
@@ -42,12 +42,12 @@ ALLOWED_TYPES = {
 # - !: optional (indicates breaking change)
 # - subject: required (the actual message)
 CONVENTIONAL_PATTERN = re.compile(
-    r"^(?P<type>\w+)"           # Type (required)
-    r"(?:\((?P<scope>[^)]+)\))?" # Scope (optional)
-    r"(?P<breaking>!)?"         # Breaking change indicator (optional)
-    r": "                       # Separator (required)
-    r"(?P<subject>.+)$",        # Subject (required)
-    re.MULTILINE
+    r"^(?P<type>\w+)"  # Type (required)
+    r"(?:\((?P<scope>[^)]+)\))?"  # Scope (optional)
+    r"(?P<breaking>!)?"  # Breaking change indicator (optional)
+    r": "  # Separator (required)
+    r"(?P<subject>.+)$",  # Subject (required)
+    re.MULTILINE,
 )
 
 # AI attribution patterns to block
@@ -79,8 +79,7 @@ def validate_conventional_format(message: str) -> tuple[bool, str]:
     commit_type = match.group("type")
     if commit_type not in ALLOWED_TYPES:
         return False, (
-            f"Invalid type '{commit_type}'.\n"
-            f"  Allowed types: {', '.join(sorted(ALLOWED_TYPES))}"
+            f"Invalid type '{commit_type}'.\n  Allowed types: {', '.join(sorted(ALLOWED_TYPES))}"
         )
 
     subject = match.group("subject")

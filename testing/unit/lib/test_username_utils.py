@@ -14,10 +14,10 @@ the canonical username in passwd (e.g., user@hertie-school.lan).
 
 import os
 import subprocess
-import pytest
 from pathlib import Path
 from typing import Optional
 
+import pytest
 
 # Path to the username-utils.sh library
 USERNAME_UTILS_PATH = Path("/opt/ds01-infra/scripts/lib/username-utils.sh")
@@ -104,9 +104,7 @@ class TestSanitizeUsernameForSlice:
 
     def test_strips_domain(self):
         """Should strip @domain from username."""
-        result = self.run_bash_function(
-            'sanitize_username_for_slice "user@hertie-school.lan"'
-        )
+        result = self.run_bash_function('sanitize_username_for_slice "user@hertie-school.lan"')
         assert result.returncode == 0
         assert "@" not in result.stdout
         assert result.stdout.strip() == "user"
@@ -120,9 +118,7 @@ class TestSanitizeUsernameForSlice:
 
     def test_complex_ldap_username(self):
         """Should handle complex LDAP username with domain."""
-        result = self.run_bash_function(
-            'sanitize_username_for_slice "h.baker@hertie-school.lan"'
-        )
+        result = self.run_bash_function('sanitize_username_for_slice "h.baker@hertie-school.lan"')
         assert result.returncode == 0
         assert result.stdout.strip() == "h_baker"
 
@@ -193,9 +189,7 @@ class TestGetUserSliceName:
 
     def test_sanitizes_username_in_slice(self):
         """Should sanitize username within slice name."""
-        result = self.run_bash_function(
-            'get_user_slice_name "student" "h.baker@hertie-school.lan"'
-        )
+        result = self.run_bash_function('get_user_slice_name "student" "h.baker@hertie-school.lan"')
         assert result.returncode == 0
         assert result.stdout.strip() == "ds01-student-h_baker.slice"
 
@@ -236,7 +230,7 @@ class TestGetCanonicalUsername:
     def test_function_is_exported(self):
         """get_canonical_username should be exported for subshells."""
         result = self.run_bash_function(
-            'bash -c \'source /opt/ds01-infra/scripts/lib/username-utils.sh && type get_canonical_username\''
+            "bash -c 'source /opt/ds01-infra/scripts/lib/username-utils.sh && type get_canonical_username'"
         )
         assert result.returncode == 0
 
@@ -247,9 +241,7 @@ class TestGetCanonicalUsername:
 
     def test_nonexistent_user_returns_error(self):
         """Should return error code for non-existent user."""
-        result = self.run_bash_function(
-            'get_canonical_username "nonexistent_user_12345"'
-        )
+        result = self.run_bash_function('get_canonical_username "nonexistent_user_12345"')
         assert result.returncode != 0
 
     def test_current_user_returns_canonical(self):
@@ -274,9 +266,7 @@ class TestGetCanonicalUsername:
 
     def test_uid_zero_resolves_to_root(self):
         """UID 0 should resolve to root via getent."""
-        result = self.run_bash_function(
-            'uid=$(id -u root); getent passwd "$uid" | cut -d: -f1'
-        )
+        result = self.run_bash_function('uid=$(id -u root); getent passwd "$uid" | cut -d: -f1')
         assert result.returncode == 0
         assert result.stdout.strip() == "root"
 
@@ -299,12 +289,12 @@ class TestGetCanonicalUsername:
     def test_resolves_to_passwd_first_field(self):
         """Canonical username should be first field of passwd entry."""
         result = self.run_bash_function(
-            '''
+            """
             user="root"
             canonical=$(get_canonical_username "$user")
             expected=$(getent passwd "$(id -u root)" | cut -d: -f1)
             [ "$canonical" = "$expected" ] && echo "matches_passwd"
-            '''
+            """
         )
         assert result.returncode == 0
         assert "matches_passwd" in result.stdout
@@ -342,9 +332,7 @@ class TestCanonicalUsernameEdgeCases:
     def test_special_characters_in_username(self):
         """Should handle special characters if they exist in system."""
         # Test with a name that might have special chars but wouldn't exist
-        result = self.run_bash_function(
-            'get_canonical_username "user<>with|special"'
-        )
+        result = self.run_bash_function('get_canonical_username "user<>with|special"')
         # Such a user doesn't exist, should return error
         assert result.returncode != 0
 
@@ -358,11 +346,11 @@ class TestCanonicalUsernameEdgeCases:
     def test_output_has_no_trailing_newlines(self):
         """Output should not have extra trailing newlines."""
         result = self.run_bash_function(
-            '''
+            """
             output=$(get_canonical_username "root")
             # Check if output ends with newline
             [ "${output: -1}" != $'\n' ] && echo "no_trailing_newline"
-            '''
+            """
         )
         assert result.returncode == 0
         assert "no_trailing_newline" in result.stdout

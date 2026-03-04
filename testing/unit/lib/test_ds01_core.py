@@ -13,8 +13,8 @@ from pathlib import Path
 lib_path = Path(__file__).resolve().parent.parent.parent.parent / "scripts" / "lib"
 sys.path.insert(0, str(lib_path))
 
-import pytest
-from ds01_core import parse_duration, format_duration, Colors
+import pytest  # noqa: E402
+from ds01_core import Colors, format_duration, parse_duration  # noqa: E402
 
 
 class TestParseDuration:
@@ -124,15 +124,15 @@ class TestColors:
 
     def test_colors_are_ansi_codes(self):
         """Test that colors are valid ANSI escape codes."""
-        assert Colors.RED.startswith('\033[')
-        assert Colors.GREEN.startswith('\033[')
-        assert Colors.YELLOW.startswith('\033[')
-        assert Colors.BLUE.startswith('\033[')
-        assert Colors.NC.startswith('\033[')
+        assert Colors.RED.startswith("\033[")
+        assert Colors.GREEN.startswith("\033[")
+        assert Colors.YELLOW.startswith("\033[")
+        assert Colors.BLUE.startswith("\033[")
+        assert Colors.NC.startswith("\033[")
 
     def test_nc_resets_color(self):
         """Test that NC is the reset code."""
-        assert Colors.NC == '\033[0m'
+        assert Colors.NC == "\033[0m"
 
 
 class TestRoundTrip:
@@ -149,8 +149,10 @@ class TestRoundTrip:
             # (e.g., "24h" might become "1d"), but re-parsing should give same seconds
             formatted = format_duration(seconds)
             reparsed = parse_duration(formatted)
-            assert reparsed == seconds, f"Round-trip failed for {val}: {seconds} -> {formatted} -> {reparsed}"
+            assert reparsed == seconds, (
+                f"Round-trip failed for {val}: {seconds} -> {formatted} -> {reparsed}"
+            )
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

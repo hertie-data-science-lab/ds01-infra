@@ -4,10 +4,10 @@ Resource limits configuration parser for DS01 GPU server
 Reads resource-limits.yaml and returns appropriate limits for a given user
 """
 
-import yaml
 import sys
-import os
 from pathlib import Path
+
+import yaml
 
 # Import username sanitization utility
 script_dir = Path(__file__).resolve().parent
@@ -20,17 +20,19 @@ except ImportError:
     # Fallback if library not available
     # Uses underscores (not hyphens) to avoid systemd hierarchy interpretation
     import re
+
     def sanitize_username_for_slice(username: str) -> str:
         if not username:
             return username
         # Strip domain part
-        if '@' in username:
-            username = username.split('@')[0]
+        if "@" in username:
+            username = username.split("@")[0]
         # Replace dots and invalid chars with underscores (NOT hyphens)
-        sanitized = username.replace('.', '_')
-        sanitized = re.sub(r'[^a-zA-Z0-9_:]', '_', sanitized)
-        sanitized = re.sub(r'_+', '_', sanitized).strip('_')
+        sanitized = username.replace(".", "_")
+        sanitized = re.sub(r"[^a-zA-Z0-9_:]", "_", sanitized)
+        sanitized = re.sub(r"_+", "_", sanitized).strip("_")
         return sanitized
+
 
 class ResourceLimitParser:
     def __init__(self, config_path=None):
@@ -78,7 +80,7 @@ class ResourceLimitParser:
             with open(member_file) as f:
                 for line in f:
                     # Remove comments and whitespace
-                    line = line.split('#')[0].strip()
+                    line = line.split("#")[0].strip()
                     if line:
                         members.append(line)
             return members
@@ -108,42 +110,42 @@ class ResourceLimitParser:
     def _load_external_files(self):
         """Load external member files and user overrides, merging into config."""
         # Load group members from files (supplements/overrides inline members)
-        groups = self.config.get('groups') or {}
+        groups = self.config.get("groups") or {}
         for group_name in groups:
             file_members = self._load_group_members(group_name)
             if file_members:
                 # File members take precedence, but also include inline members
-                inline_members = groups[group_name].get('members', [])
+                inline_members = groups[group_name].get("members", [])
                 combined = list(set(file_members + inline_members))
-                groups[group_name]['members'] = combined
+                groups[group_name]["members"] = combined
 
         # Load user overrides from file (merges with inline overrides)
         file_overrides = self._load_user_overrides()
         if file_overrides:
-            inline_overrides = self.config.get('user_overrides') or {}
+            inline_overrides = self.config.get("user_overrides") or {}
             # File overrides take precedence over inline
             merged_overrides = {**inline_overrides, **file_overrides}
-            self.config['user_overrides'] = merged_overrides
-    
+            self.config["user_overrides"] = merged_overrides
+
     def get_user_group(self, username):
         """Get the group name for a user.
 
         Supports both original and sanitized usernames in config lookups.
         Tries original username first, then sanitized form.
         """
-        user_overrides = self.config.get('user_overrides') or {}
+        user_overrides = self.config.get("user_overrides") or {}
         sanitized = sanitize_username_for_slice(username)
 
         # Check user_overrides with original username first
         if username in user_overrides:
-            return 'override'
+            return "override"
         # Fallback to sanitized form
         if sanitized != username and sanitized in user_overrides:
-            return 'override'
+            return "override"
 
-        groups = self.config.get('groups') or {}
+        groups = self.config.get("groups") or {}
         for group_name, group_config in groups.items():
-            members = group_config.get('members', [])
+            members = group_config.get("members", [])
             # Check original username first
             if username in members:
                 return group_name
@@ -151,8 +153,8 @@ class ResourceLimitParser:
             if sanitized != username and sanitized in members:
                 return group_name
 
-        return self.config.get('default_group', 'student')
-    
+        return self.config.get("default_group", "student")
+
     def get_user_limits(self, username):
         """Get resource limits for a specific user.
 
@@ -162,11 +164,11 @@ class ResourceLimitParser:
         if not self.config:
             raise ValueError("Configuration is empty or invalid")
 
-        defaults = self.config.get('defaults', {})
+        defaults = self.config.get("defaults", {})
         sanitized = sanitize_username_for_slice(username)
 
         # Check for user-specific override first (try original, then sanitized)
-        user_overrides = self.config.get('user_overrides') or {}
+        user_overrides = self.config.get("user_overrides") or {}
         override_key = None
         if username in user_overrides:
             override_key = username
@@ -176,31 +178,31 @@ class ResourceLimitParser:
         if override_key:
             base_limits = defaults.copy()
             base_limits.update(user_overrides[override_key])
-            base_limits['_group'] = 'override'
+            base_limits["_group"] = "override"
             return base_limits
 
         # Check which group the user belongs to (try original, then sanitized)
-        groups = self.config.get('groups') or {}
+        groups = self.config.get("groups") or {}
         for group_name, group_config in groups.items():
-            members = group_config.get('members', [])
+            members = group_config.get("members", [])
             if username in members or (sanitized != username and sanitized in members):
                 base_limits = defaults.copy()
-                group_limits = {k: v for k, v in group_config.items() if k != 'members'}
+                group_limits = {k: v for k, v in group_config.items() if k != "members"}
                 base_limits.update(group_limits)
-                base_limits['_group'] = group_name
+                base_limits["_group"] = group_name
                 return base_limits
 
         # Default limits if user not in any group
-        default_group = self.config.get('default_group', 'student')
+        default_group = self.config.get("default_group", "student")
         group_config = groups.get(default_group, {})
 
         base_limits = defaults.copy()
-        group_limits = {k: v for k, v in group_config.items() if k != 'members'}
+        group_limits = {k: v for k, v in group_config.items() if k != "members"}
         base_limits.update(group_limits)
-        base_limits['_group'] = default_group
+        base_limits["_group"] = default_group
 
         return base_limits
-    
+
     def get_docker_args(self, username):
         """Generate Docker run arguments for resource limits"""
         limits = self.get_user_limits(username)
@@ -209,78 +211,80 @@ class ResourceLimitParser:
 
         # CPU limits (check both 'max_cpus' and 'cpus' for backwards compatibility)
         cpus = limits.get("max_cpus") or limits.get("cpus", 16)
-        args.append(f'--cpus={cpus}')
+        args.append(f"--cpus={cpus}")
 
         # Memory limits
         memory = limits.get("memory", "32g")
-        args.append(f'--memory={memory}')
-        args.append(f'--memory-swap={limits.get("memory_swap", memory)}')
-        args.append(f'--shm-size={limits.get("shm_size", "16g")}')
+        args.append(f"--memory={memory}")
+        args.append(f"--memory-swap={limits.get('memory_swap', memory)}")
+        args.append(f"--shm-size={limits.get('shm_size', '16g')}")
 
         # Process limits
-        args.append(f'--pids-limit={limits.get("pids_limit", 4096)}')
+        args.append(f"--pids-limit={limits.get('pids_limit', 4096)}")
 
         # Storage limits (for tmpfs inside container)
         if "storage_tmp" in limits:
-            args.append(f'--tmpfs=/tmp:size={limits["storage_tmp"]}')
+            args.append(f"--tmpfs=/tmp:size={limits['storage_tmp']}")
 
         # Cgroup parent (per-user slice for granular monitoring)
         # Hierarchy: ds01.slice → ds01-{group}.slice → ds01-{group}-{sanitized_username}.slice
         # Username is sanitized for systemd compatibility (LDAP users may have @ and . chars)
-        group = limits.get('_group', 'student')
+        group = limits.get("_group", "student")
         sanitized = sanitize_username_for_slice(username)
-        args.append(f'--cgroup-parent=ds01-{group}-{sanitized}.slice')
+        args.append(f"--cgroup-parent=ds01-{group}-{sanitized}.slice")
 
         return args
-    
+
     def format_for_display(self, username):
         """Format limits for human-readable display"""
         limits = self.get_user_limits(username)
-        group = limits.get('_group', 'unknown')
+        group = limits.get("_group", "unknown")
 
-        max_gpus = limits.get('max_gpus_per_user') or limits.get('max_mig_instances', 1)
+        max_gpus = limits.get("max_gpus_per_user") or limits.get("max_mig_instances", 1)
         if max_gpus is None:
             max_gpus_str = "unlimited"
         else:
             max_gpus_str = str(max_gpus)
 
-        cpus = limits.get('max_cpus') or limits.get('cpus', 16)
+        cpus = limits.get("max_cpus") or limits.get("cpus", 16)
 
         # Get max_gpus_per_container (support both old and new config names)
         # Note: None means unlimited, so check explicitly (don't use 'or' which treats None as falsy)
-        max_gpus_container = limits.get('max_mig_per_container')
+        max_gpus_container = limits.get("max_mig_per_container")
         if max_gpus_container is None:
-            max_gpus_container = limits.get('max_gpus_per_container')
+            max_gpus_container = limits.get("max_gpus_per_container")
         if max_gpus_container is None:
             max_gpus_container_str = "unlimited"
         else:
             max_gpus_container_str = str(max_gpus_container)
 
         # Get allow_full_gpu setting
-        allow_full = limits.get('allow_full_gpu', False)
+        allow_full = limits.get("allow_full_gpu", False)
 
         output = f"\nResource limits for user '{username}' (group: {group}):\n"
-        output += f"\n  GPU Limits:\n"
+        output += "\n  GPU Limits:\n"
         output += f"    Max GPUs (simultaneous):  {max_gpus_str}\n"
         output += f"    Max GPUs per container:   {max_gpus_container_str}\n"
         output += f"    Allow full GPU:           {'Yes' if allow_full else 'No'}\n"
         output += f"    Priority level:           {limits.get('priority', 10)}\n"
         output += f"    Max containers:           {limits.get('max_containers_per_user', 3)}\n"
-        output += f"\n  Compute (per container):\n"
+        output += "\n  Compute (per container):\n"
         output += f"    CPU cores:                {cpus}\n"
         output += f"    RAM:                      {limits.get('memory', '32g')}\n"
         output += f"    Shared memory:            {limits.get('shm_size', '16g')}\n"
         output += f"    Max processes:            {limits.get('pids_limit', 4096)}\n"
-        output += f"\n  Storage:\n"
+        output += "\n  Storage:\n"
         output += f"    Workspace (/workspace):   {limits.get('storage_workspace', 'N/A')}\n"
         output += f"    Data (/data):             {limits.get('storage_data', 'N/A')}\n"
         output += f"    Tmp (/tmp in container):  {limits.get('storage_tmp', 'N/A')}\n"
-        output += f"\n  Lifecycle:\n"
+        output += "\n  Lifecycle:\n"
         output += f"    Idle timeout:             {limits.get('idle_timeout', 'N/A')}\n"
         output += f"    GPU hold after stop:      {limits.get('gpu_hold_after_stop', 'N/A')}\n"
-        output += f"    Container hold (stopped): {limits.get('container_hold_after_stop', 'N/A')}\n"
+        output += (
+            f"    Container hold (stopped): {limits.get('container_hold_after_stop', 'N/A')}\n"
+        )
         output += f"    Max runtime:              {limits.get('max_runtime', 'unlimited')}\n"
-        output += f"\n  Enforcement:\n"
+        output += "\n  Enforcement:\n"
         sanitized = sanitize_username_for_slice(username)
         output += f"    Systemd slice:            ds01-{group}-{sanitized}.slice\n"
         if sanitized != username:
@@ -288,14 +292,13 @@ class ResourceLimitParser:
 
         return output
 
-
     def get_gpu_allocation_config(self):
         """Get gpu_allocation section from config"""
-        return self.config.get('gpu_allocation', {})
+        return self.config.get("gpu_allocation", {})
 
     def get_policies(self):
         """Get policies section from config"""
-        return self.config.get('policies', {})
+        return self.config.get("policies", {})
 
     def get_aggregate_limits(self, username):
         """Get aggregate resource limits for a user.
@@ -322,31 +325,31 @@ class ResourceLimitParser:
         sanitized = sanitize_username_for_slice(username)
 
         # Check user_overrides first (try original, then sanitized)
-        user_overrides = self.config.get('user_overrides') or {}
+        user_overrides = self.config.get("user_overrides") or {}
         override_key = None
         if username in user_overrides:
             override_key = username
         elif sanitized != username and sanitized in user_overrides:
             override_key = sanitized
 
-        if override_key and 'aggregate' in user_overrides[override_key]:
-            return user_overrides[override_key]['aggregate']
+        if override_key and "aggregate" in user_overrides[override_key]:
+            return user_overrides[override_key]["aggregate"]
 
         # Check group aggregate
-        groups = self.config.get('groups') or {}
+        groups = self.config.get("groups") or {}
         for group_name, group_config in groups.items():
-            members = group_config.get('members', [])
+            members = group_config.get("members", [])
             if username in members or (sanitized != username and sanitized in members):
-                if 'aggregate' in group_config:
-                    return group_config['aggregate']
+                if "aggregate" in group_config:
+                    return group_config["aggregate"]
                 # Group exists but no aggregate section (admin or unconfigured)
                 return None
 
         # User in default group - check that group's aggregate
-        default_group = self.config.get('default_group', 'student')
+        default_group = self.config.get("default_group", "student")
         group_config = groups.get(default_group, {})
-        if 'aggregate' in group_config:
-            return group_config['aggregate']
+        if "aggregate" in group_config:
+            return group_config["aggregate"]
 
         return None
 
@@ -361,13 +364,14 @@ class ResourceLimitParser:
             gpu_hold_after_stop, container_hold_after_stop
         """
         import json
+
         limits = self.get_user_limits(username)
 
         lifecycle = {
-            'idle_timeout': limits.get('idle_timeout'),
-            'max_runtime': limits.get('max_runtime'),
-            'gpu_hold_after_stop': limits.get('gpu_hold_after_stop'),
-            'container_hold_after_stop': limits.get('container_hold_after_stop'),
+            "idle_timeout": limits.get("idle_timeout"),
+            "max_runtime": limits.get("max_runtime"),
+            "gpu_hold_after_stop": limits.get("gpu_hold_after_stop"),
+            "container_hold_after_stop": limits.get("container_hold_after_stop"),
         }
         return json.dumps(lifecycle)
 
@@ -388,52 +392,52 @@ class ResourceLimitParser:
             raise ValueError("Configuration is empty or invalid")
 
         # Start with global defaults
-        policies = self.config.get('policies', {}).copy()
+        policies = self.config.get("policies", {}).copy()
 
         # Extract thresholds
         result = {
-            'gpu_idle_threshold': policies.get('gpu_idle_threshold', 5),
-            'cpu_idle_threshold': policies.get('cpu_idle_threshold', 2.0),
-            'network_idle_threshold': policies.get('network_idle_threshold', 1048576),
-            'idle_detection_window': policies.get('idle_detection_window', 3),
-            'sigterm_grace_seconds': policies.get('sigterm_grace_seconds', 60),
+            "gpu_idle_threshold": policies.get("gpu_idle_threshold", 5),
+            "cpu_idle_threshold": policies.get("cpu_idle_threshold", 2.0),
+            "network_idle_threshold": policies.get("network_idle_threshold", 1048576),
+            "idle_detection_window": policies.get("idle_detection_window", 3),
+            "sigterm_grace_seconds": policies.get("sigterm_grace_seconds", 60),
         }
 
         sanitized = sanitize_username_for_slice(username)
 
         # Check for user-specific override
-        user_overrides = self.config.get('user_overrides') or {}
+        user_overrides = self.config.get("user_overrides") or {}
         override_key = None
         if username in user_overrides:
             override_key = username
         elif sanitized != username and sanitized in user_overrides:
             override_key = sanitized
 
-        if override_key and 'policies' in user_overrides[override_key]:
+        if override_key and "policies" in user_overrides[override_key]:
             # User override takes highest priority
-            user_policies = user_overrides[override_key]['policies']
+            user_policies = user_overrides[override_key]["policies"]
             for key in result:
                 if key in user_policies:
                     result[key] = user_policies[key]
             return result
 
         # Check group policies
-        groups = self.config.get('groups') or {}
+        groups = self.config.get("groups") or {}
         for group_name, group_config in groups.items():
-            members = group_config.get('members', [])
+            members = group_config.get("members", [])
             if username in members or (sanitized != username and sanitized in members):
-                if 'policies' in group_config:
-                    group_policies = group_config['policies']
+                if "policies" in group_config:
+                    group_policies = group_config["policies"]
                     for key in result:
                         if key in group_policies:
                             result[key] = group_policies[key]
                 return result
 
         # User in default group - check that group's policies
-        default_group = self.config.get('default_group', 'student')
+        default_group = self.config.get("default_group", "student")
         group_config = groups.get(default_group, {})
-        if 'policies' in group_config:
-            group_policies = group_config['policies']
+        if "policies" in group_config:
+            group_policies = group_config["policies"]
             for key in result:
                 if key in group_policies:
                     result[key] = group_policies[key]
@@ -465,38 +469,38 @@ class ResourceLimitParser:
             with open(exemption_file) as f:
                 exemption_config = yaml.safe_load(f)
 
-            if not exemption_config or 'exemptions' not in exemption_config:
+            if not exemption_config or "exemptions" not in exemption_config:
                 return (False, None)
 
-            exemptions = exemption_config['exemptions']
+            exemptions = exemption_config["exemptions"]
             now = datetime.now(timezone.utc)
 
             for exemption in exemptions:
                 # Check if exemption applies to this user
-                if exemption.get('username') != username:
+                if exemption.get("username") != username:
                     continue
 
                 # Check if exemption covers this enforcement type
-                if enforcement_type not in exemption.get('exempt_from', []):
+                if enforcement_type not in exemption.get("exempt_from", []):
                     continue
 
                 # Check expiry
-                expires_on = exemption.get('expires_on')
+                expires_on = exemption.get("expires_on")
 
                 if expires_on is None:
                     # No expiry date — permanent exemption
-                    reason = exemption.get('reason', 'No reason provided')
+                    reason = exemption.get("reason", "No reason provided")
                     return (True, f"Permanent exemption: {reason}")
 
                 # Parse expiry date (ISO 8601 format with Z suffix)
                 try:
                     # Handle Z suffix by replacing with +00:00
-                    expiry_str = expires_on.replace('Z', '+00:00')
+                    expiry_str = expires_on.replace("Z", "+00:00")
                     expiry_dt = datetime.fromisoformat(expiry_str)
 
                     if now < expiry_dt:
                         # Exemption still valid
-                        reason = exemption.get('reason', 'No reason provided')
+                        reason = exemption.get("reason", "No reason provided")
                         return (True, f"Temporary exemption until {expires_on}: {reason}")
                     # Exemption expired — continue to next exemption
 
@@ -531,7 +535,9 @@ def main():
         print("  --max-runtime          Max container runtime")
         print("  --all-lifecycle        All lifecycle limits as JSON")
         print("  --lifecycle-policies   Per-group lifecycle policies as JSON")
-        print("  --check-exemption TYPE Check if user is exempt from TYPE (idle_timeout or max_runtime)")
+        print(
+            "  --check-exemption TYPE Check if user is exempt from TYPE (idle_timeout or max_runtime)"
+        )
         print("  --high-demand-threshold  GPU allocation threshold for high demand mode")
         print("  --high-demand-reduction  Idle timeout reduction factor in high demand")
         print("  --aggregate            Per-user aggregate limits as JSON")
@@ -541,91 +547,93 @@ def main():
     username = sys.argv[1]
     parser = ResourceLimitParser()
 
-    if '--docker-args' in sys.argv:
+    if "--docker-args" in sys.argv:
         args = parser.get_docker_args(username)
-        print(' '.join(args))
-    elif '--group' in sys.argv:
+        print(" ".join(args))
+    elif "--group" in sys.argv:
         print(parser.get_user_group(username))
-    elif '--max-gpus' in sys.argv:
+    elif "--max-gpus" in sys.argv:
         limits = parser.get_user_limits(username)
-        max_gpus = limits.get('max_gpus_per_user') or limits.get('max_mig_instances', 1)
+        max_gpus = limits.get("max_gpus_per_user") or limits.get("max_mig_instances", 1)
         print(max_gpus if max_gpus is not None else "unlimited")
-    elif '--max-containers' in sys.argv:
+    elif "--max-containers" in sys.argv:
         limits = parser.get_user_limits(username)
-        max_containers = limits.get('max_containers_per_user', 3)
+        max_containers = limits.get("max_containers_per_user", 3)
         print(max_containers if max_containers is not None else "unlimited")
-    elif '--max-mig-per-container' in sys.argv:
+    elif "--max-mig-per-container" in sys.argv:
         limits = parser.get_user_limits(username)
         # Support both old name (max_gpus_per_container) and new name (max_mig_per_container)
         # Note: None means unlimited, so we must check for key presence, not truthiness
-        if 'max_mig_per_container' in limits:
-            max_mig = limits['max_mig_per_container']
-        elif 'max_gpus_per_container' in limits:
-            max_mig = limits['max_gpus_per_container']
+        if "max_mig_per_container" in limits:
+            max_mig = limits["max_mig_per_container"]
+        elif "max_gpus_per_container" in limits:
+            max_mig = limits["max_gpus_per_container"]
         else:
             max_mig = 1  # Default
         print(max_mig if max_mig is not None else "unlimited")
-    elif '--mig-instances-per-gpu' in sys.argv:
+    elif "--mig-instances-per-gpu" in sys.argv:
         gpu_config = parser.get_gpu_allocation_config()
-        mig_per_gpu = gpu_config.get('mig_instances_per_gpu', 4)
+        mig_per_gpu = gpu_config.get("mig_instances_per_gpu", 4)
         print(mig_per_gpu)
-    elif '--allow-full-gpu' in sys.argv:
+    elif "--allow-full-gpu" in sys.argv:
         limits = parser.get_user_limits(username)
-        allow_full = limits.get('allow_full_gpu', False)
+        allow_full = limits.get("allow_full_gpu", False)
         print("true" if allow_full else "false")
-    elif '--priority' in sys.argv:
+    elif "--priority" in sys.argv:
         limits = parser.get_user_limits(username)
-        print(limits.get('priority', 10))
-    elif '--gpu-hold-time' in sys.argv:
+        print(limits.get("priority", 10))
+    elif "--gpu-hold-time" in sys.argv:
         limits = parser.get_user_limits(username)
-        hold_time = limits.get('gpu_hold_after_stop')
+        hold_time = limits.get("gpu_hold_after_stop")
         print(hold_time if hold_time is not None else "indefinite")
-    elif '--container-hold-time' in sys.argv:
+    elif "--container-hold-time" in sys.argv:
         limits = parser.get_user_limits(username)
-        hold_time = limits.get('container_hold_after_stop')
+        hold_time = limits.get("container_hold_after_stop")
         print(hold_time if hold_time is not None else "never")
-    elif '--idle-timeout' in sys.argv:
+    elif "--idle-timeout" in sys.argv:
         limits = parser.get_user_limits(username)
-        idle_timeout = limits.get('idle_timeout')
+        idle_timeout = limits.get("idle_timeout")
         print(idle_timeout if idle_timeout is not None else "None")
-    elif '--max-runtime' in sys.argv:
+    elif "--max-runtime" in sys.argv:
         limits = parser.get_user_limits(username)
-        max_runtime = limits.get('max_runtime')
+        max_runtime = limits.get("max_runtime")
         print(max_runtime if max_runtime is not None else "None")
-    elif '--all-lifecycle' in sys.argv:
+    elif "--all-lifecycle" in sys.argv:
         print(parser.get_lifecycle_limits_json(username))
-    elif '--high-demand-threshold' in sys.argv:
+    elif "--high-demand-threshold" in sys.argv:
         policies = parser.get_policies()
-        threshold = policies.get('high_demand_threshold', 0.8)
+        threshold = policies.get("high_demand_threshold", 0.8)
         print(threshold)
-    elif '--high-demand-reduction' in sys.argv:
+    elif "--high-demand-reduction" in sys.argv:
         policies = parser.get_policies()
-        reduction = policies.get('high_demand_idle_reduction', 0.5)
+        reduction = policies.get("high_demand_idle_reduction", 0.5)
         print(reduction)
-    elif '--aggregate' in sys.argv:
+    elif "--aggregate" in sys.argv:
         import json
+
         aggregate = parser.get_aggregate_limits(username)
         if aggregate is None:
             print("null")
         else:
             print(json.dumps(aggregate))
-    elif '--aggregate-gpu-limit' in sys.argv:
+    elif "--aggregate-gpu-limit" in sys.argv:
         aggregate = parser.get_aggregate_limits(username)
         if aggregate is None:
             print("unlimited")
-        elif 'gpu_limit' in aggregate:
-            print(aggregate['gpu_limit'])
+        elif "gpu_limit" in aggregate:
+            print(aggregate["gpu_limit"])
         else:
             # No GPU limit in aggregate section (Phase 4 plan 03 will add this)
             print("unlimited")
-    elif '--lifecycle-policies' in sys.argv:
+    elif "--lifecycle-policies" in sys.argv:
         import json
+
         policies = parser.get_lifecycle_policies(username)
         print(json.dumps(policies))
-    elif '--check-exemption' in sys.argv:
+    elif "--check-exemption" in sys.argv:
         # Next argument should be enforcement_type
         try:
-            idx = sys.argv.index('--check-exemption')
+            idx = sys.argv.index("--check-exemption")
             enforcement_type = sys.argv[idx + 1]
             is_exempt, reason = parser.check_exemption(username, enforcement_type)
             if is_exempt:
@@ -633,11 +641,13 @@ def main():
             else:
                 print("not_exempt")
         except (IndexError, ValueError):
-            print("Error: --check-exemption requires enforcement type (idle_timeout or max_runtime)")
+            print(
+                "Error: --check-exemption requires enforcement type (idle_timeout or max_runtime)"
+            )
             sys.exit(1)
     else:
         print(parser.format_for_display(username))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

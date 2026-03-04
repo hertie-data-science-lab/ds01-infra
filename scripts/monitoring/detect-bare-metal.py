@@ -20,14 +20,14 @@ Usage:
     detect-bare-metal.py [--json] [--warn-only] [--exclude-user USER]
 """
 
-import os
-import sys
 import json
-import subprocess
+import os
 import re
-from pathlib import Path
+import subprocess
+import sys
 from datetime import datetime
-from typing import Dict, List, Set, Optional
+from pathlib import Path
+from typing import Dict, List, Optional, Set
 
 # Configuration
 MIN_UID = 1000  # Minimum UID to consider (skip system users)
@@ -36,32 +36,74 @@ MIN_RUNTIME_SECONDS = 60  # Minimum runtime to report
 # Whitelisted process names (common user utilities, not compute workloads)
 WHITELIST = {
     # Shells and terminals
-    'bash', 'sh', 'zsh', 'fish', 'tcsh', 'csh',
-    'tmux', 'screen', 'sshd', 'ssh', 'ssh-agent',
-
+    "bash",
+    "sh",
+    "zsh",
+    "fish",
+    "tcsh",
+    "csh",
+    "tmux",
+    "screen",
+    "sshd",
+    "ssh",
+    "ssh-agent",
     # Editors
-    'vim', 'nvim', 'nano', 'emacs', 'code', 'code-server',
-
+    "vim",
+    "nvim",
+    "nano",
+    "emacs",
+    "code",
+    "code-server",
     # System utilities
-    'systemd', 'dbus-daemon', 'pulseaudio', 'pipewire',
-    'gnome-shell', 'gdm', 'lightdm', 'Xorg', 'Xwayland',
-
+    "systemd",
+    "dbus-daemon",
+    "pulseaudio",
+    "pipewire",
+    "gnome-shell",
+    "gdm",
+    "lightdm",
+    "Xorg",
+    "Xwayland",
     # Development tools (short-lived)
-    'git', 'docker', 'kubectl', 'make', 'cmake', 'gcc', 'g++',
-
+    "git",
+    "docker",
+    "kubectl",
+    "make",
+    "cmake",
+    "gcc",
+    "g++",
     # DS01 tools
-    'ds01-dashboard', 'container-list', 'container-stats',
-    'mlc-list', 'mlc-open', 'mlc-create',
+    "ds01-dashboard",
+    "container-list",
+    "container-stats",
+    "mlc-list",
+    "mlc-open",
+    "mlc-create",
 }
 
 # Process names that indicate compute workloads
 COMPUTE_INDICATORS = {
-    'python', 'python3', 'python3.8', 'python3.9', 'python3.10', 'python3.11', 'python3.12',
-    'jupyter', 'jupyter-lab', 'jupyter-notebook',
-    'train', 'training', 'inference',
-    'torch', 'tensorflow', 'keras',
-    'ray', 'celery', 'dask',
-    'spark-submit', 'pyspark',
+    "python",
+    "python3",
+    "python3.8",
+    "python3.9",
+    "python3.10",
+    "python3.11",
+    "python3.12",
+    "jupyter",
+    "jupyter-lab",
+    "jupyter-notebook",
+    "train",
+    "training",
+    "inference",
+    "torch",
+    "tensorflow",
+    "keras",
+    "ray",
+    "celery",
+    "dask",
+    "spark-submit",
+    "pyspark",
 }
 
 
@@ -77,24 +119,18 @@ class BareMetalDetector:
         try:
             # Get all container IDs
             result = subprocess.run(
-                ['docker', 'ps', '-q'],
-                capture_output=True,
-                text=True,
-                timeout=10
+                ["docker", "ps", "-q"], capture_output=True, text=True, timeout=10
             )
 
-            container_ids = [cid.strip() for cid in result.stdout.split('\n') if cid.strip()]
+            container_ids = [cid.strip() for cid in result.stdout.split("\n") if cid.strip()]
 
             # Get PIDs for each container
             for cid in container_ids:
                 result = subprocess.run(
-                    ['docker', 'top', cid, '-o', 'pid'],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
+                    ["docker", "top", cid, "-o", "pid"], capture_output=True, text=True, timeout=5
                 )
 
-                for line in result.stdout.split('\n')[1:]:  # Skip header
+                for line in result.stdout.split("\n")[1:]:  # Skip header
                     pid_str = line.strip()
                     if pid_str.isdigit():
                         self.container_pids.add(int(pid_str))
@@ -114,7 +150,7 @@ class BareMetalDetector:
                 stat = f.read()
 
             # Parse stat - format: pid (comm) state ppid ...
-            match = re.match(r'(\d+) \((.+)\) (\S) (\d+)', stat)
+            match = re.match(r"(\d+) \((.+)\) (\S) (\d+)", stat)
             if not match:
                 return None
 
@@ -123,7 +159,7 @@ class BareMetalDetector:
             uid = None
             with open(status_path) as f:
                 for line in f:
-                    if line.startswith('Uid:'):
+                    if line.startswith("Uid:"):
                         uid = int(line.split()[1])
                         break
 
@@ -134,11 +170,12 @@ class BareMetalDetector:
             cmdline_path = Path(f"/proc/{pid}/cmdline")
             cmdline = ""
             with open(cmdline_path) as f:
-                cmdline = f.read().replace('\x00', ' ').strip()
+                cmdline = f.read().replace("\x00", " ").strip()
 
             # Get username
             try:
                 import pwd
+
                 username = pwd.getpwuid(uid).pw_name
             except (KeyError, ImportError):
                 username = str(uid)
@@ -149,9 +186,9 @@ class BareMetalDetector:
             if len(stat_parts) >= 22:
                 starttime_ticks = int(stat_parts[21])
                 # Get system boot time and clock ticks per second
-                with open('/proc/uptime') as f:
+                with open("/proc/uptime") as f:
                     uptime_seconds = float(f.read().split()[0])
-                clock_ticks = os.sysconf('SC_CLK_TCK')
+                clock_ticks = os.sysconf("SC_CLK_TCK")
 
                 # Calculate runtime
                 process_age = uptime_seconds - (starttime_ticks / clock_ticks)
@@ -164,10 +201,10 @@ class BareMetalDetector:
             try:
                 # Use ps for accurate CPU/memory
                 result = subprocess.run(
-                    ['ps', '-p', str(pid), '-o', '%cpu,%mem,rss', '--no-headers'],
+                    ["ps", "-p", str(pid), "-o", "%cpu,%mem,rss", "--no-headers"],
                     capture_output=True,
                     text=True,
-                    timeout=5
+                    timeout=5,
                 )
                 if result.returncode == 0:
                     parts = result.stdout.strip().split()
@@ -178,16 +215,16 @@ class BareMetalDetector:
                 pass
 
             return {
-                'pid': pid,
-                'name': match.group(2),
-                'state': match.group(3),
-                'ppid': int(match.group(4)),
-                'uid': uid,
-                'username': username,
-                'cmdline': cmdline[:200],  # Truncate long command lines
-                'runtime_seconds': int(process_age),
-                'cpu_percent': cpu_percent,
-                'mem_mb': round(mem_mb, 1)
+                "pid": pid,
+                "name": match.group(2),
+                "state": match.group(3),
+                "ppid": int(match.group(4)),
+                "uid": uid,
+                "username": username,
+                "cmdline": cmdline[:200],  # Truncate long command lines
+                "runtime_seconds": int(process_age),
+                "cpu_percent": cpu_percent,
+                "mem_mb": round(mem_mb, 1),
             }
 
         except Exception:
@@ -195,13 +232,13 @@ class BareMetalDetector:
 
     def _is_whitelisted(self, proc: Dict) -> bool:
         """Check if process is whitelisted."""
-        name = proc['name'].lower()
+        name = proc["name"].lower()
         return name in WHITELIST
 
     def _is_compute_workload(self, proc: Dict) -> bool:
         """Check if process looks like a compute workload."""
-        name = proc['name'].lower()
-        cmdline = proc.get('cmdline', '').lower()
+        name = proc["name"].lower()
+        cmdline = proc.get("cmdline", "").lower()
 
         # Check name
         for indicator in COMPUTE_INDICATORS:
@@ -209,7 +246,7 @@ class BareMetalDetector:
                 return True
 
         # High CPU or memory is suspicious
-        if proc.get('cpu_percent', 0) > 50 or proc.get('mem_mb', 0) > 1000:
+        if proc.get("cpu_percent", 0) > 50 or proc.get("mem_mb", 0) > 1000:
             return True
 
         return False
@@ -225,7 +262,7 @@ class BareMetalDetector:
         bare_metal_processes = []
 
         # Scan /proc for user processes
-        for entry in Path('/proc').iterdir():
+        for entry in Path("/proc").iterdir():
             if not entry.name.isdigit():
                 continue
 
@@ -240,7 +277,7 @@ class BareMetalDetector:
                 continue
 
             # Skip excluded users
-            if proc['username'] in exclude_users:
+            if proc["username"] in exclude_users:
                 continue
 
             # Skip whitelisted processes
@@ -248,31 +285,31 @@ class BareMetalDetector:
                 continue
 
             # Skip short-lived processes
-            if proc['runtime_seconds'] < MIN_RUNTIME_SECONDS:
+            if proc["runtime_seconds"] < MIN_RUNTIME_SECONDS:
                 continue
 
             # Flag compute workloads
-            proc['is_compute'] = self._is_compute_workload(proc)
+            proc["is_compute"] = self._is_compute_workload(proc)
 
             bare_metal_processes.append(proc)
 
         # Group by user
         by_user = {}
         for proc in bare_metal_processes:
-            user = proc['username']
+            user = proc["username"]
             if user not in by_user:
                 by_user[user] = []
             by_user[user].append(proc)
 
         # Build result
         result = {
-            'warning': len(bare_metal_processes) > 0,
-            'total_count': len(bare_metal_processes),
-            'compute_count': sum(1 for p in bare_metal_processes if p.get('is_compute')),
-            'users_affected': list(by_user.keys()),
-            'by_user': by_user,
-            'processes': bare_metal_processes,
-            'checked_at': datetime.utcnow().isoformat() + "Z"
+            "warning": len(bare_metal_processes) > 0,
+            "total_count": len(bare_metal_processes),
+            "compute_count": sum(1 for p in bare_metal_processes if p.get("is_compute")),
+            "users_affected": list(by_user.keys()),
+            "by_user": by_user,
+            "processes": bare_metal_processes,
+            "checked_at": datetime.utcnow().isoformat() + "Z",
         }
 
         return result
@@ -281,12 +318,18 @@ class BareMetalDetector:
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description='Detect bare metal processes')
-    parser.add_argument('--json', action='store_true', help='Output as JSON')
-    parser.add_argument('--warn-only', action='store_true',
-                        help='Only show warnings, not process list')
-    parser.add_argument('--exclude-user', action='append', dest='exclude_users',
-                        default=[], help='Exclude user from detection')
+    parser = argparse.ArgumentParser(description="Detect bare metal processes")
+    parser.add_argument("--json", action="store_true", help="Output as JSON")
+    parser.add_argument(
+        "--warn-only", action="store_true", help="Only show warnings, not process list"
+    )
+    parser.add_argument(
+        "--exclude-user",
+        action="append",
+        dest="exclude_users",
+        default=[],
+        help="Exclude user from detection",
+    )
 
     args = parser.parse_args()
 
@@ -294,19 +337,28 @@ def main():
     result = detector.detect(exclude_users=args.exclude_users)
 
     # Log to centralized event system if warnings detected
-    if result['warning']:
+    if result["warning"]:
         try:
             event_logger = Path("/opt/ds01-infra/scripts/docker/event-logger.py")
             if event_logger.exists():
-                for user in result['users_affected']:
-                    user_procs = result['by_user'].get(user, [])
-                    pids = ','.join(str(p['pid']) for p in user_procs[:5])
+                for user in result["users_affected"]:
+                    user_procs = result["by_user"].get(user, [])
+                    pids = ",".join(str(p["pid"]) for p in user_procs[:5])
                     count = len(user_procs)
-                    subprocess.run([
-                        'python3', str(event_logger), 'log', 'bare_metal.warning',
-                        f'user={user}', f'pids={pids}', f'count={count}',
-                        f'message={count} process(es) running outside containers'
-                    ], capture_output=True, check=False)
+                    subprocess.run(
+                        [
+                            "python3",
+                            str(event_logger),
+                            "log",
+                            "bare_metal.warning",
+                            f"user={user}",
+                            f"pids={pids}",
+                            f"count={count}",
+                            f"message={count} process(es) running outside containers",
+                        ],
+                        capture_output=True,
+                        check=False,
+                    )
         except Exception:
             pass  # Logging should never break detection
 
@@ -314,51 +366,52 @@ def main():
         print(json.dumps(result, indent=2))
         return
 
-    if not result['warning']:
+    if not result["warning"]:
         print("No bare metal processes detected")
         return
 
-    print(f"\n{'='*70}")
-    print(f"BARE METAL PROCESS WARNING")
-    print(f"{'='*70}")
+    print(f"\n{'=' * 70}")
+    print("BARE METAL PROCESS WARNING")
+    print(f"{'=' * 70}")
     print(f"\nFound {result['total_count']} process(es) running outside containers")
     print(f"Compute workloads: {result['compute_count']}")
     print(f"Users affected: {', '.join(result['users_affected'])}")
 
     if not args.warn_only:
-        print(f"\n{'─'*70}")
+        print(f"\n{'─' * 70}")
         print(f"{'PID':>8}  {'USER':<12}  {'CPU%':>5}  {'MEM':>8}  {'RUNTIME':>10}  COMMAND")
-        print(f"{'─'*70}")
+        print(f"{'─' * 70}")
 
-        for proc in sorted(result['processes'],
-                          key=lambda p: p.get('cpu_percent', 0),
-                          reverse=True)[:20]:
-
+        for proc in sorted(
+            result["processes"], key=lambda p: p.get("cpu_percent", 0), reverse=True
+        )[:20]:
             # Format runtime
-            runtime = proc['runtime_seconds']
+            runtime = proc["runtime_seconds"]
             if runtime > 3600:
                 runtime_str = f"{runtime // 3600}h {(runtime % 3600) // 60}m"
             else:
                 runtime_str = f"{runtime // 60}m"
 
             # Truncate command
-            cmd = proc.get('cmdline', proc['name'])[:40]
+            cmd = proc.get("cmdline", proc["name"])[:40]
 
             # Flag compute workloads
-            flag = "*" if proc.get('is_compute') else " "
+            flag = "*" if proc.get("is_compute") else " "
 
-            print(f"{proc['pid']:>8}  {proc['username']:<12}  "
-                  f"{proc.get('cpu_percent', 0):>5.1f}  "
-                  f"{proc.get('mem_mb', 0):>6.1f}MB  "
-                  f"{runtime_str:>10}  {flag}{cmd}")
+            print(
+                f"{proc['pid']:>8}  {proc['username']:<12}  "
+                f"{proc.get('cpu_percent', 0):>5.1f}  "
+                f"{proc.get('mem_mb', 0):>6.1f}MB  "
+                f"{runtime_str:>10}  {flag}{cmd}"
+            )
 
-        if result['total_count'] > 20:
+        if result["total_count"] > 20:
             print(f"\n... and {result['total_count'] - 20} more")
 
-    print(f"\n{'─'*70}")
+    print(f"\n{'─' * 70}")
     print("Please run compute workloads inside containers for proper resource isolation.")
     print("Use 'container deploy <name>' to create a container.")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
 
 
 if __name__ == "__main__":

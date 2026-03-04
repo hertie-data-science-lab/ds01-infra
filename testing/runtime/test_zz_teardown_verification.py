@@ -56,6 +56,4 @@ def test_cron_restored_after_lifecycle_tests():
     )
 
     disabled = Path("/etc/cron.d/ds01-maintenance.disabled-by-test")
-    assert not disabled.exists(), (
-        "Cron file still disabled — test teardown did not re-enable it"
-    )
+    assert not disabled.exists(), "Cron file still disabled — test teardown did not re-enable it"

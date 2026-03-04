@@ -4,13 +4,12 @@ Unit Tests: GPU Allocator v2
 Tests GPU allocation logic with mocked Docker and nvidia-smi
 """
 
-import pytest
-import json
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-from datetime import datetime
-
 import sys
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 sys.path.insert(0, "/opt/ds01-infra/scripts/docker")
 
 
@@ -83,18 +82,23 @@ class TestGPUAllocationLogic:
     def test_user_gpu_count_calculation(self):
         """User's current GPU count calculated correctly."""
         allocations = {
-            "0": {"containers": [
-                {"user": "alice", "container": "proj-a"},
-                {"user": "bob", "container": "proj-b"},
-            ]},
-            "1": {"containers": [
-                {"user": "alice", "container": "proj-c"},
-            ]},
+            "0": {
+                "containers": [
+                    {"user": "alice", "container": "proj-a"},
+                    {"user": "bob", "container": "proj-b"},
+                ]
+            },
+            "1": {
+                "containers": [
+                    {"user": "alice", "container": "proj-c"},
+                ]
+            },
         }
 
         # Count Alice's GPUs
         alice_count = sum(
-            1 for gpu_data in allocations.values()
+            1
+            for gpu_data in allocations.values()
             for container in gpu_data.get("containers", [])
             if container.get("user") == "alice"
         )
@@ -139,10 +143,10 @@ class TestInterfaceConstants:
         # Import the module
         try:
             from gpu_allocator_v2 import (
-                INTERFACE_ORCHESTRATION,
                 INTERFACE_ATOMIC,
                 INTERFACE_DOCKER,
-                INTERFACE_OTHER
+                INTERFACE_ORCHESTRATION,
+                INTERFACE_OTHER,
             )
 
             assert INTERFACE_ORCHESTRATION == "orchestration"
@@ -179,7 +183,6 @@ class TestGPUStateModel:
     def test_gpu_hold_applies_to_atomic(self):
         """GPU hold timeout applies to atomic/docker interfaces."""
         interface = "atomic"
-        gpu_hold_timeout = "24h"
 
         # GPU should be held after stop for atomic
         applies = interface in ("atomic", "docker")
@@ -205,7 +208,7 @@ class TestGPUAllocationLabels:
             "ds01.interface": "orchestration",
             "ds01.user": "student1",
             "ds01.gpu.allocated": "0",
-            "ds01.managed": "true"
+            "ds01.managed": "true",
         }
 
         # All expected labels should be present
@@ -253,7 +256,7 @@ class TestAllocationLogging:
             "RELEASED",
             "DENIED_LIMIT",
             "DENIED_NO_GPU",
-            "ALREADY_ALLOCATED"
+            "ALREADY_ALLOCATED",
         }
 
         assert "ALLOCATED" in expected_events

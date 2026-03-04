@@ -36,20 +36,18 @@
 # ===========================================================
 
 
-
-import sys           # System-specific functions
-import os            # OS interactions
-import subprocess    # Run external commands
-import argparse      # Parse CLI arguments
-import json          # Handle JSON data
-import pathlib       # File system paths
-import csv           # Read/write CSV files
-import re            # Regular expressions
-
+import argparse  # Parse CLI arguments
+import csv  # Read/write CSV files
+import json  # Handle JSON data
+import os  # OS interactions
+import pathlib  # File system paths
+import re  # Regular expressions
+import subprocess  # Run external commands
+import sys  # System-specific functions
 from collections import defaultdict
 
 # DS01 PATCH: Import username sanitization from shared library
-sys.path.insert(0, '/opt/ds01-infra/scripts/lib')
+sys.path.insert(0, "/opt/ds01-infra/scripts/lib")
 try:
     from username_utils import sanitize_username_for_slice as sanitize_username_for_container
 except ImportError:
@@ -60,24 +58,26 @@ except ImportError:
         if not username:
             return username
         # Strip domain part (everything after @)
-        sanitized = username.split('@')[0] if '@' in username else username
+        sanitized = username.split("@")[0] if "@" in username else username
         # Replace dots with underscores (NOT hyphens - systemd compatibility)
-        sanitized = sanitized.replace('.', '_')
+        sanitized = sanitized.replace(".", "_")
         # Replace invalid characters with underscores (match username_utils.py)
-        sanitized = re.sub(r'[^a-zA-Z0-9_:]', '_', sanitized)
-        sanitized = re.sub(r'_+', '_', sanitized)
-        sanitized = sanitized.strip('_')
+        sanitized = re.sub(r"[^a-zA-Z0-9_:]", "_", sanitized)
+        sanitized = re.sub(r"_+", "_", sanitized)
+        sanitized = sanitized.strip("_")
         # Truncate to 32 characters (Linux username/groupname limit)
         # Use hash suffix to avoid collisions when truncating
         if len(sanitized) > 32:
             import hashlib
+
             hash_suffix = hashlib.md5(username.encode()).hexdigest()[:4]
-            sanitized = sanitized[:27].rstrip('_') + '_' + hash_suffix
+            sanitized = sanitized[:27].rstrip("_") + "_" + hash_suffix
         return sanitized
 
+
 # Set Default values  AIME mlc
-mlc_container_version = 4     # Version number of AIME MLC setup (mlc create). In version 4: data and models directories included
-mlc_version = "2.1.2"         # Version number of AIME MLC
+mlc_container_version = 4  # Version number of AIME MLC setup (mlc create). In version 4: data and models directories included
+mlc_version = "2.1.2"  # Version number of AIME MLC
 
 # Obtain user and group id, user name for different tasks by create, open,...
 user_id = os.getuid()
@@ -87,22 +87,23 @@ try:
     user_name = os.getlogin()
 except OSError:
     import pwd
+
     user_name = pwd.getpwuid(user_id).pw_name
 group_id = os.getgid()
 
 # Sanitized username for use inside containers (LDAP usernames may contain @)
 container_user_name = sanitize_username_for_container(user_name)
 
-# Coloring the frontend (ANSI escape codes) and i/o 
-ERROR = "\033[91m"          # Red
-NEUTRAL = "\033[37m"        # White
-INFO = "\033[32m"           # Dark Green
-INFO_HEADER = "\033[92m"    # Green
-REQUEST = "\033[96m"        # Cyan
+# Coloring the frontend (ANSI escape codes) and i/o
+ERROR = "\033[91m"  # Red
+NEUTRAL = "\033[37m"  # White
+INFO = "\033[32m"  # Dark Green
+INFO_HEADER = "\033[92m"  # Green
+REQUEST = "\033[96m"  # Cyan
 WARNING = "\033[38;5;208m"  # Orange
-INPUT = "\033[38;5;214m"    # Light orange
-HINT = "\033[93m"           # Yellow
-AIME_LOGO = "\033[38;5;214m"# Light orange
+INPUT = "\033[38;5;214m"  # Light orange
+HINT = "\033[93m"  # Yellow
+AIME_LOGO = "\033[38;5;214m"  # Light orange
 
 RESET = "\033[0m"
 
@@ -118,10 +119,13 @@ aime_copyright_claim = f"""{AIME_LOGO}
     Copyright (c) AIME GmbH and affiliates.                               
 {RESET}"""
 
+
 # Customization of the argument parser
 class CustomArgumentParser(argparse.ArgumentParser):
     def error(self, message):
-        print(f"\n{ERROR}Please provide one of the following valid commands:{RESET}\ncreate, list, open, remove, start, stats, stop, update-sys\n")
+        print(
+            f"\n{ERROR}Please provide one of the following valid commands:{RESET}\ncreate, list, open, remove, start, stats, stop, update-sys\n"
+        )
         exit(1)
 
 
@@ -131,351 +135,339 @@ def get_flags():
     Returns:
         _type_: _description_
     """
-    #parser = CustomArgumentParser argparse.ArgumentParser
+    # parser = CustomArgumentParser argparse.ArgumentParser
     parser = CustomArgumentParser(
-        #ToDo: improve the description using a customized class
-        description=f'{aime_copyright_claim}{AIME_LOGO}AIME Machine Learning Container management system.\nEasily install, run and manage Docker containers\nfor Pytorch and Tensorflow deep learning frameworks.{RESET}',
-        usage = f"\nmlc [-h] [-v] <command> [-h]",
-        formatter_class = argparse.RawTextHelpFormatter  
+        # ToDo: improve the description using a customized class
+        description=f"{aime_copyright_claim}{AIME_LOGO}AIME Machine Learning Container management system.\nEasily install, run and manage Docker containers\nfor Pytorch and Tensorflow deep learning frameworks.{RESET}",
+        usage="\nmlc [-h] [-v] <command> [-h]",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
-    
+
     parser.add_argument(
-        '-v', '--version', 
-        action = 'version',
-        version = f'{INPUT}AIME MLC version: {mlc_version}{RESET}'
+        "-v",
+        "--version",
+        action="version",
+        version=f"{INPUT}AIME MLC version: {mlc_version}{RESET}",
     )
-    
+
     # Create subparsers for different commands
-    subparsers = parser.add_subparsers(dest='command', required=False, help='Sub-command to execute.')
+    subparsers = parser.add_subparsers(
+        dest="command", required=False, help="Sub-command to execute."
+    )
 
     # Parser for the "create" command
     parser_create = subparsers.add_parser(
-        'create',
-        description= "Create a new container.",
-        help='Create a new container.',
-        usage = f"\n{INPUT}mlc create <container_name> <framework_name> <framework_version> "
-                f"\n    -w <workspace_directory> -d <data_directory> -m <models_directory>"
-                f"\n    -s -arch <gpu_architecture> -ng <number of gpus> {RESET}", 
-        formatter_class = argparse.RawTextHelpFormatter
-    ) 
-    parser_create.add_argument(
-        'container_name', 
-        nargs='?', 
-        type=str, 
-        help='Name of the container.'
+        "create",
+        description="Create a new container.",
+        help="Create a new container.",
+        usage=f"\n{INPUT}mlc create <container_name> <framework_name> <framework_version> "
+        f"\n    -w <workspace_directory> -d <data_directory> -m <models_directory>"
+        f"\n    -s -arch <gpu_architecture> -ng <number of gpus> {RESET}",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
+    parser_create.add_argument("container_name", nargs="?", type=str, help="Name of the container.")
+    parser_create.add_argument("framework", nargs="?", type=str, help="Framework to use.")
+    parser_create.add_argument("version", nargs="?", type=str, help="Version of the framework.")
     parser_create.add_argument(
-        'framework', 
-        nargs='?', 
-        type=str, 
-        help='Framework to use.'
-    )
-    parser_create.add_argument(
-        'version', 
-        nargs='?', 
-        type=str, 
-        help='Version of the framework.'
-    )
-    parser_create.add_argument(
-        '-arch', '--architecture', 
+        "-arch",
+        "--architecture",
         type=str,
-        metavar='', 
-        help=f"Set the gpu architecture to be used. Default: host gpu architecture (auto-detected)."
-             f"\nThere are 2 options to change the default value:"
-             f"\n  1.-using the -arch flag."  
-             f"\n  2.-adding the environment variable MLC_ARCH, with export MLC_ARCH=gpu_arch."
-             f"\nThe flag -arch overrides MLC_ARCH and MLC_ARCH overrides the default value."
+        metavar="",
+        help="Set the gpu architecture to be used. Default: host gpu architecture (auto-detected)."
+        "\nThere are 2 options to change the default value:"
+        "\n  1.-using the -arch flag."
+        "\n  2.-adding the environment variable MLC_ARCH, with export MLC_ARCH=gpu_arch."
+        "\nThe flag -arch overrides MLC_ARCH and MLC_ARCH overrides the default value.",
     )
     parser_create.add_argument(
-        '-d', '--data_dir', 
+        "-d", "--data_dir", type=str, metavar="", help="Location of the data directory."
+    )
+    parser_create.add_argument(
+        "-g",
+        "--num_gpus",
         type=str,
-        metavar='',
-        help='Location of the data directory.'
+        default="all",
+        metavar="",
+        help="Number of GPUs to be used. Default: all.",
     )
     parser_create.add_argument(
-        '-g', '--num_gpus', 
-        type=str, 
-        default='all',
-        metavar='', 
-        help='Number of GPUs to be used. Default: all.'
+        "-i",
+        "--info",
+        action="store_true",
+        help="Show the available AI frameworks and versions (default: interactive mode).",
     )
     parser_create.add_argument(
-        '-i', '--info', 
-        action='store_true',
-        help='Show the available AI frameworks and versions (default: interactive mode).'
+        "-m", "--models_dir", type=str, metavar="", help="Location of the models directory."
     )
     parser_create.add_argument(
-        '-m', '--models_dir', 
-        type=str,
-        metavar='', 
-        help='Location of the models directory.'
+        "-s",
+        "--script",
+        action="store_true",
+        help="Enable script mode (default: interactive mode).",
     )
     parser_create.add_argument(
-        '-s', '--script', 
-        action='store_true',
-        help='Enable script mode (default: interactive mode).'
-    )
-    parser_create.add_argument(
-        '-w', '--workspace_dir',
+        "-w",
+        "--workspace_dir",
         default=None,
         type=str,
-        metavar='',
-        help='Location of the workspace directory. Default: /home/$USER/workspace.'
+        metavar="",
+        help="Location of the workspace directory. Default: /home/$USER/workspace.",
     )
     # ========== DS01 PATCH: Custom Image Support ==========
     parser_create.add_argument(
-        '--image',
+        "--image",
         type=str,
         default=None,
-        metavar='',
-        help='Custom Docker image to use (bypasses catalog lookup). '
-             'Image must exist locally. Built via DS01 image-create command.'
+        metavar="",
+        help="Custom Docker image to use (bypasses catalog lookup). "
+        "Image must exist locally. Built via DS01 image-create command.",
     )
     # ========== DS01 PATCH: Resource Limits Support ==========
     parser_create.add_argument(
-        '--shm-size',
+        "--shm-size",
         type=str,
         default=None,
-        metavar='',
-        help='Shared memory size (e.g., 64g). Must be set at creation. '
-             'Passed from DS01 resource limits configuration.'
+        metavar="",
+        help="Shared memory size (e.g., 64g). Must be set at creation. "
+        "Passed from DS01 resource limits configuration.",
     )
     parser_create.add_argument(
-        '--cgroup-parent',
+        "--cgroup-parent",
         type=str,
         default=None,
-        metavar='',
-        help='Cgroup parent slice (e.g., ds01-admin.slice). '
-             'Used for systemd resource management in DS01.'
+        metavar="",
+        help="Cgroup parent slice (e.g., ds01-admin.slice). "
+        "Used for systemd resource management in DS01.",
     )
     parser_create.add_argument(
-        '--ds01-label',
-        action='append',
-        dest='ds01_labels',
+        "--ds01-label",
+        action="append",
+        dest="ds01_labels",
         default=[],
-        metavar='KEY=VALUE',
-        help='DS01 metadata labels for GPU tracking (can be specified multiple times). '
-             'Used internally by DS01 for stateless GPU allocation tracking.'
+        metavar="KEY=VALUE",
+        help="DS01 metadata labels for GPU tracking (can be specified multiple times). "
+        "Used internally by DS01 for stateless GPU allocation tracking.",
     )
     # ========== END DS01 PATCH ==========
 
     # Parser for the "list" command
     parser_list = subparsers.add_parser(
-        'list',
-        usage= f"\n{INPUT}mlc list [-a|--all]{RESET}",
-        description = "List of created containers.",
-        help="List of created containers."
+        "list",
+        usage=f"\n{INPUT}mlc list [-a|--all]{RESET}",
+        description="List of created containers.",
+        help="List of created containers.",
     )
     parser_list.add_argument(
-        '-a', '--all', 
-        action = "store_true", 
-        help='Show the full info of the created container/s.'
+        "-a", "--all", action="store_true", help="Show the full info of the created container/s."
     )
     parser_list.add_argument(
-        '-au', '--all_users', 
-        action = "store_true", 
-        help='Show the full info of the created container/s of all users.'
+        "-au",
+        "--all_users",
+        action="store_true",
+        help="Show the full info of the created container/s of all users.",
     )
     parser_list.add_argument(
-        '-arch', '--architecture', 
-        action = "store_true", 
-        help='Show the gpu architecture info of the created container/s.'
+        "-arch",
+        "--architecture",
+        action="store_true",
+        help="Show the gpu architecture info of the created container/s.",
     )
     parser_list.add_argument(
-        '-d', '--data', 
-        action = "store_true", 
-        help='Show the data directories info of the created container/s.'
-    )   
+        "-d",
+        "--data",
+        action="store_true",
+        help="Show the data directories info of the created container/s.",
+    )
     parser_list.add_argument(
-        '-m', '--models', 
-        action = "store_true", 
-        help='Show the models directories info of the created container/s.'
-    )      
+        "-m",
+        "--models",
+        action="store_true",
+        help="Show the models directories info of the created container/s.",
+    )
     parser_list.add_argument(
-        '-s', '--size', 
-        action = "store_true", 
-        help='Show the size info of the created container/s.'
-    ) 
+        "-s", "--size", action="store_true", help="Show the size info of the created container/s."
+    )
     parser_list.add_argument(
-        '-w', '--workspace', 
-        action = "store_true", 
-        help='Show the workspace directories info of the created container/s.'
-    )        
-       
+        "-w",
+        "--workspace",
+        action="store_true",
+        help="Show the workspace directories info of the created container/s.",
+    )
+
     # Parser for the "open" command
     parser_open = subparsers.add_parser(
-        'open', 
-        description= "Open an existing and no running container.",
-        help="Open an existing and no running container.", 
-        usage = f"\n{INPUT}mlc open container_name -s{RESET}",
-        formatter_class = argparse.RawTextHelpFormatter
+        "open",
+        description="Open an existing and no running container.",
+        help="Open an existing and no running container.",
+        usage=f"\n{INPUT}mlc open container_name -s{RESET}",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
     parser_open.add_argument(
-        'container_name', 
-        nargs = '?', 
-        type=str, 
-        help="Name of the container to be opened."
+        "container_name", nargs="?", type=str, help="Name of the container to be opened."
     )
     parser_open.add_argument(
-        '-s', '--script', 
-        action='store_true', 
-        help="Enable script mode (default: interactive mode)."
+        "-s",
+        "--script",
+        action="store_true",
+        help="Enable script mode (default: interactive mode).",
     )
-    
+
     # Parser for the "remove" command
     parser_remove = subparsers.add_parser(
-        'remove',
+        "remove",
         usage=f"\n{INPUT}mlc remove <container_name> [-s|--script] [-f|--force]{RESET}",
         description="Remove an existing and no running machine learning container.",
-        help="Remove an existing and no running machine learning container."
+        help="Remove an existing and no running machine learning container.",
     )
     parser_remove.add_argument(
-        'container_name', 
-        nargs = '?', 
-        type=str, 
-        help='Name of the container to be removed.'
+        "container_name", nargs="?", type=str, help="Name of the container to be removed."
     )
     parser_remove.add_argument(
-        '-f', '--force', 
-        action = "store_true", 
-        help='Force to remove the container without asking the user.'
+        "-f",
+        "--force",
+        action="store_true",
+        help="Force to remove the container without asking the user.",
     )
     parser_remove.add_argument(
-        '-s', '--script',
-        action='store_true',
-        help="Enable script mode (default: interactive mode)."
+        "-s",
+        "--script",
+        action="store_true",
+        help="Enable script mode (default: interactive mode).",
     )
     parser_remove.add_argument(
-        '--keep-image',
-        action='store_true',
+        "--keep-image",
+        action="store_true",
         default=True,
-        help='Keep the Docker image after removing container (default: True).'
+        help="Keep the Docker image after removing container (default: True).",
     )
     parser_remove.add_argument(
-        '--remove-image',
-        action='store_true',
-        help='Also remove the Docker image after removing container.'
+        "--remove-image",
+        action="store_true",
+        help="Also remove the Docker image after removing container.",
     )
 
     # Parser for the "start" command
     parser_start = subparsers.add_parser(
-        'start', 
-        usage = f"\n{INPUT}mlc start [-s|--script]{RESET}",
-        description= "Start an existing and no running container.",
-        help="Start an existing and no running container."
+        "start",
+        usage=f"\n{INPUT}mlc start [-s|--script]{RESET}",
+        description="Start an existing and no running container.",
+        help="Start an existing and no running container.",
     )
     parser_start.add_argument(
-        'container_name', 
-        nargs = '?', 
-        type=str, 
-        help="Name of the container to be started."
+        "container_name", nargs="?", type=str, help="Name of the container to be started."
     )
     parser_start.add_argument(
-        '-s', '--script', 
-        action='store_true', 
-        help="Enable script mode (default: interactive mode)."
+        "-s",
+        "--script",
+        action="store_true",
+        help="Enable script mode (default: interactive mode).",
     )
-    
+
     # Parser for the "stats" command
     parser_stats = subparsers.add_parser(
-        'stats',
-        usage = f"\n{INPUT}mlc stats{RESET}",
-        description= "Show the most important statistics of the running containers.",
-        help="Show the most important statistics of the running containers."
+        "stats",
+        usage=f"\n{INPUT}mlc stats{RESET}",
+        description="Show the most important statistics of the running containers.",
+        help="Show the most important statistics of the running containers.",
     )
-    
+
     # Parser for the "stop" command
     parser_stop = subparsers.add_parser(
-        'stop',
-        usage= f"\n{INPUT}mlc stop <container_name> [-f|--force] [-s|--script]{RESET}",
-        description = "Stop an existing an running container.",
-        help="Stop an existing an running container."
+        "stop",
+        usage=f"\n{INPUT}mlc stop <container_name> [-f|--force] [-s|--script]{RESET}",
+        description="Stop an existing an running container.",
+        help="Stop an existing an running container.",
     )
     parser_stop.add_argument(
-        'container_name', 
-        nargs = '?', 
-        type=str, 
-        help="Name of the container to be stopped."
+        "container_name", nargs="?", type=str, help="Name of the container to be stopped."
     )
     parser_stop.add_argument(
-        '-f', '--force', 
-        action = "store_true", 
-        help="Force to stop the container without asking the user."
-    ) 
+        "-f",
+        "--force",
+        action="store_true",
+        help="Force to stop the container without asking the user.",
+    )
     parser_stop.add_argument(
-        '-s', '--script', 
-        action='store_true', 
-        help="Enable script mode (default: interactive mode)."
+        "-s",
+        "--script",
+        action="store_true",
+        help="Enable script mode (default: interactive mode).",
     )
     # Parser for the "update-sys" command
     parser_update_sys = subparsers.add_parser(
-        'update-sys',
-        usage= f"\n{INPUT}mlc update-sys [-f|--force]{RESET}",
-        description = "Update of the system.",
-        help="Update of the system."
+        "update-sys",
+        usage=f"\n{INPUT}mlc update-sys [-f|--force]{RESET}",
+        description="Update of the system.",
+        help="Update of the system.",
     )
     parser_update_sys.add_argument(
-        '-f', '--force', 
-        action = "store_true", 
-        help="Force to update directly without asking user."
-    ) 
-            
+        "-f", "--force", action="store_true", help="Force to update directly without asking user."
+    )
+
     # Extract subparser names
     subparser_names = subparsers.choices.keys()
     # ToDo: check if needed
-    #available_commands = list(subparser_names)
+    # available_commands = list(subparser_names)
 
     # Parse arguments
     args = parser.parse_args()
-         
+
     return args
 
 
 ################################################################################################################################################
 
 
-def are_you_sure(selected_container_name, command, script = False):
+def are_you_sure(selected_container_name, command, script=False):
     """Ask the user for a confirmation before an action is started.
 
     Args:
         selected_container_name (str): name of the container.
         command (str): type of the command (create, open, remove,...). The command is used only for printing a message.
         script (bool, optional): script mode is provided. Defaults to False.
-    """   
-    
-    if not script:        
-        if command == "create":            
-            print(f"\n{WARNING}Verify if the provided setup is correct. The creation of a container may take a little time.{RESET}")
+    """
+
+    if not script:
+        if command == "create":
+            print(
+                f"\n{WARNING}Verify if the provided setup is correct. The creation of a container may take a little time.{RESET}"
+            )
             printed_verb = command + "d"
             prompt = f"\n{INPUT}[{selected_container_name}]{RESET} {REQUEST}will be {printed_verb}. Are you sure(Y/n)?: {RESET}"
             yes_answers = ["y", "yes", ""]
             no_answers = ["n", "no"]
-        elif command == "remove":            
-            print(f"\n{WARNING}Caution: After your selection, there is no option to recover the container.{RESET}")            
+        elif command == "remove":
+            print(
+                f"\n{WARNING}Caution: After your selection, there is no option to recover the container.{RESET}"
+            )
             printed_verb = command + "d"
             prompt = f"\n{INPUT}[{selected_container_name}]{RESET} {REQUEST}will be {printed_verb}. Are you sure(y/N)?: {RESET}"
             yes_answers = ["y", "yes"]
-            no_answers = ["n", "no", ""]          
-        elif command == "stop":            
-            print(f"\n{WARNING}Caution: All running processes of the selected container will be terminated.{RESET}")
+            no_answers = ["n", "no", ""]
+        elif command == "stop":
+            print(
+                f"\n{WARNING}Caution: All running processes of the selected container will be terminated.{RESET}"
+            )
             printed_verb = command + "ped"
             prompt = f"\n{INPUT}[{selected_container_name}]{RESET} {REQUEST}will be {printed_verb}. Are you sure(y/N)?: {RESET}"
             yes_answers = ["y", "yes"]
-            no_answers = ["n", "no", ""]           
+            no_answers = ["n", "no", ""]
         else:
-            exit(1)            
-        
+            exit(1)
+
         while True:
-            are_you_sure_answer = input(prompt).strip().lower()            
-            
-            if are_you_sure_answer in yes_answers: 
-                break            
-            elif are_you_sure_answer in no_answers:                
-                print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}will not be {printed_verb}.\n{RESET}")                
-                exit(0)                
-            else:                
-                print(f"{ERROR}\nInvalid input. Please use y(yes) or n(no).{RESET}") 
-                
+            are_you_sure_answer = input(prompt).strip().lower()
+
+            if are_you_sure_answer in yes_answers:
+                break
+            elif are_you_sure_answer in no_answers:
+                print(
+                    f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}will not be {printed_verb}.\n{RESET}"
+                )
+                exit(0)
+            else:
+                print(f"{ERROR}\nInvalid input. Please use y(yes) or n(no).{RESET}")
+
 
 # ToDo: improve this function using run_docker_command
 def check_container_exists(name):
@@ -487,8 +479,23 @@ def check_container_exists(name):
     Returns:
         str: name of the container .
     """
-    
-    result = subprocess.run(['docker', 'container', 'ps', '-a', '--filter', f'name={name}', '--filter', 'label=ds01.user', '--format', '{{.Names}}'], capture_output=True, text=True)
+
+    result = subprocess.run(
+        [
+            "docker",
+            "container",
+            "ps",
+            "-a",
+            "--filter",
+            f"name={name}",
+            "--filter",
+            "label=ds01.user",
+            "--format",
+            "{{.Names}}",
+        ],
+        capture_output=True,
+        text=True,
+    )
     return result.stdout.strip()
 
 
@@ -500,12 +507,12 @@ def check_container_running(container_tag):
 
     Returns:
         str: name of the container tag associated to the provided container tag.
-    """   
-    
+    """
+
     docker_command = f'docker container ps --filter=name=^/{container_tag}$ --filter=label=ds01.user --format "{{{{.Names}}}}"'
     output, _, _ = run_docker_command(docker_command)
     return output
-       
+
 
 def display_gpu_architectures(architectures):
     """Display the available gpu architectures located in the file ml_images.repo.
@@ -513,13 +520,13 @@ def display_gpu_architectures(architectures):
     Args:
         architectures (list): available gpu architectures.
     """
-    
+
     print(f"\n{INFO}Available gpu architectures:{RESET}")
 
     for i, architecture in enumerate(architectures, start=1):
         print(f"{i}) {architecture}")
-    
-    
+
+
 def display_frameworks(frameworks_dict):
     """Display the available AI frameworks.
 
@@ -528,8 +535,8 @@ def display_frameworks(frameworks_dict):
 
     Returns:
         list: return a list with the available frameworks.
-    """ 
-     
+    """
+
     print(f"\n{REQUEST}Select a framework:{RESET}")
     framework_list = list(frameworks_dict.keys())
 
@@ -544,14 +551,14 @@ def display_versions(framework, versions):
     Args:
         framework (str): predefined framework.
         versions (tuple): tuple containing (version(str), image(str)).
-    """    
-    
+    """
+
     print(f"\n{INFO}Available versions for {framework}:{RESET}")
     for i, (version, _) in enumerate(versions, start=1):
         print(f"{i}) {version}")
 
 
-def extract_from_ml_images(filename, filter_architecture = None):
+def extract_from_ml_images(filename, filter_architecture=None):
     """Extract the information from the file corresponding to the supported frameworks, versions, cuda architectures and docker images.
 
     Args:
@@ -563,25 +570,27 @@ def extract_from_ml_images(filename, filter_architecture = None):
     """
     if filter_architecture is None:
         _, filter_architecture, _ = get_host_gpu_architecture()
-        
+
     frameworks_dict = {}
-    headers = ['framework', 'version', 'architecture', 'docker image']
+    headers = ["framework", "version", "architecture", "docker image"]
     separator = ";"
-    with open(filename, mode='r') as file:
+    with open(filename, mode="r") as file:
         reader = csv.DictReader(file, fieldnames=headers)
         for row in reader:
-            stripped_row = {key: value.strip() if isinstance(value, str) else value for key, value in row.items() }
-            framework = stripped_row['framework']
-            version = stripped_row['version']            
-            architecture = stripped_row['architecture'].strip("[]").split(separator)
-            docker_image = stripped_row['docker image']
+            stripped_row = {
+                key: value.strip() if isinstance(value, str) else value
+                for key, value in row.items()
+            }
+            framework = stripped_row["framework"]
+            version = stripped_row["version"]
+            architecture = stripped_row["architecture"].strip("[]").split(separator)
+            docker_image = stripped_row["docker image"]
             if filter_architecture in architecture:
-
                 if framework not in frameworks_dict:
                     frameworks_dict[framework] = []
                     frameworks_dict[framework].append((version, docker_image))
                 else:
-                    frameworks_dict[framework].append((version, docker_image)) 
+                    frameworks_dict[framework].append((version, docker_image))
     return frameworks_dict
 
 
@@ -593,20 +602,26 @@ def existing_user_containers(user_name, mlc_command):
         mlc_command (str): current mlc command.
     Returns:
         list, list: returns 2 lists with existing containers and corresponding container tags.
-    """    
- 
+    """
+
     # List all containers with the 'ds01.user' label owned by the current user
-    docker_command = f"docker container ps -a --filter=label=ds01.user={user_name} --format '{{{{.Names}}}}'"
-    output, _,_ = run_docker_command(docker_command)
+    docker_command = (
+        f"docker container ps -a --filter=label=ds01.user={user_name} --format '{{{{.Names}}}}'"
+    )
+    output, _, _ = run_docker_command(docker_command)
     container_tags = output.splitlines()
-    
+
     # check that at least 1 container has been created previously
-    if not container_tags and mlc_command != 'create':
-        print(f"\n{ERROR}Create at least one container. If not, mlc {mlc_command} does not work.{RESET}\n")
+    if not container_tags and mlc_command != "create":
+        print(
+            f"\n{ERROR}Create at least one container. If not, mlc {mlc_command} does not work.{RESET}\n"
+        )
         exit(1)  # DS01 PATCH: Exit non-zero so callers can detect failure
 
     # Extract base names from full container names
-    container_names = [re.match(r"^(.*?)(?:\._\.\w+)?$", container).group(1) for container in container_tags]
+    container_names = [
+        re.match(r"^(.*?)(?:\._\.\w+)?$", container).group(1) for container in container_tags
+    ]
 
     return container_names, container_tags
 
@@ -621,7 +636,7 @@ def filter_by_state(state, running_containers, *lists):
     Returns:
         list: a list of filtered lists.
     """
-    
+
     return [
         [item for item, running in zip(lst, running_containers) if running == state]
         for lst in lists
@@ -629,7 +644,7 @@ def filter_by_state(state, running_containers, *lists):
 
 
 def filter_running_containers(running_containers, *lists):
-    """Filters multiple lists (e.g., running_containers and running_container_tags) 
+    """Filters multiple lists (e.g., running_containers and running_container_tags)
     based on the running_containers_state list, using filter_by_state.
 
     Args:
@@ -638,13 +653,13 @@ def filter_running_containers(running_containers, *lists):
     Returns:
         tuple: a flattened tuple of no_running and running filtered lists and lengths of the lists.
     """
-    
-    no_running_results = filter_by_state(False, running_containers, *lists) 
-    running_results = filter_by_state(True, running_containers, *lists) 
-    
+
+    no_running_results = filter_by_state(False, running_containers, *lists)
+    running_results = filter_by_state(True, running_containers, *lists)
+
     # Calculate lengths
-    no_running_length = len(no_running_results[0])  
-    running_length = len(running_results[0])  
+    no_running_length = len(no_running_results[0])
+    running_length = len(running_results[0])
 
     # Return a flattened tuple with no_running followed by running results
     return (*no_running_results, no_running_length, *running_results, running_length)
@@ -658,18 +673,24 @@ def format_container_stats(container_stats_dict):
 
     Returns:
         list: stats line representing the columns of the output.
-    """  
+    """
 
-    #ToDo: check if labels_string is needed  
+    # ToDo: check if labels_string is needed
     # Extract the 'Labels' field
-    #labels_string = container_stats_dict.get('Labels', {})
+    # labels_string = container_stats_dict.get('Labels', {})
     # Retrieve the container name (ds01.* labels are accessed via docker inspect, not stats)
-    container_name = container_stats_dict["Name"].split('._.')[0]
+    container_name = container_stats_dict["Name"].split("._.")[0]
     cpu_usage_perc = container_stats_dict["CPUPerc"]
     memory_usage = container_stats_dict["MemUsage"]
     memory_usage_perc = container_stats_dict["MemPerc"]
     processes_active = container_stats_dict["PIDs"]
-    stats_line_to_be_printed = [f"[{container_name}]", cpu_usage_perc, memory_usage, memory_usage_perc, processes_active]
+    stats_line_to_be_printed = [
+        f"[{container_name}]",
+        cpu_usage_perc,
+        memory_usage,
+        memory_usage_perc,
+        processes_active,
+    ]
 
     return stats_line_to_be_printed
 
@@ -683,25 +704,28 @@ def get_gpu_architectures(filename):
     Returns:
         list: provides a list of the available gpu architectures.
     """
-    
+
     # Creating a set to keep only unique items
-    unique_architectures = set() 
-    
-    headers = ['framework', 'version', 'architecture', 'docker image']
+    unique_architectures = set()
+
+    headers = ["framework", "version", "architecture", "docker image"]
     separator = ";"
-    with open(filename, mode='r') as file:
+    with open(filename, mode="r") as file:
         reader = csv.DictReader(file, fieldnames=headers)
         for row in reader:
-            stripped_row = {key: value.strip() if isinstance(value, str) else value for key, value in row.items()}
-            architecture = stripped_row['architecture'].strip("[]").split(separator)
+            stripped_row = {
+                key: value.strip() if isinstance(value, str) else value
+                for key, value in row.items()
+            }
+            architecture = stripped_row["architecture"].strip("[]").split(separator)
             unique_architectures.update(architecture)
 
     available_architectures = list(unique_architectures)
     if not available_architectures:
         print(f"{ERROR}No gpu architectures found.{RESET}")
         exit(1)
-    
-    return available_architectures   
+
+    return available_architectures
 
 
 def get_user_selection(prompt, max_value):
@@ -713,8 +737,8 @@ def get_user_selection(prompt, max_value):
 
     Returns:
         int: positive integer of the selected position.
-    """   
-        
+    """
+
     while True:
         try:
             selection = int(input(prompt))
@@ -724,33 +748,36 @@ def get_user_selection(prompt, max_value):
                 print(f"{ERROR}Please enter a number between 1 and {max_value}.{RESET}")
         except ValueError:
             print(f"{ERROR}Invalid input. Please enter a valid number.{RESET}")
-        
+
 
 def get_container_image(container_tag):
-    """Get the image of the container corresponding to a provided container tag.  
+    """Get the image of the container corresponding to a provided container tag.
 
     Args:
         container_tag (str): container tag.
     Returns:
         str: image corresponding to a provided container tag.
-    """    
-    
-   # Get the image associated with the container
+    """
+
+    # Get the image associated with the container
     docker_command_get_image = [
-        'docker', 
-        'container', 
-        'ps', 
-        '-a', 
-        '--filter', f'name={container_tag}', 
-        '--filter', 'label=ds01.user', 
-        '--format', '{{.Images}}'
-        ]    
+        "docker",
+        "container",
+        "ps",
+        "-a",
+        "--filter",
+        f"name={container_tag}",
+        "--filter",
+        "label=ds01.user",
+        "--format",
+        "{{.Images}}",
+    ]
     output, _, _ = run_docker_command(docker_command_get_image)
     return output
 
 
 def get_container_name(container_name, user_name, command, script=False):
-    """Get and check whether a container name is provided, and in this case, check that the container name contains valid characters. 
+    """Get and check whether a container name is provided, and in this case, check that the container name contains valid characters.
 
     Args:
         container_name (str): name of the container.
@@ -760,30 +787,34 @@ def get_container_name(container_name, user_name, command, script=False):
 
     Returns:
         str: returns a validated container name
-    """    
+    """
 
-    # ToDo: customize i/o usign user_name. 
+    # ToDo: customize i/o usign user_name.
 
     if script and not container_name:
         print(f"\n{ERROR}Container name is missing.{RESET}\n")
         exit(1)
     elif not script and container_name:
         while True:
-            try:                 
-                return validate_container_name(container_name, command, script)            
+            try:
+                return validate_container_name(container_name, command, script)
             except ValueError as e:
                 print(e)
-                container_name = input(f"\n{REQUEST}Enter a container name (valid characters: a-z, A-Z, 0-9, _,-,#): {RESET}")
-    elif not script and not container_name:   
-        while True:                           
-            container_name = input(f"\n{REQUEST}Enter a container name (valid characters: a-z, A-Z, 0-9, _,-,#): {RESET}")
+                container_name = input(
+                    f"\n{REQUEST}Enter a container name (valid characters: a-z, A-Z, 0-9, _,-,#): {RESET}"
+                )
+    elif not script and not container_name:
+        while True:
+            container_name = input(
+                f"\n{REQUEST}Enter a container name (valid characters: a-z, A-Z, 0-9, _,-,#): {RESET}"
+            )
             try:
                 return validate_container_name(container_name, command, script)
             except ValueError as e:
                 print(e)
     else:
-        return validate_container_name(container_name, command, script) 
-    
+        return validate_container_name(container_name, command, script)
+
 
 def get_docker_image(version, images):
     """Get the docker image corresponding to the provided version.
@@ -802,16 +833,16 @@ def get_docker_image(version, images):
     for tup in images:
         if tup[0] == version:
             return tup[1]
-        
-    # Raise an exception if no matching tuple is found              
-    raise ValueError("No version available") 
+
+    # Raise an exception if no matching tuple is found
+    raise ValueError("No version available")
 
 
 def get_host_gpu_architecture():
     """Detects the GPU architecture (CUDA or ROCm) installed on the host system.
 
     This function uses the `apt list --installed` command to inspect installed packages
-    and determine whether a CUDA or ROCm driver is present. It extracts the version 
+    and determine whether a CUDA or ROCm driver is present. It extracts the version
     information and maps it to a specific GPU architecture string.
 
     Returns:
@@ -820,19 +851,17 @@ def get_host_gpu_architecture():
             - The corresponding architecture string (e.g., 'CUDA_AMPERE', 'ROCM6')
             - The version number (float for CUDA, string for ROCm)
 
-    """    
-    
+    """
+
     try:
         # Run the apt command to get installed packages
-        cuda_version_command = [
-            "apt", 
-            "list", 
-            "--installed"
-        ]
+        cuda_version_command = ["apt", "list", "--installed"]
         apt_result = subprocess.run(cuda_version_command, capture_output=True, text=True)
 
         if apt_result.returncode != 0:
-            print(f"\n{ERROR}Host GPU architecture detection: Failed to execute 'apt list --installed'.{RESET}\n")
+            print(
+                f"\n{ERROR}Host GPU architecture detection: Failed to execute 'apt list --installed'.{RESET}\n"
+            )
             exit(1)
 
         apt_output = apt_result.stdout
@@ -845,13 +874,13 @@ def get_host_gpu_architecture():
                 lines_by_type["cuda"].append(line)
             elif "rocm" in line:
                 lines_by_type["rocm"].append(line)
-        
+
         if lines_by_type["cuda"]:
             cuda_lines = "\n".join(lines_by_type["cuda"])
             host_cuda_version = None
 
             # Try pattern 1: cuda-12-3 style
-            match = re.search(r'cuda-(\d+\-\d+(\-\d+)?)', cuda_lines)
+            match = re.search(r"cuda-(\d+\-\d+(\-\d+)?)", cuda_lines)
             if match:
                 version_str = match.group(1)  # e.g. '12-3-1'
                 parts = version_str.split("-")
@@ -859,7 +888,7 @@ def get_host_gpu_architecture():
 
             # Try pattern 2: cuda-toolkit-12-3 style
             if not host_cuda_version:
-                match = re.search(r'cuda-toolkit-(\d+\-\d+(\-\d+)?)', cuda_lines)
+                match = re.search(r"cuda-toolkit-(\d+\-\d+(\-\d+)?)", cuda_lines)
                 if match:
                     version_str = match.group(1)
                     parts = version_str.split("-")
@@ -867,7 +896,7 @@ def get_host_gpu_architecture():
 
             # Try pattern 3: libcudnn8 version like "8.9.7.29-1+cuda12.2"
             if not host_cuda_version:
-                match = re.search(r'\+cuda(\d+)\.(\d+)', cuda_lines)
+                match = re.search(r"\+cuda(\d+)\.(\d+)", cuda_lines)
                 if match:
                     host_cuda_version = float(f"{match.group(1)}.{match.group(2)}")
 
@@ -883,27 +912,28 @@ def get_host_gpu_architecture():
                     exit(1)
             else:
                 print(f"\n{ERROR}CUDA driver version not found. {RESET}\n")
-                exit(1)               
-                    
+                exit(1)
+
         elif lines_by_type["rocm"]:
             rocm_lines = "\n".join(lines_by_type["rocm"])
-            match = re.search(r'rocm-dev/[^\s]+\s+(\d+\.\d+\.\d+)', rocm_lines)
-            
+            match = re.search(r"rocm-dev/[^\s]+\s+(\d+\.\d+\.\d+)", rocm_lines)
+
             if match:
                 version_str = match.group(1)  # e.g. '6.3.3'
                 host_rocm_version = int(version_str.split(".")[0])
-                return "ROCM", f"ROCM{host_rocm_version}", version_str 
+                return "ROCM", f"ROCM{host_rocm_version}", version_str
             else:
                 print(f"\n{ERROR}ROCm driver version not found. {RESET}\n")
-                exit(1)  
+                exit(1)
         else:
-            print(f"\n{ERROR}Neither CUDA nor ROCm were found among the installed APT packages. {RESET}\n")
+            print(
+                f"\n{ERROR}Neither CUDA nor ROCm were found among the installed APT packages. {RESET}\n"
+            )
             exit(1)
 
-    
-    except Exception as e:
+    except Exception:
         print(f"\n{ERROR}Failed to detect host GPU architecture.{RESET}\n")
-        exit(1)  
+        exit(1)
 
 
 def is_container_active(container_name):
@@ -914,9 +944,9 @@ def is_container_active(container_name):
 
     Returns:
         boolean: True, if the container is active (number of processes is higher as 2 with a successfull exit code of the docker command).
-    """    
+    """
 
-    docker_command = f'docker top {container_name} -o pid'
+    docker_command = f"docker top {container_name} -o pid"
     output, _, exit_code = run_docker_command(docker_command)
     process_count = len(output.splitlines())
     if exit_code == 0 and 2 < process_count:
@@ -930,8 +960,8 @@ def print_existing_container_list(container_list):
 
     Args:
         container_list (list): a list containing the available containers.
-    """    
-    
+    """
+
     for index, container in enumerate(container_list, start=1):
         print(f"{index}) {container}")
 
@@ -941,22 +971,22 @@ def print_info_header(command):
 
     Args:
         command (str): mlc command used by the user.
-    """ 
-    
+    """
+
     if command == "create":
         print(
-            "\n" \
+            "\n"
             f"    {INFO_HEADER}Info{RESET}: \
             \n    Create a new MLC container \
             \n\n    {INFO_HEADER}How to use{RESET}: \
             \n    mlc create <container_name> <framework_name> <framework_version> -w <workspace_directory> -d <data_directory> -m <models_directory> -s -arch <gpu_architecture> -ng <number of gpus> \
             \n\n    {INFO_HEADER}Example{RESET}: \
-            \n    mlc create pt250 Pytorch 2.5.0 -w /home/$USER/workspace -d /data -m /models\n" 
-        ) 
-                
+            \n    mlc create pt250 Pytorch 2.5.0 -w /home/$USER/workspace -d /data -m /models\n"
+        )
+
     if command == "open":
         print(
-            "\n"\
+            "\n"
             f"    {INFO_HEADER}Info{RESET}: \
             \n    Open an existing machine learning container  \
             \n\n    {INFO_HEADER}How to use{RESET}: \
@@ -964,21 +994,21 @@ def print_info_header(command):
             \n\n    {INFO_HEADER}Example{RESET}: \
             \n    mlc open pt231aime -s\n"
         )
-        
+
     if command == "remove":
         print(
-            "\n"\
+            "\n"
             f"    {INFO_HEADER}Info{RESET}: \
             \n    Remove an existing and no running machine learning container  \
             \n\n    {INFO_HEADER}How to use{RESET}: \
             \n    mlc remove <container_name> [-s|--script] [-f|--force]\
             \n\n    {INFO_HEADER}Example{RESET}: \
             \n    mlc remove pt231aime -s -f \n"
-        )   
+        )
 
-    if command == "start":        
+    if command == "start":
         print(
-            "\n"\
+            "\n"
             f"    {INFO_HEADER}Info{RESET}: \
             \n    Start an existing machine learning container  \
             \n\n    {INFO_HEADER}How to use{RESET}: \
@@ -987,27 +1017,27 @@ def print_info_header(command):
             \n    mlc start pt231aime -s\n"
         )
 
-    if command == "stop":        
+    if command == "stop":
         print(
-            "\n"\
+            "\n"
             f"    {INFO_HEADER}Info{RESET}: \
             \n    Stop an existing machine learning container  \
             \n\n    {INFO_HEADER}How to use{RESET}: \
             \n    mlc stop <container_name> [-s|--script] [-f|--force] \
             \n\n    {INFO_HEADER}Example{RESET}: \
             \n    mlc stop pt231aime -s -f\n"
-        )  
+        )
 
     if command == "update-sys":
         print(
-            "\n"\
+            "\n"
             f"    {INFO_HEADER}Info{RESET}: \
             \n    Update the system  \
             \n\n    {INFO_HEADER}How to use{RESET}: \
             \n    mlc update-sys [-f|--force]\
             \n\n    {INFO_HEADER}Example{RESET}: \
             \n    mlc update-sys -f \n"
-        )  
+        )
 
 
 def run_docker_command(docker_command):
@@ -1018,14 +1048,11 @@ def run_docker_command(docker_command):
 
     Returns:
         str, str, int: standard output and error file handle and returncode.
-    """    
- 
+    """
+
     result = subprocess.run(
-        docker_command, 
-        shell=True, 
-        text=True, 
-        stdout=subprocess.PIPE, 
-        stderr=subprocess.PIPE)
+        docker_command, shell=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
     return result.stdout.strip(), result.stderr.strip(), result.returncode
 
 
@@ -1037,9 +1064,9 @@ def run_docker_command_popen(command):
 
     Returns:
         str, int: standard error file handle and returncode.
-    """    
+    """
     process = subprocess.Popen(
-        command, 
+        command,
         shell=False,
         text=True,
         stderr=subprocess.PIPE,
@@ -1047,18 +1074,19 @@ def run_docker_command_popen(command):
     stderr = process.communicate()  # Communicate handles interactive input/output
     return stderr, process.returncode
 
+
 def run_docker_pull_image(docker_command):
     """Pull a docker image and return its output usign subprocess.run().
 
     Args:
         docker_command (str): docker pull command to be executed.
 
-    """ 
+    """
     # Run the command and print output in real-time
     result = subprocess.run(
-        docker_command, 
+        docker_command,
         text=True,
-        capture_output=False,  
+        capture_output=False,
     )
 
     returncode = result.returncode
@@ -1078,14 +1106,16 @@ def set_framework(framework_version_docker_sorted):
 
     Returns:
         str: selected framework.
-    """ 
-    
+    """
+
     framework_list = display_frameworks(framework_version_docker_sorted)
-    framework_num = get_user_selection(f"{REQUEST}Enter the number of the desired framework: {RESET}", len(framework_list))
-    
+    framework_num = get_user_selection(
+        f"{REQUEST}Enter the number of the desired framework: {RESET}", len(framework_list)
+    )
+
     return framework_list[framework_num - 1]
-    
-    
+
+
 def set_version(framework, version_images):
     """Display the available versions of the preselected framework and set a framework version.
 
@@ -1093,11 +1123,13 @@ def set_version(framework, version_images):
         framework (str): name of the preselected framework.
         version_images (list): list including tuples with the format (version, image).
     Returns:
-        tuple(str, str): returns the version and the corresponding docker image. 
-    """    
-                    
+        tuple(str, str): returns the version and the corresponding docker image.
+    """
+
     display_versions(framework, version_images)
-    version_number = get_user_selection(f"{REQUEST}Enter the number of your version: {RESET}", len(version_images))
+    version_number = get_user_selection(
+        f"{REQUEST}Enter the number of your version: {RESET}", len(version_images)
+    )
     return version_images[version_number - 1]
 
 
@@ -1110,7 +1142,7 @@ def select_container(container_list):
 
     Returns:
         str, int: selected container, position in the list
-    """    
+    """
 
     while True:
         try:
@@ -1126,10 +1158,10 @@ def select_container(container_list):
 
 def select_container_to_be_ed(containers):
     """Print a list of existing containers and provide a selected container name and its position in a list.
-    
-    Options: 
+
+    Options:
     select_container_to_be_opened/removed/start/stopped
-    
+
     Args:
         containers (list): list of container which can be opened/removed/start/stopped
 
@@ -1138,56 +1170,48 @@ def select_container_to_be_ed(containers):
     """
 
     print_existing_container_list(containers)
-    selected_container_name, selected_container_position = select_container(containers)    
+    selected_container_name, selected_container_position = select_container(containers)
     return selected_container_name, selected_container_position
 
 
-def show_container_stats():  
-    """Fetch docker container stats.
-    """    
-  
-    command = [
-        "docker",
-        "stats",
-        "--no-stream",
-        "--format",'{{json .}}'
-    ]
+def show_container_stats():
+    """Fetch docker container stats."""
+
+    command = ["docker", "stats", "--no-stream", "--format", "{{json .}}"]
     process = subprocess.Popen(
-        command, 
-        shell=False,
-        text=True, 
-        stdout=subprocess.PIPE, 
-        stderr=subprocess.PIPE
-        )
+        command, shell=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
 
     stdout_data, stderr_data = process.communicate()
 
     # If no stdout_data is received
     if not stdout_data:
         process.terminate()
-        print(f"\n{ERROR}There are no running containers. Start or open a container to show the stats.{RESET}\n")
+        print(
+            f"\n{ERROR}There are no running containers. Start or open a container to show the stats.{RESET}\n"
+        )
         exit(0)
-    else:        
+    else:
         # Print the final processed output
         # Define an output format string with specified widths
         format_string = "{:<30}{:<10}{:<25}{:<10}{:<15}"
         print(f"\n{INFO}Current stats of the running containers:{RESET}")
         titles = ["CONTAINER", "CPU %", "MEM USAGE / LIMIT", "MEM %", "PROCESSES (PIDs)"]
-                  
+
         # Split into individual lines and process them as JSON objects
         output_lines = []
-        
+
         # Split by newlines and parse each line as JSON
-        json_lines = stdout_data.split('\n')
+        json_lines = stdout_data.split("\n")
         containers_stats = [json.loads(line) for line in json_lines if line]
 
         # Apply formatting to all containers' info
         output_lines = list(map(format_container_stats, containers_stats))
         print(format_string.format(*titles))
-        print("\n".join(format_string.format(*info) for info in output_lines)+"\n")
-    
+        print("\n".join(format_string.format(*info) for info in output_lines) + "\n")
+
     # Exit after processing one time in non-streaming mode
-    process.terminate()        
+    process.terminate()
 
 
 def short_home_path(provided_path):
@@ -1198,14 +1222,14 @@ def short_home_path(provided_path):
 
     Returns:
         str: path with "~" if needed
-    """  
+    """
     home_directory = os.path.expanduser("~")
-    
+
     if provided_path == "-":
         return "-"
     elif provided_path == home_directory:
         return provided_path
-    else:        
+    else:
         shortened_path = provided_path.replace(home_directory, "~", 1)
         return shortened_path
 
@@ -1216,29 +1240,34 @@ def show_container_info(**kwargs):
     Args:
         flags (str): flag arguments provided by the user
     """
-    
+
     # Adapt the filter to the selected flags
-    filter_ds01_user =  "label=ds01.user" if kwargs == {} or kwargs["all_users"] else f"label=ds01.user={user_name}"
+    filter_ds01_user = (
+        "label=ds01.user" if kwargs == {} or kwargs["all_users"] else f"label=ds01.user={user_name}"
+    )
     docker_command_ls = [
-        "docker", "container",
+        "docker",
+        "container",
         "ls",
         "-a",
-        "--filter", filter_ds01_user, 
-        "--format", '{{json .}}'    
+        "--filter",
+        filter_ds01_user,
+        "--format",
+        "{{json .}}",
     ]
 
     # Initialize Popen to run the docker command with JSON output
     process = subprocess.Popen(
-        docker_command_ls, 
+        docker_command_ls,
         shell=False,
         text=True,
         stdout=subprocess.PIPE,  # Capture stdout
-        stderr=subprocess.PIPE    # Capture stderr
+        stderr=subprocess.PIPE,  # Capture stderr
     )
-    
+
     # Communicate with the process to get output and errors
-    stdout_data, stderr_data = process.communicate()   
-       
+    stdout_data, stderr_data = process.communicate()
+
     # Check for any errors
     if process.returncode != 0:
         print(f"{ERROR}Error:{RESET}\n{stderr_data}")
@@ -1247,30 +1276,34 @@ def show_container_info(**kwargs):
         # If no stdout_data is received
         if not stdout_data:
             process.terminate()
-            print(f"\n{ERROR}There are no containers. Create the first one using:{RESET}\n{HINT}mlc create container_name{RESET}\n")
-            exit(0)    
-                
+            print(
+                f"\n{ERROR}There are no containers. Create the first one using:{RESET}\n{HINT}mlc create container_name{RESET}\n"
+            )
+            exit(0)
+
         stdout_data_stripped = stdout_data.strip()
-        
+
         # Titels  extracted from the kwargs
         kwarg_keys_to_be_deleted = ["command", "all", "all_users"]
         kwarg_titles = {key: key.upper() for key in kwargs if key not in kwarg_keys_to_be_deleted}
         kwarg_titles["all_users"] = "USER"
-                
+
         # Default columns to display
         default_titles_to_display = ["CONTAINER", "FRAMEWORK", "STATUS"]
-        
+
         # Columns when flag --all is set up:
-        titles_when_all_is_set = [ "USER", "SIZE", "ARCHITECTURE", "WORKSPACE", "DATA", "MODELS"]
+        titles_when_all_is_set = ["USER", "SIZE", "ARCHITECTURE", "WORKSPACE", "DATA", "MODELS"]
 
         # Add additional columns based on flags
-        if kwargs.get("all"):  
+        if kwargs.get("all"):
             default_titles_to_display.extend(titles_when_all_is_set)
         else:
-            default_titles_to_display.extend(kwarg_titles[key] for key in kwargs if key in kwarg_titles and kwargs[key] is True)        
-        
+            default_titles_to_display.extend(
+                kwarg_titles[key] for key in kwargs if key in kwarg_titles and kwargs[key] is True
+            )
+
         # Titles to be display on the top of the columns
-        titles_to_display = default_titles_to_display        
+        titles_to_display = default_titles_to_display
 
         columns_transcription = {
             "CONTAINER": "ds01.name",
@@ -1278,68 +1311,91 @@ def show_container_info(**kwargs):
             "STATUS": "Status",
             "USER": "ds01.user",
             "SIZE": "Size",
-            "ARCHITECTURE":"ds01.arch",
+            "ARCHITECTURE": "ds01.arch",
             "WORKSPACE": "ds01.work_mount",
             "DATA": "ds01.data_mount",
-            "MODELS": "ds01.models_mount"
+            "MODELS": "ds01.models_mount",
         }
-        # Select the values which can be written with '~' 
-        reduce_the_path = ["WORKSPACE", "DATA", "MODELS"]  
-              
-        # Values which can be written with '~' 
-        values_to_be_reduced = [columns_transcription[key] for key in reduce_the_path if key in columns_transcription]
-        
+        # Select the values which can be written with '~'
+        reduce_the_path = ["WORKSPACE", "DATA", "MODELS"]
+
+        # Values which can be written with '~'
+        values_to_be_reduced = [
+            columns_transcription[key] for key in reduce_the_path if key in columns_transcription
+        ]
+
         # Split by newlines and parse each line as JSON
-        json_lines = stdout_data_stripped.split('\n')
+        json_lines = stdout_data_stripped.split("\n")
 
         # List of all fields with info of the available containers
-        containers_info = [json.loads(line)for line in json_lines if line]
-        
+        containers_info = [json.loads(line) for line in json_lines if line]
+
         # Flatten the dicts and apply short_home_path for keys in values_to_be_reduced
         flattened_container_infos = [
             {
-                **{key: short_home_path(value) if key in values_to_be_reduced 
-                   else f"[{value}]" if key == columns_transcription["CONTAINER"] 
-                   else value 
-                   for key, value in 
-                (pair.split('=', 1) for pair in container_dict["Labels"].split(','))},
-                **{key: value for key, value in container_dict.items() if key != "Labels"}
+                **{
+                    key: short_home_path(value)
+                    if key in values_to_be_reduced
+                    else f"[{value}]"
+                    if key == columns_transcription["CONTAINER"]
+                    else value
+                    for key, value in (
+                        pair.split("=", 1) for pair in container_dict["Labels"].split(",")
+                    )
+                },
+                **{key: value for key, value in container_dict.items() if key != "Labels"},
             }
             for container_dict in containers_info
         ]
-      
+
         # Assess the column widths for printing with a correct format
         column_widths = {
-            key: max(len(key), *(len(container.get(columns_transcription[key], "")) for container in flattened_container_infos)) 
+            key: max(
+                len(key),
+                *(
+                    len(container.get(columns_transcription[key], ""))
+                    for container in flattened_container_infos
+                ),
+            )
             for key in titles_to_display
         }
-        
+
         # Build the format string dynamically
-        format_string = "".join(f"{{:<{column_widths[col]+2}}}" for col in titles_to_display)
+        format_string = "".join(f"{{:<{column_widths[col] + 2}}}" for col in titles_to_display)
 
         # Print the titles
         print("")
         print(format_string.format(*(titles_to_display)))
-        
+
         # Print the rows
         for container in flattened_container_infos:
-            print(format_string.format(*(container.get(columns_transcription[key], '') for key in titles_to_display if key in columns_transcription)))
+            print(
+                format_string.format(
+                    *(
+                        container.get(columns_transcription[key], "")
+                        for key in titles_to_display
+                        if key in columns_transcription
+                    )
+                )
+            )
         print("")
-        
-        
+
+
 def show_frameworks_versions(ml_images_content):
     """Print the available frameworks and versions by mlc create
 
     Args:
         architecture (str): current gpu architecture
         ml_images_content (dict): dict containing as keys the frameworks and as values tuples (version, docker image)
-    """    
+    """
 
     frameworks = list(ml_images_content.keys())
     print(f"{INFO}\nAvailable frameworks and versions:{RESET}")
     for framework in frameworks:
         version_images = ml_images_content[framework]
-        print(f"\n{HINT}{framework}:{RESET} \n{', '.join([version[0] for version in version_images])}")
+        print(
+            f"\n{HINT}{framework}:{RESET} \n{', '.join([version[0] for version in version_images])}"
+        )
     print(" ")
     exit(0)
 
@@ -1361,45 +1417,55 @@ def validate_container_name(container_name, command, script=False):
         str, str: container name and associated container tag
     """
 
-    _ , available_user_container_tags = existing_user_containers(user_name, command) 
-    
-    pattern = re.compile(r'^[a-zA-Z0-9_\-#]*$')
+    _, available_user_container_tags = existing_user_containers(user_name, command)
 
-    if container_name == "":        
-        raise ValueError(f"\n{ERROR}The container name should contain at least one character.{RESET}")    
+    pattern = re.compile(r"^[a-zA-Z0-9_\-#]*$")
+
+    if container_name == "":
+        raise ValueError(
+            f"\n{ERROR}The container name should contain at least one character.{RESET}"
+        )
     elif not pattern.match(container_name):
-        invalid_chars = [char for char in container_name if not re.match(r'[a-zA-Z0-9_\-#]', char)]
-        invalid_chars_str = ''.join(invalid_chars)
+        invalid_chars = [char for char in container_name if not re.match(r"[a-zA-Z0-9_\-#]", char)]
+        invalid_chars_str = "".join(invalid_chars)
         if script:
-            print(f"\n{INPUT}[{container_name}]{RESET} contains {ERROR}invalid{RESET} characters: {ERROR}{invalid_chars_str}{RESET}\n")
+            print(
+                f"\n{INPUT}[{container_name}]{RESET} contains {ERROR}invalid{RESET} characters: {ERROR}{invalid_chars_str}{RESET}\n"
+            )
             exit(1)
         else:
-            raise ValueError(f"\n{INPUT}[{container_name}]{RESET} contains {ERROR}invalid{RESET} characters: {ERROR}{invalid_chars_str}{RESET}\n")
+            raise ValueError(
+                f"\n{INPUT}[{container_name}]{RESET} contains {ERROR}invalid{RESET} characters: {ERROR}{invalid_chars_str}{RESET}\n"
+            )
     else:
         # Generate a unique container tag
-        provided_container_tag = f"{container_name}._.{user_id}"        
+        provided_container_tag = f"{container_name}._.{user_id}"
         if provided_container_tag in available_user_container_tags:
             if script:
-                print(f'\n{INPUT}[{container_name}]{RESET} {ERROR}already exists. Provide a new container name.{RESET}\n')
+                print(
+                    f"\n{INPUT}[{container_name}]{RESET} {ERROR}already exists. Provide a new container name.{RESET}\n"
+                )
                 exit(1)
             else:
-                raise ValueError(f'\n{INPUT}[{container_name}]{RESET} {ERROR}already exists. Provide a new container name.{RESET}')        
+                raise ValueError(
+                    f"\n{INPUT}[{container_name}]{RESET} {ERROR}already exists. Provide a new container name.{RESET}"
+                )
         return container_name, provided_container_tag
 
 
-def build_docker_run_command(    
-        architecture, 
-        workspace_dir, 
-        workspace, 
-        container_tag,
-        num_gpus, 
-        selected_docker_image, 
-        validated_container_name,
-        user_name, 
-        user_id, 
-        group_id,
-        dir_to_be_added
-    ):
+def build_docker_run_command(
+    architecture,
+    workspace_dir,
+    workspace,
+    container_tag,
+    num_gpus,
+    selected_docker_image,
+    validated_container_name,
+    user_name,
+    user_id,
+    group_id,
+    dir_to_be_added,
+):
     """Constructs a 'docker run' command based on the host GPU architecture and user setup.
 
     This function assembles the appropriate `docker run` command with volume mappings,
@@ -1424,60 +1490,82 @@ def build_docker_run_command(
     Raises:
         ValueError: If the provided architecture is not supported ('CUDA' or 'ROCM').
     """
-    
+
     # Shared base command
     # ========== DS01 PATCH: No --privileged - preserves MIG isolation ==========
     base_docker_cmd = [
-        'docker', 'run',
-        '-v', f'{workspace_dir}:{workspace}',
-        '-w', workspace,
-        '--name', container_tag,
-        '--tty',
-        '--cap-add', 'SYS_PTRACE',      # For debugging (gdb, strace)
-        '--cap-add', 'SYS_ADMIN',       # For user setup (adduser, etc.)
-        '--security-opt', 'seccomp=unconfined',  # For CUDA profiling
-        '--network', 'host',
-        '--device', '/dev/snd',
-        '--ipc', 'host',
-        '--ulimit', 'memlock=-1',
-        '--ulimit', 'stack=67108864',
-        '-v', '/tmp/.X11-unix:/tmp/.X11-unix',
+        "docker",
+        "run",
+        "-v",
+        f"{workspace_dir}:{workspace}",
+        "-w",
+        workspace,
+        "--name",
+        container_tag,
+        "--tty",
+        "--cap-add",
+        "SYS_PTRACE",  # For debugging (gdb, strace)
+        "--cap-add",
+        "SYS_ADMIN",  # For user setup (adduser, etc.)
+        "--security-opt",
+        "seccomp=unconfined",  # For CUDA profiling
+        "--network",
+        "host",
+        "--device",
+        "/dev/snd",
+        "--ipc",
+        "host",
+        "--ulimit",
+        "memlock=-1",
+        "--ulimit",
+        "stack=67108864",
+        "-v",
+        "/tmp/.X11-unix:/tmp/.X11-unix",
     ]
     # ========== END DS01 PATCH ==========
 
     # ========== DS01 PATCH: Handle multi-MIG GPU allocation ==========
-    if num_gpus and num_gpus.startswith('device='):
-        device_ids = num_gpus.replace('device=', '')
-        device_list = device_ids.split(',')
+    if num_gpus and num_gpus.startswith("device="):
+        device_ids = num_gpus.replace("device=", "")
+        device_list = device_ids.split(",")
         num_devices = len(device_list)
 
         if num_devices > 1:
             # Multi-MIG: Use --runtime=nvidia with NVIDIA_VISIBLE_DEVICES env var
             cuda_extras = [
-                '--runtime=nvidia',
-                '-e', f'NVIDIA_VISIBLE_DEVICES={device_ids}',
+                "--runtime=nvidia",
+                "-e",
+                f"NVIDIA_VISIBLE_DEVICES={device_ids}",
                 # DS01: /dev/video0 removed - not needed for GPU compute
             ]
         else:
             # Single MIG/GPU: Use standard --gpus device=... syntax
             cuda_extras = [
-                '--gpus', num_gpus,
+                "--gpus",
+                num_gpus,
                 # DS01: /dev/video0 removed - not needed for GPU compute
             ]
     else:
         cuda_extras = [
-            '--gpus', num_gpus,
+            "--gpus",
+            num_gpus,
             # DS01: /dev/video0 removed - not needed for GPU compute
         ]
     # ========== END DS01 PATCH ==========
 
     rocm_extras = [
-        '-u', 'root',
-        '--device', '/dev/kfd',
-        '--device', '/dev/dri',
-        '--cap-add', 'SYS_PTRACE',
-        '--security-opt', 'seccomp=unconfined',
-        '--shm-size', '8G'
+        "-u",
+        "root",
+        "--device",
+        "/dev/kfd",
+        "--device",
+        "/dev/dri",
+        "--cap-add",
+        "SYS_PTRACE",
+        "--security-opt",
+        "seccomp=unconfined",
+        "--shm-size",
+        "8G",
     ]
 
     # DS01 PATCH: Sanitize username for container use (LDAP usernames may contain @)
@@ -1496,10 +1584,10 @@ def build_docker_run_command(
         f"echo 'DS01 DEBUG Step 1: Checking for GID {group_id} conflicts'; "
         f"if getent group {group_id} > /dev/null 2>&1; then "
         f"EXISTING_GROUP=$(getent group {group_id} | cut -d: -f1); "
-        f"echo \"DS01 DEBUG Step 1: Found existing group: $EXISTING_GROUP\"; "
-        f"if [ \"$EXISTING_GROUP\" != \"{container_username}\" ]; then "
-        f"echo \"DS01 DEBUG Step 1: Removing conflicting group $EXISTING_GROUP\"; "
-        f"groupdel $EXISTING_GROUP 2>&1 || echo \"DS01 DEBUG Step 1: groupdel failed: $?\"; "
+        f'echo "DS01 DEBUG Step 1: Found existing group: $EXISTING_GROUP"; '
+        f'if [ "$EXISTING_GROUP" != "{container_username}" ]; then '
+        f'echo "DS01 DEBUG Step 1: Removing conflicting group $EXISTING_GROUP"; '
+        f'groupdel $EXISTING_GROUP 2>&1 || echo "DS01 DEBUG Step 1: groupdel failed: $?"; '
         f"else echo 'DS01 DEBUG Step 1: Group name matches, no removal needed'; fi; "
         f"else echo 'DS01 DEBUG Step 1: No existing group with GID {group_id}'; fi;",
         # Step 2: Create group with specific GID
@@ -1513,10 +1601,10 @@ def build_docker_run_command(
         f"echo 'DS01 DEBUG Step 3: Checking for UID {user_id} conflicts'; "
         f"if getent passwd {user_id} > /dev/null 2>&1; then "
         f"EXISTING_USER=$(getent passwd {user_id} | cut -d: -f1); "
-        f"echo \"DS01 DEBUG Step 3: Found existing user: $EXISTING_USER\"; "
-        f"if [ \"$EXISTING_USER\" != \"{container_username}\" ]; then "
-        f"echo \"DS01 DEBUG Step 3: Removing conflicting user $EXISTING_USER\"; "
-        f"userdel -r $EXISTING_USER 2>&1 || echo \"DS01 DEBUG Step 3: userdel failed: $?\"; "
+        f'echo "DS01 DEBUG Step 3: Found existing user: $EXISTING_USER"; '
+        f'if [ "$EXISTING_USER" != "{container_username}" ]; then '
+        f'echo "DS01 DEBUG Step 3: Removing conflicting user $EXISTING_USER"; '
+        f'userdel -r $EXISTING_USER 2>&1 || echo "DS01 DEBUG Step 3: userdel failed: $?"; '
         f"else echo 'DS01 DEBUG Step 3: User name matches, no removal needed'; fi; "
         f"else echo 'DS01 DEBUG Step 3: No existing user with UID {user_id}'; fi;",
         # Step 4: Create user with specific UID and GID
@@ -1536,7 +1624,7 @@ def build_docker_run_command(
         # Step 6: Configure user
         f"passwd -d {container_username} 2>/dev/null || true;",
         f"usermod -aG sudo {container_username} 2>/dev/null || true;",
-        f"echo \"{container_username} ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/{container_username}_no_password;",
+        f'echo "{container_username} ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/{container_username}_no_password;',
         # DS01 FIX: Create .local directory and copy bashrc to user's home
         # This fixes "Permission denied: '/.local'" error when pip install --user
         f"mkdir -p /home/{container_username}/.local/bin;",
@@ -1546,62 +1634,62 @@ def build_docker_run_command(
     ]
 
     # Add ROCm-specific line if needed
-    if 'ROCM' in architecture:
-        bash_lines.append(f"echo \"export ROCM_PATH=/opt/rocm\" >> ~/.bashrc;")
+    if "ROCM" in architecture:
+        bash_lines.append('echo "export ROCM_PATH=/opt/rocm" >> ~/.bashrc;')
 
     # CRITICAL: Truncate lastlog/faillog to prevent huge sparse files
     # High UIDs (e.g., 1722830498) cause these files to grow to 300GB+
     # which breaks Docker overlay2 layer export during docker commit
-    bash_lines.extend([
-        ": > /var/log/lastlog;",
-        ": > /var/log/faillog;",
-    ])
+    bash_lines.extend(
+        [
+            ": > /var/log/lastlog;",
+            ": > /var/log/faillog;",
+        ]
+    )
 
-    bash_lines.extend([
-        f"chmod 440 /etc/sudoers.d/{container_username}_no_password;",
-        "exit"
-    ])      
+    bash_lines.extend([f"chmod 440 /etc/sudoers.d/{container_username}_no_password;", "exit"])
 
-    bash_command = ' '.join(bash_lines)
+    bash_command = " ".join(bash_lines)
 
     # Assemble full command
-    if 'CUDA' in architecture:
-        docker_cmd = base_docker_cmd + cuda_extras + [
-            f'{selected_docker_image}', 'bash', '-c', bash_command
-        ]
-    elif 'ROCM' in architecture:
-        docker_cmd = base_docker_cmd + rocm_extras + [
-            selected_docker_image, 'bash', '-c', bash_command
-        ]
+    if "CUDA" in architecture:
+        docker_cmd = (
+            base_docker_cmd + cuda_extras + [f"{selected_docker_image}", "bash", "-c", bash_command]
+        )
+    elif "ROCM" in architecture:
+        docker_cmd = (
+            base_docker_cmd + rocm_extras + [selected_docker_image, "bash", "-c", bash_command]
+        )
     else:
         raise ValueError(f"Unsupported architecture: {architecture}")
 
     return docker_cmd
 
+
 def build_docker_create_command(
-        user_name,
-        user_id,
-        group_id,
-        architecture,
-        selected_docker_image,
-        selected_framework,
-        selected_version,
-        mlc_container_version,
-        validated_container_name,
-        container_label,
-        container_tag,
-        workspace,
-        workspace_dir,
-        data_dir,
-        models_dir,
-        dir_to_be_added,
-        num_gpus,
-        volumes,
-        shm_size=None,           # DS01 PATCH: Resource limits
-        cgroup_parent=None,      # DS01 PATCH: Resource limits
-        ds01_labels=None,        # DS01 PATCH: GPU tracking labels
-        skip_user_setup=False    # DS01 PATCH: Use original image if user pre-configured
-    ):
+    user_name,
+    user_id,
+    group_id,
+    architecture,
+    selected_docker_image,
+    selected_framework,
+    selected_version,
+    mlc_container_version,
+    validated_container_name,
+    container_label,
+    container_tag,
+    workspace,
+    workspace_dir,
+    data_dir,
+    models_dir,
+    dir_to_be_added,
+    num_gpus,
+    volumes,
+    shm_size=None,  # DS01 PATCH: Resource limits
+    cgroup_parent=None,  # DS01 PATCH: Resource limits
+    ds01_labels=None,  # DS01 PATCH: GPU tracking labels
+    skip_user_setup=False,  # DS01 PATCH: Use original image if user pre-configured
+):
     """Constructs a 'docker create' command customized for a machine learning container environment.
 
     This function prepares a Docker container creation command with appropriate flags, volume
@@ -1634,131 +1722,172 @@ def build_docker_create_command(
     Raises:
         ValueError: If the provided architecture is not supported.
     """
-    
+
     # Shared base command
     base_docker_cmd = [
-        'docker', 'create',
-        '-it',
-        '-w', workspace,
-        '--name', container_tag,
-        '--label', f'{container_label}.user={user_name}',
-        '--label', f'{container_label}.name={validated_container_name}',
-        '--label', f'{container_label}.arch={architecture}',
-        '--label', f'{container_label}.mlc_version={mlc_container_version}',
-        '--label', f'{container_label}.work_mount={workspace_dir}',
-        '--label', f'{container_label}.data_mount={data_dir}',
-        '--label', f'{container_label}.models_mount={models_dir}',
-        '--label', f'{container_label}.framework={selected_framework}-{selected_version}',
-        '--label', f'{container_label}.gpus={num_gpus}',
+        "docker",
+        "create",
+        "-it",
+        "-w",
+        workspace,
+        "--name",
+        container_tag,
+        "--label",
+        f"{container_label}.user={user_name}",
+        "--label",
+        f"{container_label}.name={validated_container_name}",
+        "--label",
+        f"{container_label}.arch={architecture}",
+        "--label",
+        f"{container_label}.mlc_version={mlc_container_version}",
+        "--label",
+        f"{container_label}.work_mount={workspace_dir}",
+        "--label",
+        f"{container_label}.data_mount={data_dir}",
+        "--label",
+        f"{container_label}.models_mount={models_dir}",
+        "--label",
+        f"{container_label}.framework={selected_framework}-{selected_version}",
+        "--label",
+        f"{container_label}.gpus={num_gpus}",
         # ========== DS01 PATCH: DS01 Management Labels ==========
-        '--label', f'{container_label}.managed=true',
-        '--label', f'{container_label}.custom_image={"" if selected_docker_image.startswith("aimehub/") else selected_docker_image}',
+        "--label",
+        f"{container_label}.managed=true",
+        "--label",
+        f"{container_label}.custom_image={'' if selected_docker_image.startswith('aimehub/') else selected_docker_image}",
         # VS Code Dev Containers integration - sets workspace folder when attaching
-        '--label', f'devcontainer.workspaceFolder={workspace}',
+        "--label",
+        f"devcontainer.workspaceFolder={workspace}",
         # ========== END DS01 PATCH ==========
-        '--user', f'{user_id}:{group_id}',
-        '--tty',
-        '--interactive',
-        '--network', 'host',
-        '--device', '/dev/snd'
+        "--user",
+        f"{user_id}:{group_id}",
+        "--tty",
+        "--interactive",
+        "--network",
+        "host",
+        "--device",
+        "/dev/snd",
     ]
 
     # ========== DS01 PATCH: No privileged mode - preserves MIG isolation ==========
     # --privileged gives full device access and BREAKS MIG isolation
     # Use specific capabilities instead of full privileged mode
-    base_docker_cmd.extend([
-        '--cap-add', 'SYS_PTRACE',      # For debugging (gdb, strace)
-        '--cap-add', 'SYS_ADMIN',       # For user setup (adduser, etc.)
-        '--security-opt', 'seccomp=unconfined',  # For CUDA profiling
-    ])
+    base_docker_cmd.extend(
+        [
+            "--cap-add",
+            "SYS_PTRACE",  # For debugging (gdb, strace)
+            "--cap-add",
+            "SYS_ADMIN",  # For user setup (adduser, etc.)
+            "--security-opt",
+            "seccomp=unconfined",  # For CUDA profiling
+        ]
+    )
     # ========== END DS01 PATCH ==========
 
     # ========== DS01 PATCH: Resource Limits ==========
     # Handle IPC mode: --ipc host vs --shm-size are mutually exclusive
     # If shm_size is provided (DS01 resource limits), use it instead of --ipc host
     if shm_size:
-        base_docker_cmd.extend(['--shm-size', shm_size])
+        base_docker_cmd.extend(["--shm-size", shm_size])
     else:
-        base_docker_cmd.extend(['--ipc', 'host'])
+        base_docker_cmd.extend(["--ipc", "host"])
 
     # Add cgroup parent if provided (DS01 systemd integration)
     if cgroup_parent:
-        base_docker_cmd.extend(['--cgroup-parent', cgroup_parent])
+        base_docker_cmd.extend(["--cgroup-parent", cgroup_parent])
 
     # Add DS01 labels for GPU tracking (stateless allocation)
     if ds01_labels:
         for label in ds01_labels:
-            if '=' in label:
-                base_docker_cmd.extend(['--label', label])
+            if "=" in label:
+                base_docker_cmd.extend(["--label", label])
     # ========== END DS01 PATCH ==========
 
-    base_docker_cmd.extend([
-        '--ulimit', 'memlock=-1',
-        '--ulimit', 'stack=67108864',
-        '-v', '/tmp/.X11-unix:/tmp/.X11-unix',
-        '--group-add', 'video'
-    ])   
-    
+    base_docker_cmd.extend(
+        [
+            "--ulimit",
+            "memlock=-1",
+            "--ulimit",
+            "stack=67108864",
+            "-v",
+            "/tmp/.X11-unix:/tmp/.X11-unix",
+            "--group-add",
+            "video",
+        ]
+    )
+
     # Insert the volumes list at the correct position, after '-it'
-    base_docker_cmd[3:3] = volumes    
-       
+    base_docker_cmd[3:3] = volumes
+
     # ========== DS01 PATCH: Handle multi-MIG GPU allocation ==========
     # Docker's --gpus device=... flag doesn't support comma-separated UUIDs
     # For multiple MIG devices, we must use --runtime=nvidia with NVIDIA_VISIBLE_DEVICES
     #
     # Single MIG:  --gpus device=MIG-uuid
     # Multi MIG:   --runtime=nvidia -e NVIDIA_VISIBLE_DEVICES=MIG-uuid1,MIG-uuid2
-    if num_gpus and num_gpus.startswith('device='):
-        device_ids = num_gpus.replace('device=', '')
-        device_list = device_ids.split(',')
+    if num_gpus and num_gpus.startswith("device="):
+        device_ids = num_gpus.replace("device=", "")
+        device_list = device_ids.split(",")
         num_devices = len(device_list)
 
         if num_devices > 1:
             # Multi-MIG: Use --runtime=nvidia with NVIDIA_VISIBLE_DEVICES env var
             # NOTE: Do NOT set CUDA_VISIBLE_DEVICES for multi-MIG - it conflicts with NVIDIA enumeration
             cuda_extras = [
-                '--runtime=nvidia',
-                '-e', f'NVIDIA_VISIBLE_DEVICES={device_ids}',
+                "--runtime=nvidia",
+                "-e",
+                f"NVIDIA_VISIBLE_DEVICES={device_ids}",
                 # DS01: /dev/video0 removed - not needed for GPU compute
-                '--group-add', 'sudo'
+                "--group-add",
+                "sudo",
             ]
         else:
             # Single MIG/GPU: Use standard --gpus device=... syntax
             cuda_extras = [
-                '--gpus', num_gpus,
-                '-e', f'CUDA_VISIBLE_DEVICES={device_ids}',
+                "--gpus",
+                num_gpus,
+                "-e",
+                f"CUDA_VISIBLE_DEVICES={device_ids}",
                 # DS01: /dev/video0 removed - not needed for GPU compute
-                '--group-add', 'sudo'
+                "--group-add",
+                "sudo",
             ]
     else:
         # Non-device format (e.g., "all", "2", etc.)
         cuda_extras = [
-            '--gpus', num_gpus,
+            "--gpus",
+            num_gpus,
             # DS01: /dev/video0 removed - not needed for GPU compute
-            '--group-add', 'sudo'
+            "--group-add",
+            "sudo",
         ]
     # ========== END DS01 PATCH ==========
 
     rocm_extras = [
-        '--device', '/dev/kfd',
-        '--device', '/dev/dri',
-        '--cap-add', 'SYS_PTRACE',
-        '--security-opt', 'seccomp=unconfined',
-        '--shm-size', '8G',
-        '--group-add', 'sudo'
+        "--device",
+        "/dev/kfd",
+        "--device",
+        "/dev/dri",
+        "--cap-add",
+        "SYS_PTRACE",
+        "--security-opt",
+        "seccomp=unconfined",
+        "--shm-size",
+        "8G",
+        "--group-add",
+        "sudo",
     ]
-    
+
     # Shared bash command part
-    bash_lines = [
-    ]
-    
+    bash_lines = []
+
     # Add ROCm-specific line if needed
-    if 'ROCM' in architecture:
+    if "ROCM" in architecture:
         bash_lines.append("sudo chown root:video /dev/kfd; sudo chown -R root:video /dev/dri;")
-    
+
     bash_lines.append("bash")
-    
-    bash_command = ' '.join(bash_lines)
+
+    bash_command = " ".join(bash_lines)
 
     # Assemble full command
     # DS01 FIX: Determine which image to use based on skip_user_setup flag
@@ -1769,26 +1898,23 @@ def build_docker_create_command(
     else:
         # User was set up at runtime via docker run + docker commit
         # The committed image uses :latest tag for consistency with image-create
-        if ':' in selected_docker_image:
+        if ":" in selected_docker_image:
             # Custom image with explicit tag - strip existing tag, use :latest
-            base_image_name = selected_docker_image.split(':')[0]
-            image_with_tag = f'{base_image_name}:latest'
+            base_image_name = selected_docker_image.split(":")[0]
+            image_with_tag = f"{base_image_name}:latest"
         else:
             # AIME base image - append :latest
-            image_with_tag = f'{selected_docker_image}:latest'
+            image_with_tag = f"{selected_docker_image}:latest"
 
-    if 'CUDA' in architecture:
-        docker_cmd = base_docker_cmd + cuda_extras + [
-            image_with_tag, 'bash', '-c', bash_command
-        ]
-    elif 'ROCM' in architecture:
-        docker_cmd = base_docker_cmd + rocm_extras + [
-            image_with_tag, 'bash', '-c', bash_command
-        ]
+    if "CUDA" in architecture:
+        docker_cmd = base_docker_cmd + cuda_extras + [image_with_tag, "bash", "-c", bash_command]
+    elif "ROCM" in architecture:
+        docker_cmd = base_docker_cmd + rocm_extras + [image_with_tag, "bash", "-c", bash_command]
     else:
         raise ValueError(f"Unsupported architecture: {architecture}")
 
     return docker_cmd
+
 
 ###############################################################################################################################################################################################
 def validate_ds01_environment():
@@ -1819,8 +1945,11 @@ def validate_ds01_environment():
         print(f"{ERROR}ERROR: DS01 environment incomplete{RESET}", file=sys.stderr)
         for item in missing:
             print(f"  {ERROR}Missing: {item}{RESET}", file=sys.stderr)
-        print(f"\n{HINT}HINT: Run deploy.sh to set up DS01 infrastructure{RESET}\n", file=sys.stderr)
+        print(
+            f"\n{HINT}HINT: Run deploy.sh to set up DS01 infrastructure{RESET}\n", file=sys.stderr
+        )
         exit(1)
+
 
 ###############################################################################################################################################################################################
 def main():
@@ -1832,11 +1961,11 @@ def main():
         args = get_flags()
 
         if not args.command:
-            print(f"\nUse {INPUT}mlc -h{RESET} or {INPUT}mlc --help{RESET} to get more informations about the AIME MLC tool.\n")
+            print(
+                f"\nUse {INPUT}mlc -h{RESET} or {INPUT}mlc --help{RESET} to get more informations about the AIME MLC tool.\n"
+            )
 
-
-        if args.command == 'create':
-            
+        if args.command == "create":
             # Set the file with frameworks, versions, gpu architectures and images
             repo_name = "ml_images.repo"
 
@@ -1849,29 +1978,38 @@ def main():
             # Fallback to script directory if AIME submodule not found
             if not repo_file.exists():
                 repo_file = script_dir / repo_name
-            
-            #Get the existing gpu architecture    
+
+            # Get the existing gpu architecture
             architectures = sorted(get_gpu_architectures(repo_file))
-            
+
             # Get the MLC_ARCH environment variable:
-            mlc_repo_env_var = os.environ.get('MLC_ARCH')  
-            
-            cuda_or_rocm, host_gpu_architecture, host_gpu_driver_version = get_host_gpu_architecture()
-         
+            mlc_repo_env_var = os.environ.get("MLC_ARCH")
+
+            cuda_or_rocm, host_gpu_architecture, host_gpu_driver_version = (
+                get_host_gpu_architecture()
+            )
+
             # Set the gpu architecture based on a flag, an environment variable or the gpu architecture of the host (default value detected automatically)
             architecture = args.architecture or mlc_repo_env_var or host_gpu_architecture
-            available_host_gpu_architectures = [architecture for architecture in architectures if cuda_or_rocm in architecture]
+            available_host_gpu_architectures = [
+                architecture for architecture in architectures if cuda_or_rocm in architecture
+            ]
 
             # Check gpu architecture
             if args.script:
                 if architecture not in available_host_gpu_architectures:
-                    print(f"\n{ERROR}Unknown gpu architecture:{RESET} {INPUT}{architecture}{RESET} \n\n{INFO}Available gpu architectures:{RESET}\n{', '.join(available_host_gpu_architectures)}\n")
+                    print(
+                        f"\n{ERROR}Unknown gpu architecture:{RESET} {INPUT}{architecture}{RESET} \n\n{INFO}Available gpu architectures:{RESET}\n{', '.join(available_host_gpu_architectures)}\n"
+                    )
                     exit(1)
             else:
                 while architecture not in available_host_gpu_architectures:
                     print(f"\n{ERROR}Unknown gpu architecture:{RESET} {INPUT}{architecture}{RESET}")
                     display_gpu_architectures(available_host_gpu_architectures)
-                    architecture_number = get_user_selection(f"{REQUEST}Enter the number of the desired architecture: {RESET}", len(available_host_gpu_architectures))
+                    architecture_number = get_user_selection(
+                        f"{REQUEST}Enter the number of the desired architecture: {RESET}",
+                        len(available_host_gpu_architectures),
+                    )
                     architecture = available_host_gpu_architectures[architecture_number - 1]
 
             # ========== DS01 PATCH: Custom Image Bypass Logic ==========
@@ -1882,12 +2020,14 @@ def main():
                 # Validate custom image exists locally
                 try:
                     result = subprocess.run(
-                        ['docker', 'image', 'inspect', selected_docker_image],
+                        ["docker", "image", "inspect", selected_docker_image],
                         capture_output=True,
-                        text=True
+                        text=True,
                     )
                     if result.returncode != 0:
-                        print(f"\n{ERROR}Custom image not found:{RESET} {INPUT}{selected_docker_image}{RESET}")
+                        print(
+                            f"\n{ERROR}Custom image not found:{RESET} {INPUT}{selected_docker_image}{RESET}"
+                        )
                         print(f"{HINT}HINT: Build it first with: {INPUT}image-create{RESET}\n")
                         exit(1)
                 except Exception as e:
@@ -1899,10 +2039,14 @@ def main():
                 selected_version = args.version if args.version else "latest"
 
                 print(f"\n{INFO}Using custom image:{RESET} {INPUT}{selected_docker_image}{RESET}")
-                print(f"{NEUTRAL}Framework: {selected_framework}, Version: {selected_version}{RESET}\n")
+                print(
+                    f"{NEUTRAL}Framework: {selected_framework}, Version: {selected_version}{RESET}\n"
+                )
 
                 # List existing containers
-                available_user_containers, available_user_container_tags = existing_user_containers(user_name, args.command)
+                available_user_containers, available_user_container_tags = existing_user_containers(
+                    user_name, args.command
+                )
 
                 # Get container name
                 validated_container_name, validated_container_tag = get_container_name(
@@ -1923,11 +2067,19 @@ def main():
 
                 # Check if the user requests more info about available gpu architecture, framework and version
                 if args.info:
-                    print(f"\n{INFO}Available gpu architectures ({INPUT}currently used{RESET}{INFO}):{RESET}\n" + ', '.join(f"{INPUT}{arch}{RESET}" if arch == architecture else arch for arch in available_host_gpu_architectures))
+                    print(
+                        f"\n{INFO}Available gpu architectures ({INPUT}currently used{RESET}{INFO}):{RESET}\n"
+                        + ", ".join(
+                            f"{INPUT}{arch}{RESET}" if arch == architecture else arch
+                            for arch in available_host_gpu_architectures
+                        )
+                    )
                     show_frameworks_versions(framework_version_docker_sorted)
 
                 # List existing containers/container_tags of the current user
-                available_user_containers, available_user_container_tags = existing_user_containers(user_name, args.command)
+                available_user_containers, available_user_container_tags = existing_user_containers(
+                    user_name, args.command
+                )
 
                 # Set the variables to know if the workspace, data and models directories should be asked
                 workspace_dir_be_asked = data_dir_be_asked = models_dir_be_asked = False
@@ -1939,7 +2091,9 @@ def main():
 
                 if args.script:
                     # Set the container name and its validation
-                    validated_container_name, validated_container_tag = get_container_name(args.container_name, user_name, args.command, args.script)
+                    validated_container_name, validated_container_tag = get_container_name(
+                        args.container_name, user_name, args.command, args.script
+                    )
 
                     # Set the framework:
                     if args.framework is None:
@@ -1947,7 +2101,9 @@ def main():
                         exit(1)
                     else:
                         if not framework_version_docker_sorted.get(args.framework):
-                            print(f"\n{ERROR}Unknown framework:{RESET} {INPUT}{args.framework}{RESET}\n\n{REQUEST}Available AI frameworks:{RESET}\n{', '.join(framework_version_docker_sorted.keys())}\n")
+                            print(
+                                f"\n{ERROR}Unknown framework:{RESET} {INPUT}{args.framework}{RESET}\n\n{REQUEST}Available AI frameworks:{RESET}\n{', '.join(framework_version_docker_sorted.keys())}\n"
+                            )
                             exit(1)
                         else:
                             selected_framework = args.framework
@@ -1964,7 +2120,9 @@ def main():
                             selected_docker_image = get_docker_image(args.version, version_images)
                             selected_version = args.version
                         else:
-                            print(f"\n{ERROR}Version is not available:{RESET} {INPUT}{args.version}{RESET}\n")
+                            print(
+                                f"\n{ERROR}Version is not available:{RESET} {INPUT}{args.version}{RESET}\n"
+                            )
                             exit(1)
                 else:
                     if args.framework is None:
@@ -1973,7 +2131,9 @@ def main():
                     else:
                         while True:
                             if not framework_version_docker_sorted.get(args.framework):
-                                print(f"\n{ERROR}Unknown framework:{RESET} {INPUT}{args.framework}{RESET}")
+                                print(
+                                    f"\n{ERROR}Unknown framework:{RESET} {INPUT}{args.framework}{RESET}"
+                                )
                                 args.framework = set_framework(framework_version_docker_sorted)
                             else:
                                 break
@@ -1983,33 +2143,42 @@ def main():
                     version_images = framework_version_docker_sorted[selected_framework]
 
                     if args.version is None:
-                        #print(f"\n{ERROR}Version is needed.{RESET}")
+                        # print(f"\n{ERROR}Version is needed.{RESET}")
                         while args.version is None:
-                            args.version, selected_docker_image = set_version(selected_framework, version_images)
+                            args.version, selected_docker_image = set_version(
+                                selected_framework, version_images
+                            )
                     else:
                         available_versions = [version[0] for version in version_images]
                         while True:
                             if args.version in available_versions:
-                                selected_docker_image = get_docker_image(args.version, version_images)
+                                selected_docker_image = get_docker_image(
+                                    args.version, version_images
+                                )
                                 break
                             else:
-                                print(f"\n{ERROR}Version is not available:{RESET} {INPUT}{args.version}{RESET}")
-                                args.version, selected_docker_image = set_version(selected_framework, version_images)
+                                print(
+                                    f"\n{ERROR}Version is not available:{RESET} {INPUT}{args.version}{RESET}"
+                                )
+                                args.version, selected_docker_image = set_version(
+                                    selected_framework, version_images
+                                )
                     selected_version = args.version
 
                     # Set the container name and its validation
-                    validated_container_name, validated_container_tag = get_container_name(args.container_name, user_name, args.command, args.script)
+                    validated_container_name, validated_container_tag = get_container_name(
+                        args.container_name, user_name, args.command, args.script
+                    )
 
             # ========== END DS01 PATCH: Both paths converge here ==========
-            
+
             # Select Workspace directory:
-            default_workspace_dir = os.path.expanduser('~/workspace') 
+            default_workspace_dir = os.path.expanduser("~/workspace")
             workspace_dir_updated = False
-          
+
             # If the -w option is provided, check the user-provided path
             if args.workspace_dir:
-                
-                provided_workspace_dir = os.path.expanduser(args.workspace_dir)                                  
+                provided_workspace_dir = os.path.expanduser(args.workspace_dir)
                 while True:
                     # Check if the provided workspace directory exists:
                     if os.path.isdir(provided_workspace_dir):
@@ -2017,18 +2186,26 @@ def main():
                     else:
                         if args.script:
                             workspace_dir = default_workspace_dir
-                            print(f"\n{ERROR}Workspace directory does not exist:{RESET} {INPUT}{provided_workspace_dir}{RESET}\n")
+                            print(
+                                f"\n{ERROR}Workspace directory does not exist:{RESET} {INPUT}{provided_workspace_dir}{RESET}\n"
+                            )
                             exit(0)
-                        print(f"\n{ERROR}Workspace directory does not exist:{RESET} {INPUT}{provided_workspace_dir}{RESET}")
-                        provided_workspace_dir = os.path.expanduser(input(f"\n{REQUEST}Provide the new location of the WORKSPACE directory: {RESET}").strip())
+                        print(
+                            f"\n{ERROR}Workspace directory does not exist:{RESET} {INPUT}{provided_workspace_dir}{RESET}"
+                        )
+                        provided_workspace_dir = os.path.expanduser(
+                            input(
+                                f"\n{REQUEST}Provide the new location of the WORKSPACE directory: {RESET}"
+                            ).strip()
+                        )
                 workspace_dir = provided_workspace_dir
                 workspace_dir_updated = True
                 workspace_dir_be_asked = False
-                
+
             else:
                 workspace_dir = default_workspace_dir
-            
-            if not args.script:         
+
+            if not args.script:
                 if workspace_dir_be_asked:
                     workspace_message = (
                         f"\n{NEUTRAL}The workspace directory would be mounted by default as /workspace in the container.{RESET}"
@@ -2036,37 +2213,48 @@ def main():
                         f"\n{HINT}HINT: It can be set to an existing directory with the option '-w /your_workspace'{RESET}"
                     )
                     print(f"{workspace_message}")
-                    
+
                     # Define a variable to control breaking out of both loops
                     break_inner_loop = False
-                    
-                    while True:
-                        
-                        keep_workspace_dir = input(f"\n{REQUEST}Current workspace location:{default_workspace_dir}. Keep it (Y/n)?: {RESET}").strip().lower()
 
-                        if keep_workspace_dir in ["y","yes",""]:
+                    while True:
+                        keep_workspace_dir = (
+                            input(
+                                f"\n{REQUEST}Current workspace location:{default_workspace_dir}. Keep it (Y/n)?: {RESET}"
+                            )
+                            .strip()
+                            .lower()
+                        )
+
+                        if keep_workspace_dir in ["y", "yes", ""]:
                             workspace_dir = default_workspace_dir
                             break
-                        elif keep_workspace_dir in ["n","no"]:
+                        elif keep_workspace_dir in ["n", "no"]:
                             while True:
-                                provided_workspace_dir = os.path.expanduser(input(f"\n{REQUEST}Provide the new location of the WORKSPACE directory: {RESET}").strip())  # Expand '~' to full path
+                                provided_workspace_dir = os.path.expanduser(
+                                    input(
+                                        f"\n{REQUEST}Provide the new location of the WORKSPACE directory: {RESET}"
+                                    ).strip()
+                                )  # Expand '~' to full path
                                 # Check if the provided workspace directory exist:
                                 if os.path.isdir(provided_workspace_dir):
                                     workspace_dir = provided_workspace_dir
                                     break_inner_loop = True
                                     break
                                 else:
-                                    print(f"\n{ERROR}Workspace directory does not exist:{RESET} {INPUT}{provided_workspace_dir}{RESET}") 
+                                    print(
+                                        f"\n{ERROR}Workspace directory does not exist:{RESET} {INPUT}{provided_workspace_dir}{RESET}"
+                                    )
                             if break_inner_loop:
-                                break                           
+                                break
                         else:
                             print(f"{ERROR}\nInvalid input. Please use y(yes) or n(no).{RESET}")
 
                 else:
                     if not workspace_dir_updated:
-                        workspace_dir = default_workspace_dir    
-               
-            # Select Data directory:     
+                        workspace_dir = default_workspace_dir
+
+            # Select Data directory:
             default_data_dir = "-"
             data_dir_updated = False
 
@@ -2079,17 +2267,25 @@ def main():
                         break
                     else:
                         if args.script:
-                            print(f"\n{ERROR}Data directory does not exist:{RESET} {INPUT}{provided_data_dir}{RESET}\n")
+                            print(
+                                f"\n{ERROR}Data directory does not exist:{RESET} {INPUT}{provided_data_dir}{RESET}\n"
+                            )
                             exit(0)
-                        print(f"\n{ERROR}Data directory does not exist:{RESET} {INPUT}{provided_data_dir}{RESET}")
-                        provided_data_dir = os.path.expanduser(input(f"\n{REQUEST}Provide the new location of the DATA directory: {RESET}").strip())
+                        print(
+                            f"\n{ERROR}Data directory does not exist:{RESET} {INPUT}{provided_data_dir}{RESET}"
+                        )
+                        provided_data_dir = os.path.expanduser(
+                            input(
+                                f"\n{REQUEST}Provide the new location of the DATA directory: {RESET}"
+                            ).strip()
+                        )
                 data_dir = provided_data_dir
                 data_dir_updated = True
                 data_dir_be_asked = False
             else:
-                data_dir = default_data_dir                            
-            
-            if not args.script:  
+                data_dir = default_data_dir
+
+            if not args.script:
                 if data_dir_be_asked:
                     data_message = (
                         f"\n{NEUTRAL}The data directory would be mounted as /data in the container.{RESET}"
@@ -2100,31 +2296,43 @@ def main():
 
                     # Define a variable to control breaking out of both loops
                     break_inner_loop = False
-                    while True:                    
-                        provide_data_dir = input(f"\n{REQUEST}Do you want to provide a DATA directory (y/N)?: {RESET}").strip().lower()
+                    while True:
+                        provide_data_dir = (
+                            input(
+                                f"\n{REQUEST}Do you want to provide a DATA directory (y/N)?: {RESET}"
+                            )
+                            .strip()
+                            .lower()
+                        )
 
-                        if provide_data_dir in ["n","no", ""]:
+                        if provide_data_dir in ["n", "no", ""]:
                             break
-                        elif provide_data_dir in ["y","yes"]:
+                        elif provide_data_dir in ["y", "yes"]:
                             while True:
-                                provided_data_dir = os.path.expanduser(input(f"\n{REQUEST}Provide the new location of the DATA directory: {RESET}").strip())  # Expand '~' to full path
+                                provided_data_dir = os.path.expanduser(
+                                    input(
+                                        f"\n{REQUEST}Provide the new location of the DATA directory: {RESET}"
+                                    ).strip()
+                                )  # Expand '~' to full path
                                 # Check if the provided data directory exists:
                                 if os.path.isdir(provided_data_dir):
                                     data_dir = provided_data_dir
                                     break_inner_loop = True
                                     break
                                 else:
-                                    print(f"\n{ERROR}Provided directory does not exist:{RESET} {INPUT}{provided_data_dir}{RESET}") 
+                                    print(
+                                        f"\n{ERROR}Provided directory does not exist:{RESET} {INPUT}{provided_data_dir}{RESET}"
+                                    )
                             if break_inner_loop:
-                                break                           
+                                break
                         else:
                             print(f"{ERROR}\nInvalid input. Please use y(yes) or n(no).{RESET}")
-                            
+
                 else:
                     if not data_dir_updated:
-                        data_dir = default_data_dir  
+                        data_dir = default_data_dir
 
-            # Select Models directory:     
+            # Select Models directory:
             default_models_dir = "-"
             models_dir_updated = False
 
@@ -2137,17 +2345,25 @@ def main():
                         break
                     else:
                         if args.script:
-                            print(f"\n{ERROR}Models directory does not exist:{RESET} {INPUT}{provided_models_dir}{RESET}\n")
+                            print(
+                                f"\n{ERROR}Models directory does not exist:{RESET} {INPUT}{provided_models_dir}{RESET}\n"
+                            )
                             exit(0)
-                        print(f"\n{ERROR}Models directory does not exist:{RESET} {INPUT}{provided_models_dir}{RESET}")
-                        provided_models_dir = os.path.expanduser(input(f"\n{REQUEST}Provide the new location of the MODELS directory: {RESET}").strip())
+                        print(
+                            f"\n{ERROR}Models directory does not exist:{RESET} {INPUT}{provided_models_dir}{RESET}"
+                        )
+                        provided_models_dir = os.path.expanduser(
+                            input(
+                                f"\n{REQUEST}Provide the new location of the MODELS directory: {RESET}"
+                            ).strip()
+                        )
                 models_dir = provided_models_dir
                 models_dir_updated = True
                 models_dir_be_asked = False
             else:
-                models_dir = default_models_dir                            
-              
-            if not args.script:                    
+                models_dir = default_models_dir
+
+            if not args.script:
                 if models_dir_be_asked:
                     models_message = (
                         f"\n{NEUTRAL}The models directory would be mounted as /models in the container.{RESET}"
@@ -2159,33 +2375,44 @@ def main():
                     # Define a variable to control breaking out of both loops
                     break_inner_loop = False
                     while True:
-                        
-                        provide_models_dir = input(f"\n{REQUEST}Do you want to provide a MODELS directory (y/N)?: {RESET}").strip().lower()
+                        provide_models_dir = (
+                            input(
+                                f"\n{REQUEST}Do you want to provide a MODELS directory (y/N)?: {RESET}"
+                            )
+                            .strip()
+                            .lower()
+                        )
 
-                        if provide_models_dir in ["n","no", ""]:
+                        if provide_models_dir in ["n", "no", ""]:
                             break
-                        elif provide_models_dir in ["y","yes"]:
+                        elif provide_models_dir in ["y", "yes"]:
                             while True:
-                                provided_models_dir = os.path.expanduser(input(f"\n{REQUEST}Provide the new location of the MODELS directory: {RESET}").strip())  # Expand '~' to full path
+                                provided_models_dir = os.path.expanduser(
+                                    input(
+                                        f"\n{REQUEST}Provide the new location of the MODELS directory: {RESET}"
+                                    ).strip()
+                                )  # Expand '~' to full path
                                 # Check if the provided models directory exists:
                                 if os.path.isdir(provided_models_dir):
                                     models_dir = provided_models_dir
                                     break_inner_loop = True
                                     break
                                 else:
-                                    print(f"\n{ERROR}Provided directory does not exist:{RESET} {INPUT}{provided_models_dir}{RESET}") 
+                                    print(
+                                        f"\n{ERROR}Provided directory does not exist:{RESET} {INPUT}{provided_models_dir}{RESET}"
+                                    )
                             if break_inner_loop:
-                                break                           
+                                break
                         else:
                             print(f"{ERROR}\nInvalid input. Please use y(yes) or n(no).{RESET}")
-                            
+
                 else:
                     if not models_dir_updated:
-                        models_dir = default_models_dir  
-          
-            # Print a setup summary 
+                        models_dir = default_models_dir
+
+            # Print a setup summary
             set_up_summary = (
-                f"\n{INFO_HEADER}{'_'*50}{RESET}"   
+                f"\n{INFO_HEADER}{'_' * 50}{RESET}"
                 f"\n{INFO_HEADER}Summary of the selected setup:{RESET}"
                 f"\nGPU architecture: {INPUT}{architecture}{RESET} (host: {host_gpu_architecture}-{host_gpu_driver_version})"
                 f"\nContainer name: {INPUT}{validated_container_name}{RESET}"
@@ -2193,25 +2420,28 @@ def main():
                 f"\nWorkspace directory: {INPUT}{workspace_dir}{RESET}"
                 f"\nData directory: {INPUT}{data_dir}{RESET}"
                 f"\nModels directory: {INPUT}{models_dir}{RESET}"
-                f"\n{INFO_HEADER}{'_'*50}{RESET}"                 
+                f"\n{INFO_HEADER}{'_' * 50}{RESET}"
             )
-            
+
             print(f"{set_up_summary}")
-           
+
             # Confirm the user's inputs:
             are_you_sure(validated_container_name, args.command, args.script)
-            
+
             # Generate a unique container tag
             container_tag = validated_container_tag
-                       
+
             # Check if a container with the generated tag already exists
             if container_tag == check_container_exists(container_tag):
-                print(f"\n{ERROR}Error:{RESET} \n {INPUT}[{validated_container_name}]{RESET} already exists.{RESET}")
+                print(
+                    f"\n{ERROR}Error:{RESET} \n {INPUT}[{validated_container_name}]{RESET} already exists.{RESET}"
+                )
                 show_container_info()
                 exit(0)
             else:
-                print(f"\n{NEUTRAL}The container will be created:{RESET} {INPUT}{validated_container_name}{RESET} ")
-
+                print(
+                    f"\n{NEUTRAL}The container will be created:{RESET} {INPUT}{validated_container_name}{RESET} "
+                )
 
             # Pull the required image from aime-hub (or verify custom image exists locally)
             # DS01 PATCH: For custom images (--image flag), check local first
@@ -2219,59 +2449,79 @@ def main():
             skip_user_setup = False
             if args.image:
                 # Custom image - verify it exists locally before attempting pull
-                result = subprocess.run(['docker', 'images', '-q', selected_docker_image],
-                                      capture_output=True, text=True)
+                result = subprocess.run(
+                    ["docker", "images", "-q", selected_docker_image],
+                    capture_output=True,
+                    text=True,
+                )
                 if result.stdout.strip():
                     # Image exists locally, use it
-                    print(f"\n{NEUTRAL}Using local custom image:{RESET} {INPUT}{selected_docker_image}{RESET}")
+                    print(
+                        f"\n{NEUTRAL}Using local custom image:{RESET} {INPUT}{selected_docker_image}{RESET}"
+                    )
                     print(f"{HINT}(Custom images are built FROM AIME base images){RESET}\n")
 
                     # DS01 OPTIMIZATION: Check for user setup label (supports both old and new namespace)
                     try:
                         inspect_cmd = subprocess.run(
-                            ['docker', 'inspect', '--format',
-                             '{{index .Config.Labels "ds01.has_user_setup"}}|'
-                             '{{index .Config.Labels "ds01.user_id"}}|'
-                             '{{index .Config.Labels "ds01.group_id"}}|'
-                             '{{index .Config.Labels "aime.mlc.DS01_HAS_USER_SETUP"}}|'
-                             '{{index .Config.Labels "aime.mlc.DS01_USER_ID"}}|'
-                             '{{index .Config.Labels "aime.mlc.DS01_GROUP_ID"}}',
-                             selected_docker_image],
-                            capture_output=True, text=True
+                            [
+                                "docker",
+                                "inspect",
+                                "--format",
+                                '{{index .Config.Labels "ds01.has_user_setup"}}|'
+                                '{{index .Config.Labels "ds01.user_id"}}|'
+                                '{{index .Config.Labels "ds01.group_id"}}|'
+                                '{{index .Config.Labels "aime.mlc.DS01_HAS_USER_SETUP"}}|'
+                                '{{index .Config.Labels "aime.mlc.DS01_USER_ID"}}|'
+                                '{{index .Config.Labels "aime.mlc.DS01_GROUP_ID"}}',
+                                selected_docker_image,
+                            ],
+                            capture_output=True,
+                            text=True,
                         )
                         if inspect_cmd.returncode == 0:
-                            parts = inspect_cmd.stdout.strip().split('|')
+                            parts = inspect_cmd.stdout.strip().split("|")
                             if len(parts) == 6:
                                 new_setup, new_uid, new_gid, old_setup, old_uid, old_gid = parts
                                 # Use new labels if present, fall back to old
-                                has_setup = new_setup if new_setup not in ('', '<no value>') else old_setup
-                                img_uid = new_uid if new_uid not in ('', '<no value>') else old_uid
-                                img_gid = new_gid if new_gid not in ('', '<no value>') else old_gid
+                                has_setup = (
+                                    new_setup if new_setup not in ("", "<no value>") else old_setup
+                                )
+                                img_uid = new_uid if new_uid not in ("", "<no value>") else old_uid
+                                img_gid = new_gid if new_gid not in ("", "<no value>") else old_gid
                                 # Only skip if user setup exists AND UID/GID match current user
-                                if (has_setup == 'true' and
-                                    img_uid == str(user_id) and
-                                    img_gid == str(group_id)):
+                                if (
+                                    has_setup == "true"
+                                    and img_uid == str(user_id)
+                                    and img_gid == str(group_id)
+                                ):
                                     skip_user_setup = True
-                                    print(f"{NEUTRAL}Image has pre-configured user (UID={user_id}, GID={group_id}), skipping setup...{RESET}")
-                                elif has_setup == 'true':
-                                    print(f"{WARNING}Image has user setup but UID/GID mismatch (image: {img_uid}/{img_gid}, current: {user_id}/{group_id}){RESET}")
+                                    print(
+                                        f"{NEUTRAL}Image has pre-configured user (UID={user_id}, GID={group_id}), skipping setup...{RESET}"
+                                    )
+                                elif has_setup == "true":
+                                    print(
+                                        f"{WARNING}Image has user setup but UID/GID mismatch (image: {img_uid}/{img_gid}, current: {user_id}/{group_id}){RESET}"
+                                    )
                                     print(f"{WARNING}Will run full user setup...{RESET}")
                     except Exception as e:
                         print(f"{HINT}Could not check image labels: {e}{RESET}")
                         pass  # Fall back to normal flow
                 else:
                     # Image doesn't exist locally, try to pull (might be on Docker Hub)
-                    print(f"\n{NEUTRAL}Custom image not found locally, attempting to pull...{RESET}\n")
-                    docker_command_pull_image = ['docker', 'pull', selected_docker_image]
+                    print(
+                        f"\n{NEUTRAL}Custom image not found locally, attempting to pull...{RESET}\n"
+                    )
+                    docker_command_pull_image = ["docker", "pull", selected_docker_image]
                     run_docker_pull_image(docker_command_pull_image)
             else:
                 # Standard AIME catalog image - always pull to get latest
                 print(f"\n{NEUTRAL}Acquiring container image ... {RESET}\n")
-                docker_command_pull_image = ['docker', 'pull', selected_docker_image]
-                run_docker_pull_image(docker_command_pull_image)     
-        
+                docker_command_pull_image = ["docker", "pull", selected_docker_image]
+                run_docker_pull_image(docker_command_pull_image)
+
             print(f"\n{NEUTRAL}Setting up container ... {RESET}")
-                         
+
             container_label = "ds01"
             workspace = "/workspace"
             data = "/data"
@@ -2280,7 +2530,7 @@ def main():
             # LDAP usernames like "h.baker@hertie-school.lan" get sanitized to "h-baker-at-hertie-school-lan"
             # The home directory inside container uses the sanitized name
             container_username_for_path = sanitize_username_for_container(user_name)
-            dir_to_be_added = f'/home/{container_username_for_path}/.local/bin'
+            dir_to_be_added = f"/home/{container_username_for_path}/.local/bin"
 
             # DS01 OPTIMIZATION: Skip user setup if image already has it configured
             if not skip_user_setup:
@@ -2296,33 +2546,39 @@ def main():
                     user_name,
                     user_id,
                     group_id,
-                    dir_to_be_added
+                    dir_to_be_added,
                 )
 
                 # DS01 PATCH: Bypass docker-wrapper for internal setup container
                 # This temp container runs user setup (adduser, etc.) and is removed immediately.
                 # Without bypass, the wrapper detects --gpus and tries to allocate a second GPU.
-                setup_env = {**os.environ, 'DS01_WRAPPER_BYPASS': '1'}
-                result_run_cmd = subprocess.run(docker_prepare_container, capture_output=True, text=True, env=setup_env)
+                setup_env = {**os.environ, "DS01_WRAPPER_BYPASS": "1"}
+                result_run_cmd = subprocess.run(
+                    docker_prepare_container, capture_output=True, text=True, env=setup_env
+                )
 
                 # DS01: Print user setup result for debugging
-                if 'User setup: FAILED' in result_run_cmd.stdout:
+                if "User setup: FAILED" in result_run_cmd.stdout:
                     print(f"{WARNING}Warning: User/group setup may have failed{RESET}")
                     # Extract and print debug lines
-                    for line in result_run_cmd.stdout.split('\n'):
-                        if 'DS01 DEBUG' in line or 'User setup' in line or 'NOT FOUND' in line:
+                    for line in result_run_cmd.stdout.split("\n"):
+                        if "DS01 DEBUG" in line or "User setup" in line or "NOT FOUND" in line:
                             print(f"{HINT}  {line}{RESET}")
-                elif 'User setup: OK' in result_run_cmd.stdout:
+                elif "User setup: OK" in result_run_cmd.stdout:
                     pass  # Silently succeed
                 else:
-                    print(f"{WARNING}Warning: Could not verify user setup - no confirmation in output{RESET}")
+                    print(
+                        f"{WARNING}Warning: Could not verify user setup - no confirmation in output{RESET}"
+                    )
                     # Print any relevant lines for debugging
-                    for line in result_run_cmd.stdout.split('\n'):
-                        if 'DS01 DEBUG' in line or 'error' in line.lower():
+                    for line in result_run_cmd.stdout.split("\n"):
+                        if "DS01 DEBUG" in line or "error" in line.lower():
                             print(f"{HINT}  {line}{RESET}")
 
                 if result_run_cmd.returncode != 0:
-                    print(f"{WARNING}Warning: Container prep returned code {result_run_cmd.returncode}{RESET}")
+                    print(
+                        f"{WARNING}Warning: Container prep returned code {result_run_cmd.returncode}{RESET}"
+                    )
                     if result_run_cmd.stderr:
                         print(f"{HINT}stderr: {result_run_cmd.stderr[-300:]}{RESET}")
 
@@ -2331,15 +2587,13 @@ def main():
                 # Commit the container: saves the current state of the container as a new image.
                 # DS01 FIX: Use :latest tag for consistency with image-create
                 # This ensures all DS01 images use the same tagging convention
-                if ':' in selected_docker_image:
-                    base_image_name = selected_docker_image.split(':')[0]
+                if ":" in selected_docker_image:
+                    base_image_name = selected_docker_image.split(":")[0]
                 else:
                     base_image_name = selected_docker_image
-                committed_image = f'{base_image_name}:latest'
+                committed_image = f"{base_image_name}:latest"
 
-                bash_command_commit = [
-                    'docker', 'commit', container_tag, committed_image
-                ]
+                bash_command_commit = ["docker", "commit", container_tag, committed_image]
                 result_commit = subprocess.run(bash_command_commit, capture_output=True, text=True)
 
                 # DS01 FIX: Check if commit succeeded
@@ -2351,40 +2605,45 @@ def main():
                     sys.exit(1)
                 else:
                     # Verify the committed image exists
-                    verify_result = subprocess.run(['docker', 'image', 'inspect', committed_image],
-                                                  capture_output=True, text=True)
+                    verify_result = subprocess.run(
+                        ["docker", "image", "inspect", committed_image],
+                        capture_output=True,
+                        text=True,
+                    )
                     if verify_result.returncode != 0:
                         print(f"{ERROR}Committed image not found: {committed_image}{RESET}")
                         sys.exit(1)
 
                 # Remove the container: cleans up the initial container to free up ressources.
                 # ToDo: compare subprocess.Popen with subprocess.run
-                result_remove = subprocess.run(['docker', 'rm', container_tag], capture_output=True, text=True)
+                result_remove = subprocess.run(
+                    ["docker", "rm", container_tag], capture_output=True, text=True
+                )
             else:
                 # DS01 OPTIMIZATION: For pre-configured images, use the original image directly
                 committed_image = selected_docker_image
                 print(f"{NEUTRAL}Skipping docker commit (user pre-configured in image){RESET}")
-            
+
             # Add the workspace volume
-            volumes = ['-v', f'{workspace_dir}:{workspace}'] 
-            
+            volumes = ["-v", f"{workspace_dir}:{workspace}"]
+
             # Add the data volume mapping if data_dir is set
             if data_dir != default_data_dir:
-                volumes +=  ['-v', f'{data_dir}:{data}']
-                
+                volumes += ["-v", f"{data_dir}:{data}"]
+
             # Add the models volume mapping if models_dir is set
             if models_dir != default_models_dir:
-                volumes +=  ['-v', f'{models_dir}:{models}']
+                volumes += ["-v", f"{models_dir}:{models}"]
 
             # DS01: Mount container aliases for consistent shell environment
-            alias_file = '/opt/ds01-infra/config/container-aliases.sh'
+            alias_file = "/opt/ds01-infra/config/container-aliases.sh"
             if os.path.exists(alias_file):
-                volumes += ['-v', f'{alias_file}:/etc/ds01/container-aliases.sh:ro']
+                volumes += ["-v", f"{alias_file}:/etc/ds01/container-aliases.sh:ro"]
 
             # DS01: Mount profile.d script to auto-source aliases on shell startup
-            profile_file = '/opt/ds01-infra/config/ds01-profile.sh'
+            profile_file = "/opt/ds01-infra/config/ds01-profile.sh"
             if os.path.exists(profile_file):
-                volumes += ['-v', f'{profile_file}:/etc/profile.d/ds01.sh:ro']
+                volumes += ["-v", f"{profile_file}:/etc/profile.d/ds01.sh:ro"]
 
             docker_create_cmd = build_docker_create_command(
                 user_name,
@@ -2405,13 +2664,13 @@ def main():
                 dir_to_be_added,
                 args.num_gpus,
                 volumes,
-                shm_size=getattr(args, 'shm_size', None),           # DS01 PATCH
-                cgroup_parent=getattr(args, 'cgroup_parent', None), # DS01 PATCH
-                ds01_labels=getattr(args, 'ds01_labels', []),       # DS01 PATCH
-                skip_user_setup=skip_user_setup                     # DS01 PATCH: Use original image if pre-configured
+                shm_size=getattr(args, "shm_size", None),  # DS01 PATCH
+                cgroup_parent=getattr(args, "cgroup_parent", None),  # DS01 PATCH
+                ds01_labels=getattr(args, "ds01_labels", []),  # DS01 PATCH
+                skip_user_setup=skip_user_setup,  # DS01 PATCH: Use original image if pre-configured
             )
 
-            result_create_cmd = subprocess.run(docker_create_cmd, capture_output= True, text=True)
+            result_create_cmd = subprocess.run(docker_create_cmd, capture_output=True, text=True)
 
             # DS01 PATCH: Check if container creation succeeded
             if result_create_cmd.returncode != 0:
@@ -2422,472 +2681,641 @@ def main():
                     print(result_create_cmd.stdout)
                 sys.exit(1)
 
-            print(f"\n{INPUT}[{validated_container_name}]{RESET} ready.{INFO}\n\nOpen the container with:{RESET}\nmlc open {INPUT}{validated_container_name}{RESET}\n")
+            print(
+                f"\n{INPUT}[{validated_container_name}]{RESET} ready.{INFO}\n\nOpen the container with:{RESET}\nmlc open {INPUT}{validated_container_name}{RESET}\n"
+            )
 
-                     
-        if args.command == 'list':
- 
-            show_container_info(**vars(args))                    
+        if args.command == "list":
+            show_container_info(**vars(args))
 
-            
-        if args.command == 'open':           
-            
+        if args.command == "open":
             # List existing containers of the current user
-            available_user_containers, available_user_container_tags = existing_user_containers(user_name, args.command)
-            
-            if args.container_name:                
-                if args.container_name not in available_user_containers:                    
-                    if args.script:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}\n")
-                        exit(1)                        
-                    else:                                                
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}")
+            available_user_containers, available_user_container_tags = existing_user_containers(
+                user_name, args.command
+            )
+
+            if args.container_name:
+                if args.container_name not in available_user_containers:
+                    if args.script:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}\n"
+                        )
+                        exit(1)
+                    else:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}"
+                        )
                         print(f"\n{INFO}Available containers of the current user:{RESET}")
-                        selected_container_name, selected_container_position = select_container_to_be_ed(available_user_containers)                                          
-                else:                    
+                        selected_container_name, selected_container_position = (
+                            select_container_to_be_ed(available_user_containers)
+                        )
+                else:
                     selected_container_name = args.container_name
-                    selected_container_position = available_user_containers.index(args.container_name) + 1
-                    print(f'\n{INPUT}[{args.container_name}]{RESET}{NEUTRAL} exists and will be opened.{RESET}')     
-                                  
-            else:              
-                if args.script:                
+                    selected_container_position = (
+                        available_user_containers.index(args.container_name) + 1
+                    )
+                    print(
+                        f"\n{INPUT}[{args.container_name}]{RESET}{NEUTRAL} exists and will be opened.{RESET}"
+                    )
+
+            else:
+                if args.script:
                     print(f"{ERROR}Container name is missing.{RESET}")
-                    print_info_header(args.command) 
-                    exit(1)                
-                else:                                      
+                    print_info_header(args.command)
+                    exit(1)
+                else:
                     print_info_header(args.command)
                     print(f"\n{INFO}Available containers of the current user:{RESET}")
-                    selected_container_name, selected_container_position = select_container_to_be_ed(available_user_containers) 
-                              
+                    selected_container_name, selected_container_position = (
+                        select_container_to_be_ed(available_user_containers)
+                    )
+
             # Obtain container_tag from the selected container name
-            selected_container_tag = available_user_container_tags[selected_container_position-1]
-            
+            selected_container_tag = available_user_container_tags[selected_container_position - 1]
+
             # Start the existing selected container:
-            if selected_container_tag != check_container_running(selected_container_tag):                
-                print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}starting container...{RESET}")
+            if selected_container_tag != check_container_running(selected_container_tag):
+                print(
+                    f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}starting container...{RESET}"
+                )
                 docker_command = f"docker container start {selected_container_tag}"
-                _, _, _ = run_docker_command(docker_command)                
-            else:                
-                print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container already running.{RESET}")
-                
-            print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}opening shell to container...{RESET}")
-                             
+                _, _, _ = run_docker_command(docker_command)
+            else:
+                print(
+                    f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container already running.{RESET}"
+                )
+
+            print(
+                f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}opening shell to container...{RESET}"
+            )
+
             # Set environment variables to pass to the Docker container
             set_env = f"-e DISPLAY={os.environ.get('DISPLAY')}"
-            
+
             # If the NCCL_P2P_LEVEL environment variable is set, include it in the environment settings
-            if 'NCCL_P2P_LEVEL' in os.environ:
-                set_env += f" -e NCCL_P2P_LEVEL={os.environ.get('NCCL_P2P_LEVEL')}"   
+            if "NCCL_P2P_LEVEL" in os.environ:
+                set_env += f" -e NCCL_P2P_LEVEL={os.environ.get('NCCL_P2P_LEVEL')}"
 
             # Open an interactive shell session in the running container as the current user
-            docker_command_open_shell=[
-                "docker", "exec", 
-                "-it",                                  
-                set_env,  
-                "--user", f"{user_id}:{group_id}", f"{selected_container_tag}",                   
-                "bash"  
+            docker_command_open_shell = [
+                "docker",
+                "exec",
+                "-it",
+                set_env,
+                "--user",
+                f"{user_id}:{group_id}",
+                f"{selected_container_tag}",
+                "bash",
             ]
-            
-            #ToDo: capture possible errors and treat them
+
+            # ToDo: capture possible errors and treat them
             error_mesage, exit_code = run_docker_command_popen(docker_command_open_shell)
-            
-            if exit_code == 1:                
-                print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}detached from container, container keeps running.{RESET}")                
-            elif exit_code == 0:                
-                print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container shell closed successfully..{RESET}")  
-            
-            # Check the status of the opened container     
+
+            if exit_code == 1:
+                print(
+                    f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}detached from container, container keeps running.{RESET}"
+                )
+            elif exit_code == 0:
+                print(
+                    f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container shell closed successfully..{RESET}"
+                )
+
+            # Check the status of the opened container
             active_status = is_container_active(selected_container_tag)
 
-            if active_status == "True":                
-                print(f"\n{INPUT}[{selected_container_name}]{RESET}{NEUTRAL} container is active, kept running.{RESET}")                
-            else:                
-                print(f"\n{INPUT}[{selected_container_name}]{RESET}{NEUTRAL} container is inactive, stopping container ...{RESET}")
+            if active_status == "True":
+                print(
+                    f"\n{INPUT}[{selected_container_name}]{RESET}{NEUTRAL} container is active, kept running.{RESET}"
+                )
+            else:
+                print(
+                    f"\n{INPUT}[{selected_container_name}]{RESET}{NEUTRAL} container is inactive, stopping container ...{RESET}"
+                )
                 docker_command_stop_container = f"docker container stop {selected_container_tag}"
                 _, _, _ = run_docker_command(docker_command_stop_container)
-                print(f"\n{INPUT}[{selected_container_name}]{RESET}{NEUTRAL} container stopped.{RESET}\n")  
+                print(
+                    f"\n{INPUT}[{selected_container_name}]{RESET}{NEUTRAL} container stopped.{RESET}\n"
+                )
 
-
-        if args.command == 'remove':
-            
+        if args.command == "remove":
             # List existing containers of the current user
-            available_user_containers, available_user_container_tags = existing_user_containers(user_name, args.command)
-            containers_state = [True if container_tag == check_container_running(container_tag) else False for container_tag in available_user_container_tags]
-                        
-            no_running_containers, no_running_container_tags, no_running_container_number, running_containers, running_container_tags, running_container_number = filter_running_containers(
-                containers_state, 
-                available_user_containers, 
-                available_user_container_tags
+            available_user_containers, available_user_container_tags = existing_user_containers(
+                user_name, args.command
+            )
+            containers_state = [
+                True if container_tag == check_container_running(container_tag) else False
+                for container_tag in available_user_container_tags
+            ]
+
+            (
+                no_running_containers,
+                no_running_container_tags,
+                no_running_container_number,
+                running_containers,
+                running_container_tags,
+                running_container_number,
+            ) = filter_running_containers(
+                containers_state, available_user_containers, available_user_container_tags
             )
             ask_are_you_sure = True
-            if args.container_name:                 
-                if no_running_container_number == 0:                    
-                    print(f"\n{ERROR}All containers are running.\nIf you want to remove a container, stop it before using:{RESET}{HINT}\nmlc stop container_name{RESET}")
+            if args.container_name:
+                if no_running_container_number == 0:
+                    print(
+                        f"\n{ERROR}All containers are running.\nIf you want to remove a container, stop it before using:{RESET}{HINT}\nmlc stop container_name{RESET}"
+                    )
                     show_container_info()
-                    exit(0)                    
-                if args.container_name in running_containers:                    
-                    if args.script:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists and is running. Not possible to be removed.{RESET}\n")
-                        exit(1)                    
-                    else:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists and is running. Not possible to be removed.{RESET}")                        
-                        print(f"\n{INFO}The following no running containers of the current user can be removed:{RESET} ")
-                        selected_container_name, selected_container_position = select_container_to_be_ed(no_running_containers) 
-                                          
-                elif args.container_name in no_running_containers:                    
+                    exit(0)
+                if args.container_name in running_containers:
+                    if args.script:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists and is running. Not possible to be removed.{RESET}\n"
+                        )
+                        exit(1)
+                    else:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists and is running. Not possible to be removed.{RESET}"
+                        )
+                        print(
+                            f"\n{INFO}The following no running containers of the current user can be removed:{RESET} "
+                        )
+                        selected_container_name, selected_container_position = (
+                            select_container_to_be_ed(no_running_containers)
+                        )
+
+                elif args.container_name in no_running_containers:
                     selected_container_name = args.container_name
-                    selected_container_position = no_running_containers.index(args.container_name) + 1
-                    print(f'\n{INPUT}[{args.container_name}]{RESET} {NEUTRAL}is not running and will be removed.{RESET}')                    
-                    if not args.script:                         
-                        if not args.force:                            
-                            print(f"\n{HINT}Hint: Use the flag -f or --force to avoid be asked.{RESET}")
-                        else:                            
+                    selected_container_position = (
+                        no_running_containers.index(args.container_name) + 1
+                    )
+                    print(
+                        f"\n{INPUT}[{args.container_name}]{RESET} {NEUTRAL}is not running and will be removed.{RESET}"
+                    )
+                    if not args.script:
+                        if not args.force:
+                            print(
+                                f"\n{HINT}Hint: Use the flag -f or --force to avoid be asked.{RESET}"
+                            )
+                        else:
                             ask_are_you_sure = False
                     else:
-                        ask_are_you_sure = False                        
-                else:                    
-                    if args.script:                        
+                        ask_are_you_sure = False
+                else:
+                    if args.script:
                         print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.\n")
-                        exit(1)                    
-                    else:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.")     
-                    
+                        exit(1)
+                    else:
+                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.")
+
                         # all containers are running
                         if no_running_container_number == 0:
                             show_container_info()
-                            exit(0) 
-                                                        
+                            exit(0)
+
                         while True:
-                            print(f"\n{INFO}The following no running containers of the current user can be removed:{RESET} ")
-                            selected_container_name, selected_container_position = select_container_to_be_ed(no_running_containers) 
-                            break                                                               
-            else:                  
-                                
+                            print(
+                                f"\n{INFO}The following no running containers of the current user can be removed:{RESET} "
+                            )
+                            selected_container_name, selected_container_position = (
+                                select_container_to_be_ed(no_running_containers)
+                            )
+                            break
+            else:
                 # Check that at least 1 container is no running
-                if no_running_container_number == 0:                    
-                    print(f"\n{ERROR}All containers are running.\nIf you want to remove a container, stop it before using:{RESET}{HINT}\nmlc stop container_name{RESET}")
+                if no_running_container_number == 0:
+                    print(
+                        f"\n{ERROR}All containers are running.\nIf you want to remove a container, stop it before using:{RESET}{HINT}\nmlc stop container_name{RESET}"
+                    )
                     show_container_info()
-                    exit(0)                
-                if args.script:                
+                    exit(0)
+                if args.script:
                     print(f"\n{ERROR}Container name is missing.{RESET}")
                     print_info_header(args.command)
-                    exit(1)                
-                else:                     
-                    print_info_header(args.command)                    
-                    print(f"\n{INFO}The following no running containers of the current user can be removed:{RESET}")
-                    selected_container_name, selected_container_position = select_container_to_be_ed(no_running_containers) 
-            
+                    exit(1)
+                else:
+                    print_info_header(args.command)
+                    print(
+                        f"\n{INFO}The following no running containers of the current user can be removed:{RESET}"
+                    )
+                    selected_container_name, selected_container_position = (
+                        select_container_to_be_ed(no_running_containers)
+                    )
+
             # Obtain container_tag from the selected container name
-            selected_container_tag = no_running_container_tags[selected_container_position-1]
-            
-            if ask_are_you_sure:                
+            selected_container_tag = no_running_container_tags[selected_container_position - 1]
+
+            if ask_are_you_sure:
                 are_you_sure(selected_container_name, args.command, args.script)
-            
+
             docker_command_get_image = [
-                'docker', 
-                'container', 
-                'ps', 
-                '-a', 
-                '--filter', f'name={selected_container_tag}', 
-                '--filter', 'label=ds01.user', 
-                '--format', '{{.Image}}'
+                "docker",
+                "container",
+                "ps",
+                "-a",
+                "--filter",
+                f"name={selected_container_tag}",
+                "--filter",
+                "label=ds01.user",
+                "--format",
+                "{{.Image}}",
             ]
             process = subprocess.Popen(
-                    docker_command_get_image, 
-                    shell=False,
-                    text=True,
-                    stdout=subprocess.PIPE, 
+                docker_command_get_image,
+                shell=False,
+                text=True,
+                stdout=subprocess.PIPE,
             )
             # Communicate handles interactive input/output
-            stdout, _ = process.communicate()  
+            stdout, _ = process.communicate()
             container_image = stdout.strip()
 
             # Delete the container
-            print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}deleting container ...{RESET}")
+            print(
+                f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}deleting container ...{RESET}"
+            )
             docker_command_delete_container = f"docker container rm {selected_container_tag}"
-            exit_code = subprocess.Popen(docker_command_delete_container, shell=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait()
+            exit_code = subprocess.Popen(
+                docker_command_delete_container,
+                shell=True,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            ).wait()
 
             if exit_code != 0:
                 print(f"\n{ERROR}Failed to remove container {selected_container_name}.{RESET}")
-                print(f"{ERROR}The container may still be running or have dependent resources.{RESET}\n")
+                print(
+                    f"{ERROR}The container may still be running or have dependent resources.{RESET}\n"
+                )
                 sys.exit(1)
 
             # Delete the container's image (only if --remove-image flag is set)
-            if hasattr(args, 'remove_image') and args.remove_image:
+            if hasattr(args, "remove_image") and args.remove_image:
                 print(f"\n{NEUTRAL}Deleting related image ...{RESET}")
                 docker_command_rm_image = f"docker image rm {container_image}"
                 subprocess.Popen(docker_command_rm_image, shell=True).wait()
             # else: silently preserve image (DS01 default behavior)
 
-            print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container removed.{RESET}\n") 
-            
-            
-        if args.command == 'start':
-            
+            print(
+                f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container removed.{RESET}\n"
+            )
+
+        if args.command == "start":
             # List existing containers of the current user
-            available_user_containers, available_user_container_tags = existing_user_containers(user_name, args.command)
-            containers_state = [True if container_tag == check_container_running(container_tag) else False for container_tag in available_user_container_tags]
-                        
-            no_running_containers, no_running_container_tags, no_running_container_number, running_containers, running_container_tags, running_container_number = filter_running_containers(
-                containers_state, 
-                available_user_containers, 
-                available_user_container_tags
-            )           
-            
-            if args.container_name: 
-                if no_running_container_number == 0:                    
-                    print(
-                        f"{ERROR}\nAt the moment all containers are running.\nCreate a new one and start it using:{RESET}\n{HINT}mlc start container_name{RESET}"
-                    )
-                    show_container_info() 
-                    exit(0)
-                
-                if args.container_name in running_containers:                    
-                    if args.script:                         
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists and is running. Not possible to be started.{RESET}\n")
-                        exit(1)                        
-                    else:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists and is running. Not possible to be started.{RESET}")                        
-                        print(f"\n{INFO}The following no running containers of the current user can be started:{RESET} ")
-                        selected_container_name, selected_container_position = select_container_to_be_ed(no_running_containers) 
-                                              
-                elif args.container_name in no_running_containers:
-                    selected_container_name = args.container_name
-                    selected_container_position = no_running_containers.index(args.container_name) + 1
-                    print(f'\n{INPUT}[{args.container_name}]{RESET} {NEUTRAL}is not running and will be started.{RESET}')                    
-                else:                    
-                    if args.script:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}\n")
-                        exit(1)                    
-                    else:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}")                    
-                        if no_running_container_number == 0:                            
-                            show_container_info()
-                            exit(1)
-                        
-                        while True:                            
-                            print(f"\n{INFO}The following no running containers of the current user can be started:{RESET} ")
-                            selected_container_name, selected_container_position = select_container_to_be_ed(no_running_containers) 
-                            break                                          
-            else:             
+            available_user_containers, available_user_container_tags = existing_user_containers(
+                user_name, args.command
+            )
+            containers_state = [
+                True if container_tag == check_container_running(container_tag) else False
+                for container_tag in available_user_container_tags
+            ]
+
+            (
+                no_running_containers,
+                no_running_container_tags,
+                no_running_container_number,
+                running_containers,
+                running_container_tags,
+                running_container_number,
+            ) = filter_running_containers(
+                containers_state, available_user_containers, available_user_container_tags
+            )
+
+            if args.container_name:
                 if no_running_container_number == 0:
                     print(
                         f"{ERROR}\nAt the moment all containers are running.\nCreate a new one and start it using:{RESET}\n{HINT}mlc start container_name{RESET}"
                     )
-                    show_container_info() 
-                    exit(0)  
+                    show_container_info()
+                    exit(0)
 
-                if args.script:                
+                if args.container_name in running_containers:
+                    if args.script:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists and is running. Not possible to be started.{RESET}\n"
+                        )
+                        exit(1)
+                    else:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists and is running. Not possible to be started.{RESET}"
+                        )
+                        print(
+                            f"\n{INFO}The following no running containers of the current user can be started:{RESET} "
+                        )
+                        selected_container_name, selected_container_position = (
+                            select_container_to_be_ed(no_running_containers)
+                        )
+
+                elif args.container_name in no_running_containers:
+                    selected_container_name = args.container_name
+                    selected_container_position = (
+                        no_running_containers.index(args.container_name) + 1
+                    )
+                    print(
+                        f"\n{INPUT}[{args.container_name}]{RESET} {NEUTRAL}is not running and will be started.{RESET}"
+                    )
+                else:
+                    if args.script:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}\n"
+                        )
+                        exit(1)
+                    else:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}"
+                        )
+                        if no_running_container_number == 0:
+                            show_container_info()
+                            exit(1)
+
+                        while True:
+                            print(
+                                f"\n{INFO}The following no running containers of the current user can be started:{RESET} "
+                            )
+                            selected_container_name, selected_container_position = (
+                                select_container_to_be_ed(no_running_containers)
+                            )
+                            break
+            else:
+                if no_running_container_number == 0:
+                    print(
+                        f"{ERROR}\nAt the moment all containers are running.\nCreate a new one and start it using:{RESET}\n{HINT}mlc start container_name{RESET}"
+                    )
+                    show_container_info()
+                    exit(0)
+
+                if args.script:
                     print(f"\n{ERROR}Container name is missing.{RESET}")
                     print_info_header(args.command)
-                    exit(1)                    
-                else:                    
-                    print_info_header(args.command)                    
-                    print(f"\n{INFO}The following no running containers of the current user can be started:{RESET}")
-                    selected_container_name, selected_container_position = select_container_to_be_ed(no_running_containers) 
-            
+                    exit(1)
+                else:
+                    print_info_header(args.command)
+                    print(
+                        f"\n{INFO}The following no running containers of the current user can be started:{RESET}"
+                    )
+                    selected_container_name, selected_container_position = (
+                        select_container_to_be_ed(no_running_containers)
+                    )
+
             # Obtain container_tag from the selected container name
-            selected_container_tag = no_running_container_tags[selected_container_position-1]
-            
+            selected_container_tag = no_running_container_tags[selected_container_position - 1]
+
             # Start the existing selected container:
             if selected_container_tag != check_container_running(selected_container_tag):
-                print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}starting container...{RESET}")
-                docker_command_start = [
-                    "docker",
-                    "container",
-                    "start",
-                    selected_container_tag
-                ]
+                print(
+                    f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}starting container...{RESET}"
+                )
+                docker_command_start = ["docker", "container", "start", selected_container_tag]
                 process = subprocess.Popen(
-                    docker_command_start, 
+                    docker_command_start,
                     shell=False,
                     text=True,
-                    stdout=subprocess.PIPE, 
+                    stdout=subprocess.PIPE,
                 )
                 # Communicate handles interactive input/output
-                stdout, _ = process.communicate()  
+                stdout, _ = process.communicate()
                 out = stdout.strip()
                 exit_code = process.returncode
                 if out == selected_container_tag:
-                    print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container started.{RESET}\n\n{INFO}To open a shell within the container, use:{RESET} \nmlc open {INPUT}{selected_container_name}{RESET}\n")
+                    print(
+                        f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container started.{RESET}\n\n{INFO}To open a shell within the container, use:{RESET} \nmlc open {INPUT}{selected_container_name}{RESET}\n"
+                    )
                 else:
-                    print(f"\n{INPUT}[{selected_container_name}]{RESET} {ERROR}error starting container.{RESET}")
-            else:                
-                print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container already running.{RESET}\n")
+                    print(
+                        f"\n{INPUT}[{selected_container_name}]{RESET} {ERROR}error starting container.{RESET}"
+                    )
+            else:
+                print(
+                    f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container already running.{RESET}\n"
+                )
                 exit(0)
 
-
-        if args.command == 'stats':
-            
+        if args.command == "stats":
             # ToDo: add the stream mode
-            show_container_stats()            
-            
-        if args.command == 'stop':
+            show_container_stats()
 
+        if args.command == "stop":
             # List existing containers of the current user
-            available_user_containers, available_user_container_tags = existing_user_containers(user_name, args.command)
-            containers_state = [True if container_tag == check_container_running(container_tag) else False for container_tag in available_user_container_tags]
-                        
-            no_running_containers, no_running_container_tags, no_running_container_number, running_containers, running_container_tags, running_container_number = filter_running_containers(
-                containers_state, 
-                available_user_containers, 
-                available_user_container_tags
+            available_user_containers, available_user_container_tags = existing_user_containers(
+                user_name, args.command
             )
-                       
-            ask_are_you_sure = True     
-                   
-            if args.container_name:                
-                if running_container_number == 0:                    
-                    print(                        
+            containers_state = [
+                True if container_tag == check_container_running(container_tag) else False
+                for container_tag in available_user_container_tags
+            ]
+
+            (
+                no_running_containers,
+                no_running_container_tags,
+                no_running_container_number,
+                running_containers,
+                running_container_tags,
+                running_container_number,
+            ) = filter_running_containers(
+                containers_state, available_user_containers, available_user_container_tags
+            )
+
+            ask_are_you_sure = True
+
+            if args.container_name:
+                if running_container_number == 0:
+                    print(
                         f"{ERROR}\nAll containers are stopped. You cannot stop no running containers.{RESET}"
                     )
-                    show_container_info() 
-                    exit(0)
-
-                if args.container_name in no_running_containers: 
-                    if args.script:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists but is not running. Not possible to be stopped.{RESET}\n")
-                        exit(1)
-                    else:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists but is not running. Not possible to be stopped.{RESET}")
-                        print(f"\n{INFO}The following running containers of the current user can be stopped:{RESET} ")
-                        selected_container_name, selected_container_position = select_container_to_be_ed(running_containers) 
-                elif args.container_name in running_containers:                    
-                    selected_container_name = args.container_name
-                    selected_container_position = running_containers.index(args.container_name) + 1
-                    print(f'\n{INPUT}[{args.container_name}]{RESET} {NEUTRAL}is running and will be stopped.{RESET}')                    
-                    if not args.script:                        
-                        if not args.force:                            
-                            print(f"\n{HINT}Hint: Use the flag -f or --force to avoid be asked.{RESET}")
-                        else:                            
-                            ask_are_you_sure = False                    
-                    else:
-                        ask_are_you_sure = False                
-                else:                    
-                    if args.script:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}\n")
-                        exit(1)                        
-                    else:                        
-                        print(f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}")
-                                       
-                        while True:
-                            print(f"\n{INFO}The following running containers of the current user can be stopped:{RESET} ")
-                            selected_container_name, selected_container_position = select_container_to_be_ed(running_containers) 
-                            break                     
-            else:    
-                # Check that at least 1 container is running
-                if not running_container_tags:                
-                    print(f"\n{ERROR}All containers are stopped. Therefore there are no one to be stopped.{RESET}")
                     show_container_info()
                     exit(0)
-                
-                if args.script:                
+
+                if args.container_name in no_running_containers:
+                    if args.script:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists but is not running. Not possible to be stopped.{RESET}\n"
+                        )
+                        exit(1)
+                    else:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}exists but is not running. Not possible to be stopped.{RESET}"
+                        )
+                        print(
+                            f"\n{INFO}The following running containers of the current user can be stopped:{RESET} "
+                        )
+                        selected_container_name, selected_container_position = (
+                            select_container_to_be_ed(running_containers)
+                        )
+                elif args.container_name in running_containers:
+                    selected_container_name = args.container_name
+                    selected_container_position = running_containers.index(args.container_name) + 1
+                    print(
+                        f"\n{INPUT}[{args.container_name}]{RESET} {NEUTRAL}is running and will be stopped.{RESET}"
+                    )
+                    if not args.script:
+                        if not args.force:
+                            print(
+                                f"\n{HINT}Hint: Use the flag -f or --force to avoid be asked.{RESET}"
+                            )
+                        else:
+                            ask_are_you_sure = False
+                    else:
+                        ask_are_you_sure = False
+                else:
+                    if args.script:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}\n"
+                        )
+                        exit(1)
+                    else:
+                        print(
+                            f"\n{INPUT}[{args.container_name}]{RESET} {ERROR}does not exist.{RESET}"
+                        )
+
+                        while True:
+                            print(
+                                f"\n{INFO}The following running containers of the current user can be stopped:{RESET} "
+                            )
+                            selected_container_name, selected_container_position = (
+                                select_container_to_be_ed(running_containers)
+                            )
+                            break
+            else:
+                # Check that at least 1 container is running
+                if not running_container_tags:
+                    print(
+                        f"\n{ERROR}All containers are stopped. Therefore there are no one to be stopped.{RESET}"
+                    )
+                    show_container_info()
+                    exit(0)
+
+                if args.script:
                     print(f"\n{ERROR}Container name is missing.{RESET}")
                     print_info_header(args.command)
-                    exit(1)                
-                else:                
+                    exit(1)
+                else:
                     print_info_header(args.command)
                     print(f"\n{INFO}Running containers of the current user:{RESET}")
-                    selected_container_name, selected_container_position = select_container_to_be_ed(running_containers) 
+                    selected_container_name, selected_container_position = (
+                        select_container_to_be_ed(running_containers)
+                    )
 
             # Obtain container_tag from the selected container name
-            selected_container_tag = running_container_tags[selected_container_position-1]   
-            
-            if ask_are_you_sure:                 
+            selected_container_tag = running_container_tags[selected_container_position - 1]
+
+            if ask_are_you_sure:
                 are_you_sure(selected_container_name, args.command, args.script)
 
-            print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}stopping container ...{RESET}")
-            
+            print(
+                f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}stopping container ...{RESET}"
+            )
+
             # Attempt to stop the container and store the result.
             docker_command_stop = f"docker container stop {selected_container_tag}"
             _, _, _ = run_docker_command(docker_command_stop)
-            
+
             # Print a message indicating the container has been stopped.
-            print(f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container stopped.{RESET}\n")
+            print(
+                f"\n{INPUT}[{selected_container_name}]{RESET} {NEUTRAL}container stopped.{RESET}\n"
+            )
 
-
-        if args.command == 'update-sys':
-
+        if args.command == "update-sys":
             # Get the directory of the current script
             mlc_path = os.path.dirname(os.path.abspath(__file__))
-            
+
             # Change the current directory to MLC_PATH
             os.chdir(mlc_path)
-            
+
             # Check if the .git directory exists
             if not os.path.isdir(f"{mlc_path}/.git"):
-                print(f"{ERROR}Failed: ML container system not installed as updatable git repo.\nAdd the AIME MLC's location to ~/.bashrc or change to the location of the AIME MLC. {RESET}")
-                sys.exit(-1)  
-                        
+                print(
+                    f"{ERROR}Failed: ML container system not installed as updatable git repo.\nAdd the AIME MLC's location to ~/.bashrc or change to the location of the AIME MLC. {RESET}"
+                )
+                sys.exit(-1)
+
             # Determine if sudo is required for git operations
             sudo = "sudo"
-            
+
             if os.access(f"{mlc_path}/.git", os.W_OK):
                 sudo = ""  # No sudo if the git directory is writable
-                
+
             # Fix for "unsafe repository" warning in Git adding the mlc-directory to the list of safe directories
-            docker_command_git_config = ["git", "config", "--global", "--add", "safe.directory", mlc_path]
+            docker_command_git_config = [
+                "git",
+                "config",
+                "--global",
+                "--add",
+                "safe.directory",
+                mlc_path,
+            ]
             subprocess.run(docker_command_git_config)
 
             # Get the current branch name
             docker_command_current_branch = ["git", "symbolic-ref", "HEAD"]
-            branch = subprocess.check_output(docker_command_current_branch, universal_newlines=True).strip().split("/")[-1]
+            branch = (
+                subprocess.check_output(docker_command_current_branch, universal_newlines=True)
+                .strip()
+                .split("/")[-1]
+            )
             print(f"branch update-sys: {branch}")
-            
+
             if not args.force:
-                        
                 print(f"\n{HINT}Hint: Use the flag -f or --force to avoid be asked.{RESET}")
-                
-                print(f"\n{NEUTRAL}This will update the ML container system to the latest version.{RESET}")
+
+                print(
+                    f"\n{NEUTRAL}This will update the ML container system to the latest version.{RESET}"
+                )
 
                 # If sudo is required, ask if the user wants to check for updates
                 if sudo == "":
-                    reply = input(f"\n{REQUEST}Check for available updates (Y/n)?: {RESET}").strip().lower()
+                    reply = (
+                        input(f"\n{REQUEST}Check for available updates (Y/n)?: {RESET}")
+                        .strip()
+                        .lower()
+                    )
                     if reply not in ["y", "yes", "Y", ""]:
-                        exit(0)  
+                        exit(0)
 
                 # Fetch the latest updates from remote repo
                 docker_command_git_remote = ["git", "remote", "update"]
                 sudo and docker_command_git_remote.insert(0, sudo)
                 subprocess.run(docker_command_git_remote)
-                
+
                 # Get the update log for commits that are new in the remote repo
-                docker_command_git_log = ["git", "log", f"HEAD..origin/{branch}", "--pretty=format:%s"]
+                docker_command_git_log = [
+                    "git",
+                    "log",
+                    f"HEAD..origin/{branch}",
+                    "--pretty=format:%s",
+                ]
                 sudo and docker_command_git_log.insert(0, sudo)
                 update_log = subprocess.check_output(docker_command_git_log, text=True).strip()
-                
+
                 if update_log == "":
                     print(f"\n{NEUTRAL}ML container system is up to date.\n{RESET}")
-                    exit(0)  
-                
+                    exit(0)
+
                 # Print the update log and prompt the user to confirm update
                 print(f"\n{INFO}Update(s) available.\n\nChange Log:{RESET}\n{update_log}")
-                reply = input(f"\n{REQUEST}Update ML container system (Y/n)?: {RESET}").strip().lower()
+                reply = (
+                    input(f"\n{REQUEST}Update ML container system (Y/n)?: {RESET}").strip().lower()
+                )
                 if reply in ["y", "yes", "Y", ""]:
-                    args.update_directly = True  
+                    args.update_directly = True
                 else:
-                    exit(0)  
-                
-           # If confirmed, proceed with the update
+                    exit(0)
+
+            # If confirmed, proceed with the update
             try:
                 print(f"\n{NEUTRAL}Updating ML container system...{RESET}\n")
-                
+
                 # Pull the latest changes from the remote repo
                 docker_command_git_pull = ["git", "pull", "origin", branch]
-                sudo and docker_command_git_pull.insert(0, sudo)          
+                sudo and docker_command_git_pull.insert(0, sudo)
                 subprocess.run(docker_command_git_pull)
                 exit(0)
             except Exception as e:
                 print(f"\n{ERROR}Error during update: {e}")
-                exit(-1)  
+                exit(-1)
 
     except KeyboardInterrupt:
         print(f"\n{ERROR}\nRunning process cancelled by the user.{RESET}\n")
         exit(1)
-   
-             
-if __name__ == '__main__':
-    main()
 
-    
-    
+
+if __name__ == "__main__":
+    main()

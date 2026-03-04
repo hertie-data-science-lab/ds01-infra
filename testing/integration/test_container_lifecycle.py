@@ -4,11 +4,11 @@ Integration Tests: Container Lifecycle
 Tests container create -> start -> stop -> remove workflow
 """
 
-import pytest
-import subprocess
 import os
-import time
+import subprocess
 from pathlib import Path
+
+import pytest
 
 
 class TestContainerLifecycleScripts:
@@ -43,7 +43,12 @@ class TestContainerLifecycleScripts:
     @pytest.mark.integration
     def test_atomic_scripts_source_context_lib(self):
         """Atomic scripts source the context library."""
-        atomic_scripts = ["container-create", "container-start", "container-stop", "container-remove"]
+        atomic_scripts = [
+            "container-create",
+            "container-start",
+            "container-stop",
+            "container-remove",
+        ]
         for script in atomic_scripts:
             path = self.SCRIPTS_DIR / script
             if path.exists():
@@ -58,8 +63,9 @@ class TestContainerLifecycleScripts:
             path = self.SCRIPTS_DIR / script
             if path.exists():
                 content = path.read_text()
-                assert "DS01_CONTEXT" in content or "set_orchestration_context" in content, \
+                assert "DS01_CONTEXT" in content or "set_orchestration_context" in content, (
                     f"{script} doesn't set context"
+                )
 
 
 class TestContainerCreateStop:
@@ -77,10 +83,7 @@ class TestContainerCreateStop:
         # Test --help works for both
         for script in [create_script, stop_script]:
             result = subprocess.run(
-                [str(script), "--help"],
-                capture_output=True,
-                text=True,
-                timeout=10
+                [str(script), "--help"], capture_output=True, text=True, timeout=10
             )
             # Should show usage or help text
             assert result.returncode in [0, 1]  # 0 = success, 1 = usage shown
@@ -97,7 +100,9 @@ class TestDeployRetireWorkflow:
 
         # Should reference both create and start
         has_create = "container-create" in content or "create" in content.lower()
-        has_start = "container-start" in content or "mlc-open" in content or "start" in content.lower()
+        has_start = (
+            "container-start" in content or "mlc-open" in content or "start" in content.lower()
+        )
 
         assert has_create and has_start
 
@@ -109,7 +114,9 @@ class TestDeployRetireWorkflow:
 
         # Should reference both stop and remove
         has_stop = "container-stop" in content or "mlc-stop" in content or "stop" in content.lower()
-        has_remove = "container-remove" in content or "mlc-remove" in content or "remove" in content.lower()
+        has_remove = (
+            "container-remove" in content or "mlc-remove" in content or "remove" in content.lower()
+        )
 
         assert has_stop and has_remove
 
@@ -162,15 +169,19 @@ class TestContextPropagation:
         """Context set by deploy propagates to atomic commands."""
         # Test via shell
         result = subprocess.run(
-            ["bash", "-c", """
+            [
+                "bash",
+                "-c",
+                """
             source /opt/ds01-infra/scripts/lib/ds01-context.sh
             set_orchestration_context
             # Verify in subshell
             bash -c 'echo $DS01_CONTEXT'
-            """],
+            """,
+            ],
             capture_output=True,
             text=True,
-            env={**os.environ, "DS01_CONTEXT": ""}
+            env={**os.environ, "DS01_CONTEXT": ""},
         )
         assert result.stdout.strip() == "orchestration"
 
@@ -179,16 +190,20 @@ class TestContextPropagation:
         """Atomic commands show next steps when called directly."""
         # Call with atomic context
         result = subprocess.run(
-            ["bash", "-c", """
+            [
+                "bash",
+                "-c",
+                """
             source /opt/ds01-infra/scripts/lib/ds01-context.sh
             unset DS01_CONTEXT
             # Check if next steps would be shown
             if is_atomic_context; then
                 echo "WOULD_SHOW_NEXT_STEPS"
             fi
-            """],
+            """,
+            ],
             capture_output=True,
-            text=True
+            text=True,
         )
         assert "WOULD_SHOW_NEXT_STEPS" in result.stdout
 
@@ -196,7 +211,10 @@ class TestContextPropagation:
     def test_atomic_command_suppresses_next_steps_when_orchestrated(self):
         """Atomic commands suppress next steps when called from orchestrator."""
         result = subprocess.run(
-            ["bash", "-c", """
+            [
+                "bash",
+                "-c",
+                """
             source /opt/ds01-infra/scripts/lib/ds01-context.sh
             export DS01_CONTEXT=orchestration
             # Check if next steps would be shown
@@ -205,8 +223,9 @@ class TestContextPropagation:
             else
                 echo "SUPPRESSED"
             fi
-            """],
+            """,
+            ],
             capture_output=True,
-            text=True
+            text=True,
         )
         assert "SUPPRESSED" in result.stdout

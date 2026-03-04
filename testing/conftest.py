@@ -4,15 +4,15 @@ DS01 Infrastructure Test Configuration
 Shared fixtures and configuration for all test modules
 """
 
-import os
-import sys
 import json
+import os
 import shutil
-import tempfile
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
+from typing import Any, Dict, Generator, Optional
 from unittest.mock import MagicMock, patch
-from typing import Generator, Dict, Any, Optional
 
 import pytest
 
@@ -24,6 +24,7 @@ sys.path.insert(0, str(INFRA_ROOT / "scripts" / "docker"))
 # =============================================================================
 # Markers - Auto-skip based on environment
 # =============================================================================
+
 
 def pytest_configure(config):
     """Register custom markers."""
@@ -55,11 +56,7 @@ def pytest_collection_modifyitems(config, items):
 def _check_docker() -> bool:
     """Check if Docker is available and running."""
     try:
-        result = subprocess.run(
-            ["docker", "info"],
-            capture_output=True,
-            timeout=5
-        )
+        result = subprocess.run(["docker", "info"], capture_output=True, timeout=5)
         return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
@@ -71,7 +68,7 @@ def _check_gpu() -> bool:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=count", "--format=csv,noheader"],
             capture_output=True,
-            timeout=5
+            timeout=5,
         )
         return result.returncode == 0
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -81,6 +78,7 @@ def _check_gpu() -> bool:
 # =============================================================================
 # Path Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def infra_root() -> Path:
@@ -103,6 +101,7 @@ def config_dir(infra_root) -> Path:
 # =============================================================================
 # Temporary Directory Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def temp_dir() -> Generator[Path, None, None]:
@@ -132,6 +131,7 @@ def temp_log_dir(temp_dir) -> Path:
 # Configuration Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def sample_resource_limits() -> Dict[str, Any]:
     """Return sample resource limits configuration."""
@@ -146,7 +146,7 @@ def sample_resource_limits() -> Dict[str, Any]:
             "max_runtime": "168h",
             "gpu_hold_after_stop": "24h",
             "container_hold_after_stop": "12h",
-            "priority": 50
+            "priority": 50,
         },
         "groups": {
             "students": {
@@ -154,29 +154,24 @@ def sample_resource_limits() -> Dict[str, Any]:
                 "max_cpus": 8,
                 "memory": "32g",
                 "priority": 10,
-                "members": ["student1", "student2"]
+                "members": ["student1", "student2"],
             },
             "researchers": {
                 "max_mig_instances": 2,
                 "max_cpus": 16,
                 "memory": "64g",
                 "priority": 50,
-                "members": ["researcher1"]
+                "members": ["researcher1"],
             },
             "admins": {
                 "max_mig_instances": None,  # unlimited
                 "max_cpus": 32,
                 "memory": "128g",
                 "priority": 100,
-                "members": ["admin1"]
-            }
+                "members": ["admin1"],
+            },
         },
-        "user_overrides": {
-            "special_user": {
-                "max_mig_instances": 4,
-                "priority": 90
-            }
-        }
+        "user_overrides": {"special_user": {"max_mig_instances": 4, "priority": 90}},
     }
 
 
@@ -184,6 +179,7 @@ def sample_resource_limits() -> Dict[str, Any]:
 def temp_config_file(temp_dir, sample_resource_limits) -> Path:
     """Create a temporary resource-limits.yaml file."""
     import yaml
+
     config_file = temp_dir / "resource-limits.yaml"
     with open(config_file, "w") as f:
         yaml.safe_dump(sample_resource_limits, f)
@@ -194,24 +190,17 @@ def temp_config_file(temp_dir, sample_resource_limits) -> Path:
 # GPU State Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def sample_gpu_state() -> Dict[str, Any]:
     """Return sample GPU allocator state."""
     return {
         "gpus": {
-            "0": {
-                "type": "physical_gpu",
-                "containers": [],
-                "total_memory": "40GB"
-            },
-            "1": {
-                "type": "physical_gpu",
-                "containers": [],
-                "total_memory": "40GB"
-            }
+            "0": {"type": "physical_gpu", "containers": [], "total_memory": "40GB"},
+            "1": {"type": "physical_gpu", "containers": [], "total_memory": "40GB"},
         },
         "mig_enabled": False,
-        "last_updated": "2025-01-01T00:00:00Z"
+        "last_updated": "2025-01-01T00:00:00Z",
     }
 
 
@@ -227,19 +216,15 @@ def sample_gpu_state_with_allocations() -> Dict[str, Any]:
                         "container": "project-a._.1001",
                         "user": "student1",
                         "allocated_at": "2025-01-01T10:00:00Z",
-                        "interface": "orchestration"
+                        "interface": "orchestration",
                     }
                 ],
-                "total_memory": "40GB"
+                "total_memory": "40GB",
             },
-            "1": {
-                "type": "physical_gpu",
-                "containers": [],
-                "total_memory": "40GB"
-            }
+            "1": {"type": "physical_gpu", "containers": [], "total_memory": "40GB"},
         },
         "mig_enabled": False,
-        "last_updated": "2025-01-01T10:00:00Z"
+        "last_updated": "2025-01-01T10:00:00Z",
     }
 
 
@@ -256,28 +241,28 @@ def temp_gpu_state_file(temp_state_dir, sample_gpu_state) -> Path:
 # Mock Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def mock_docker_client():
     """Create a mock Docker client."""
     mock = MagicMock()
     mock.containers.list.return_value = []
-    mock.info.return_value = {
-        "CgroupDriver": "systemd",
-        "CgroupParent": "ds01.slice"
-    }
+    mock.info.return_value = {"CgroupDriver": "systemd", "CgroupParent": "ds01.slice"}
     return mock
 
 
 @pytest.fixture
 def mock_nvidia_smi():
     """Create a mock nvidia-smi response."""
+
     def _mock_nvidia_smi(query_type="count"):
         responses = {
             "count": "4",
             "gpu": "0, NVIDIA A100-SXM4-40GB, 40960 MiB\n1, NVIDIA A100-SXM4-40GB, 40960 MiB",
-            "mig": "GPU 0: No MIG devices found\nGPU 1: No MIG devices found"
+            "mig": "GPU 0: No MIG devices found\nGPU 1: No MIG devices found",
         }
         return responses.get(query_type, "")
+
     return _mock_nvidia_smi
 
 
@@ -292,6 +277,7 @@ def mock_subprocess_run():
 # Container Fixtures
 # =============================================================================
 
+
 @pytest.fixture
 def sample_container_metadata() -> Dict[str, Any]:
     """Return sample container metadata."""
@@ -305,8 +291,8 @@ def sample_container_metadata() -> Dict[str, Any]:
         "labels": {
             "ds01.interface": "orchestration",
             "ds01.user": "student1",
-            "ds01.gpu.allocated": "0"
-        }
+            "ds01.gpu.allocated": "0",
+        },
     }
 
 
@@ -316,33 +302,25 @@ def sample_docker_container() -> Dict[str, Any]:
     return {
         "Id": "abc123def456",
         "Name": "/project-a._.1001",
-        "State": {
-            "Status": "running",
-            "Running": True,
-            "StartedAt": "2025-01-01T10:00:00Z"
-        },
+        "State": {"Status": "running", "Running": True, "StartedAt": "2025-01-01T10:00:00Z"},
         "Config": {
             "Labels": {
                 "ds01.interface": "orchestration",
                 "ds01.user": "student1",
-                "aime.mlc.USER": "student1"
+                "aime.mlc.USER": "student1",
             }
         },
         "HostConfig": {
             "CgroupParent": "ds01-students-student1.slice",
-            "DeviceRequests": [
-                {
-                    "Driver": "nvidia",
-                    "DeviceIDs": ["0"]
-                }
-            ]
-        }
+            "DeviceRequests": [{"Driver": "nvidia", "DeviceIDs": ["0"]}],
+        },
     }
 
 
 # =============================================================================
 # Environment Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def orchestration_context():
@@ -370,7 +348,10 @@ def atomic_context():
 # Helper Functions (available to all tests)
 # =============================================================================
 
-def run_script(script_path: Path, *args, env: Optional[Dict] = None, timeout: int = 30) -> subprocess.CompletedProcess:
+
+def run_script(
+    script_path: Path, *args, env: Optional[Dict] = None, timeout: int = 30
+) -> subprocess.CompletedProcess:
     """Run a shell script and return the result."""
     script_env = os.environ.copy()
     if env:
@@ -381,11 +362,13 @@ def run_script(script_path: Path, *args, env: Optional[Dict] = None, timeout: in
         capture_output=True,
         text=True,
         env=script_env,
-        timeout=timeout
+        timeout=timeout,
     )
 
 
-def run_python_script(script_path: Path, *args, env: Optional[Dict] = None, timeout: int = 30) -> subprocess.CompletedProcess:
+def run_python_script(
+    script_path: Path, *args, env: Optional[Dict] = None, timeout: int = 30
+) -> subprocess.CompletedProcess:
     """Run a Python script and return the result."""
     script_env = os.environ.copy()
     if env:
@@ -396,7 +379,7 @@ def run_python_script(script_path: Path, *args, env: Optional[Dict] = None, time
         capture_output=True,
         text=True,
         env=script_env,
-        timeout=timeout
+        timeout=timeout,
     )
 
 

@@ -9,19 +9,12 @@ Tests for the integrated container ownership tracking system:
 - Sync script preserving tracker data
 """
 
-import importlib.util
 import importlib.machinery
+import importlib.util
 import json
-import os
-import subprocess
-import sys
-import tempfile
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # =============================================================================
 # Module Loading (handles hyphenated filenames)
@@ -241,7 +234,7 @@ class TestDashboardIntegration:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="labeled-container"
+            container_name="labeled-container",
         )
         assert result == "labeled-user"
 
@@ -251,7 +244,7 @@ class TestDashboardIntegration:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="unlabeled-compose"
+            container_name="unlabeled-compose",
         )
         assert result == "mount-detected-user"
 
@@ -270,7 +263,7 @@ class TestDashboardIntegration:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="unknown-container"
+            container_name="unknown-container",
         )
         assert result == "(other)"
 
@@ -409,9 +402,7 @@ class TestFullFlowIntegration:
             "Id": "flow123flow123flow123flow123flow123flow123flow123flow123flow123fl",
             "Name": "/flow-test-container",
             "Config": {"Labels": {}},  # No labels
-            "HostConfig": {
-                "Binds": ["/home/flowuser/project:/workspace:rw"]
-            },
+            "HostConfig": {"Binds": ["/home/flowuser/project:/workspace:rw"]},
         }
 
         tracker_module = load_tracker_module(temp_ownership_file, temp_lock_file)
@@ -425,7 +416,9 @@ class TestFullFlowIntegration:
         # Verify tracker created entry
         assert "flow-test-container" in tracker.owners["containers"]
         assert tracker.owners["containers"]["flow-test-container"]["owner"] == "flowuser"
-        assert tracker.owners["containers"]["flow-test-container"]["detection_method"] == "mount_path"
+        assert (
+            tracker.owners["containers"]["flow-test-container"]["detection_method"] == "mount_path"
+        )
 
         # Step 2: Sync runs and preserves tracker entry
         containers = [
@@ -456,7 +449,7 @@ class TestFullFlowIntegration:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="flow-test-container"
+            container_name="flow-test-container",
         )
 
         assert owner == "flowuser"
@@ -567,7 +560,7 @@ class TestDomainUserSupport:
             aime_user_upper="",
             aime_username="",
             devcontainer_path="",
-            container_name="domain-container"
+            container_name="domain-container",
         )
 
         assert owner == "h.baker@hertie-school.lan"

@@ -20,12 +20,10 @@ Key changes validated:
 import ast
 import os
 import sys
-import subprocess
-import pytest
 from pathlib import Path
-from typing import List, Dict, Tuple, Optional
-from unittest.mock import patch, MagicMock
+from typing import Dict, List
 
+import pytest
 
 # File paths
 GPU_ALLOCATOR_PATH = Path("/opt/ds01-infra/scripts/docker/gpu_allocator_v2.py")
@@ -64,17 +62,16 @@ class TestExceptionHandlingPatterns:
                             exceptions.append(elt.id)
 
                 # Check if handler only contains pass
-                has_pass_only = (
-                    len(node.body) == 1 and
-                    isinstance(node.body[0], ast.Pass)
-                )
+                has_pass_only = len(node.body) == 1 and isinstance(node.body[0], ast.Pass)
 
-                handlers.append({
-                    'line': node.lineno,
-                    'exceptions': exceptions,
-                    'has_pass_only': has_pass_only,
-                    'has_pass': any(isinstance(n, ast.Pass) for n in node.body)
-                })
+                handlers.append(
+                    {
+                        "line": node.lineno,
+                        "exceptions": exceptions,
+                        "has_pass_only": has_pass_only,
+                        "has_pass": any(isinstance(n, ast.Pass) for n in node.body),
+                    }
+                )
 
         return handlers
 
@@ -89,9 +86,10 @@ class TestGpuAllocatorV2ExceptionHandling(TestExceptionHandlingPatterns):
     def test_no_bare_except(self):
         """gpu_allocator_v2.py should not have bare except clauses."""
         handlers = self.get_except_handlers(GPU_ALLOCATOR_PATH)
-        bare_excepts = [h for h in handlers if "bare_except" in h['exceptions']]
-        assert len(bare_excepts) == 0, \
+        bare_excepts = [h for h in handlers if "bare_except" in h["exceptions"]]
+        assert len(bare_excepts) == 0, (
             f"Found bare except at lines: {[h['line'] for h in bare_excepts]}"
+        )
 
     def test_no_exception_pass_only(self):
         """gpu_allocator_v2.py should not silently swallow exceptions.
@@ -103,12 +101,10 @@ class TestGpuAllocatorV2ExceptionHandling(TestExceptionHandlingPatterns):
         3. Re-raised or handled meaningfully
         """
         handlers = self.get_except_handlers(GPU_ALLOCATOR_PATH)
-        pass_only = [
-            h for h in handlers
-            if h['has_pass_only'] and 'Exception' in h['exceptions']
-        ]
-        assert len(pass_only) == 0, \
+        pass_only = [h for h in handlers if h["has_pass_only"] and "Exception" in h["exceptions"]]
+        assert len(pass_only) == 0, (
             f"Found 'except Exception: pass' at lines: {[h['line'] for h in pass_only]}"
+        )
 
     def test_uses_specific_exception_types(self):
         """gpu_allocator_v2.py should catch specific exception types."""
@@ -117,35 +113,44 @@ class TestGpuAllocatorV2ExceptionHandling(TestExceptionHandlingPatterns):
         # Get all unique exception types
         all_exceptions = set()
         for h in handlers:
-            all_exceptions.update(h['exceptions'])
+            all_exceptions.update(h["exceptions"])
 
         # Should have specific types, not just Exception
         specific_types = {
-            'subprocess.SubprocessError', 'subprocess.CalledProcessError',
-            'OSError', 'IOError', 'PermissionError', 'FileNotFoundError',
-            'json.JSONDecodeError', 'JSONDecodeError',
-            'KeyError', 'IndexError', 'TypeError', 'ValueError'
+            "subprocess.SubprocessError",
+            "subprocess.CalledProcessError",
+            "OSError",
+            "IOError",
+            "PermissionError",
+            "FileNotFoundError",
+            "json.JSONDecodeError",
+            "JSONDecodeError",
+            "KeyError",
+            "IndexError",
+            "TypeError",
+            "ValueError",
         }
 
         # At least some specific exception types should be used
         has_specific = any(
-            exc in specific_types or
-            exc.replace('.', '') in [s.replace('.', '') for s in specific_types]
+            exc in specific_types
+            or exc.replace(".", "") in [s.replace(".", "") for s in specific_types]
             for exc in all_exceptions
         )
         # Allow Exception if it's properly handled (not just pass)
-        assert has_specific or 'Exception' not in all_exceptions, \
+        assert has_specific or "Exception" not in all_exceptions, (
             f"Should use specific exception types. Found: {all_exceptions}"
+        )
 
     def test_log_event_has_proper_exception_handling(self):
         """_log_event method should handle logging failures gracefully."""
         content = GPU_ALLOCATOR_PATH.read_text()
 
         # Should catch specific exceptions for subprocess
-        assert 'subprocess.SubprocessError' in content or 'CalledProcessError' in content
+        assert "subprocess.SubprocessError" in content or "CalledProcessError" in content
 
         # Should catch specific exceptions for file I/O
-        assert 'IOError' in content or 'OSError' in content
+        assert "IOError" in content or "OSError" in content
 
     def test_exception_handlers_log_warnings(self):
         """Exception handlers should log warnings, not silently pass."""
@@ -154,7 +159,7 @@ class TestGpuAllocatorV2ExceptionHandling(TestExceptionHandlingPatterns):
         # Count handlers that print warnings vs just pass
         # Should have more warnings than silent passes
         warning_count = content.count('print(f"Warning:')
-        warning_count += content.count('sys.stderr')
+        warning_count += content.count("sys.stderr")
 
         assert warning_count > 0, "Should log warnings when catching exceptions"
 
@@ -169,24 +174,25 @@ class TestEventLoggerExceptionHandling(TestExceptionHandlingPatterns):
     def test_no_bare_except(self):
         """event-logger.py should not have bare except clauses."""
         handlers = self.get_except_handlers(EVENT_LOGGER_PATH)
-        bare_excepts = [h for h in handlers if "bare_except" in h['exceptions']]
-        assert len(bare_excepts) == 0, \
+        bare_excepts = [h for h in handlers if "bare_except" in h["exceptions"]]
+        assert len(bare_excepts) == 0, (
             f"Found bare except at lines: {[h['line'] for h in bare_excepts]}"
+        )
 
     def test_log_method_handles_permission_error(self):
         """log() method should handle PermissionError specifically."""
         content = EVENT_LOGGER_PATH.read_text()
-        assert 'PermissionError' in content
+        assert "PermissionError" in content
 
     def test_file_operations_handle_io_errors(self):
         """File operations should handle IOError/OSError."""
         content = EVENT_LOGGER_PATH.read_text()
-        assert 'IOError' in content or 'OSError' in content
+        assert "IOError" in content or "OSError" in content
 
     def test_json_parsing_handles_decode_error(self):
         """JSON parsing should handle JSONDecodeError."""
         content = EVENT_LOGGER_PATH.read_text()
-        assert 'JSONDecodeError' in content or 'json.JSONDecodeError' in content
+        assert "JSONDecodeError" in content or "json.JSONDecodeError" in content
 
     def test_exception_handlers_return_gracefully(self):
         """Exception handlers should return gracefully, not crash.
@@ -199,7 +205,7 @@ class TestEventLoggerExceptionHandling(TestExceptionHandlingPatterns):
         handlers = self.get_except_handlers(EVENT_LOGGER_PATH)
 
         # Most handlers should not have pass only - they should return or log
-        pass_only_handlers = [h for h in handlers if h['has_pass_only']]
+        pass_only_handlers = [h for h in handlers if h["has_pass_only"]]
 
         # Allow pass-only for best-effort operations (rotation, reads)
         # Event logger is designed to be resilient - failures are acceptable
@@ -207,8 +213,9 @@ class TestEventLoggerExceptionHandling(TestExceptionHandlingPatterns):
         # - _maybe_rotate: IOError/OSError pass is OK (rotation is optional)
         # - tail: IOError/OSError pass is OK (returns empty list)
         # - search: IOError/OSError pass is OK (returns partial results)
-        assert len(pass_only_handlers) <= 4, \
+        assert len(pass_only_handlers) <= 4, (
             f"Too many pass-only handlers at lines: {[h['line'] for h in pass_only_handlers]}"
+        )
 
 
 class TestGpuStateReaderExceptionHandling(TestExceptionHandlingPatterns):
@@ -221,36 +228,37 @@ class TestGpuStateReaderExceptionHandling(TestExceptionHandlingPatterns):
     def test_no_bare_except(self):
         """gpu-state-reader.py should not have bare except clauses."""
         handlers = self.get_except_handlers(GPU_STATE_READER_PATH)
-        bare_excepts = [h for h in handlers if "bare_except" in h['exceptions']]
-        assert len(bare_excepts) == 0, \
+        bare_excepts = [h for h in handlers if "bare_except" in h["exceptions"]]
+        assert len(bare_excepts) == 0, (
             f"Found bare except at lines: {[h['line'] for h in bare_excepts]}"
+        )
 
     def test_config_loading_handles_file_errors(self):
         """Config loading should handle FileNotFoundError."""
         content = GPU_STATE_READER_PATH.read_text()
-        assert 'FileNotFoundError' in content
+        assert "FileNotFoundError" in content
 
     def test_config_loading_handles_yaml_errors(self):
         """Config loading should handle YAML parsing errors."""
         content = GPU_STATE_READER_PATH.read_text()
-        assert 'YAMLError' in content or 'yaml.YAMLError' in content
+        assert "YAMLError" in content or "yaml.YAMLError" in content
 
     def test_subprocess_calls_handle_errors(self):
         """Subprocess calls should handle CalledProcessError."""
         content = GPU_STATE_READER_PATH.read_text()
-        assert 'CalledProcessError' in content or 'subprocess.CalledProcessError' in content
+        assert "CalledProcessError" in content or "subprocess.CalledProcessError" in content
 
     def test_docker_inspect_handles_json_errors(self):
         """Docker inspect parsing should handle JSONDecodeError."""
         content = GPU_STATE_READER_PATH.read_text()
-        assert 'JSONDecodeError' in content or 'json.JSONDecodeError' in content
+        assert "JSONDecodeError" in content or "json.JSONDecodeError" in content
 
     def test_gpu_extraction_handles_type_errors(self):
         """GPU extraction should handle TypeError/KeyError/IndexError."""
         content = GPU_STATE_READER_PATH.read_text()
 
         # Should handle common dict/list access errors
-        handled_types = ['KeyError', 'IndexError', 'TypeError']
+        handled_types = ["KeyError", "IndexError", "TypeError"]
         has_handling = any(t in content for t in handled_types)
         assert has_handling, f"Should handle {handled_types}"
 
@@ -259,7 +267,7 @@ class TestGpuStateReaderExceptionHandling(TestExceptionHandlingPatterns):
         content = GPU_STATE_READER_PATH.read_text()
 
         # Should handle both subprocess errors and missing nvidia-smi
-        assert 'CalledProcessError' in content or 'FileNotFoundError' in content
+        assert "CalledProcessError" in content or "FileNotFoundError" in content
 
 
 class TestExceptionHandlingFunctionality:
@@ -274,6 +282,7 @@ class TestExceptionHandlingFunctionality:
 
         # Import and test
         import importlib.util
+
         spec = importlib.util.spec_from_file_location("event_logger", EVENT_LOGGER_PATH)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -281,7 +290,7 @@ class TestExceptionHandlingFunctionality:
         logger = module.EventLogger(log_file=nonexistent_path)
 
         # Should not crash, should create directory
-        result = logger.log("test.event", user="test")
+        logger.log("test.event", user="test")
         # Result depends on permissions, but should not raise
 
     def test_event_logger_handles_write_failure(self, temp_dir):
@@ -289,6 +298,7 @@ class TestExceptionHandlingFunctionality:
         sys.path.insert(0, str(EVENT_LOGGER_PATH.parent))
 
         import importlib.util
+
         spec = importlib.util.spec_from_file_location("event_logger", EVENT_LOGGER_PATH)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -314,6 +324,7 @@ class TestExceptionHandlingFunctionality:
         sys.path.insert(0, str(GPU_STATE_READER_PATH.parent))
 
         import importlib.util
+
         spec = importlib.util.spec_from_file_location("gpu_state_reader", GPU_STATE_READER_PATH)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -329,8 +340,9 @@ class TestExceptionHandlingFunctionality:
 @pytest.fixture
 def temp_dir():
     """Create a temporary directory for tests."""
-    import tempfile
     import shutil
+    import tempfile
+
     tmp = Path(tempfile.mkdtemp(prefix="ds01-test-"))
     yield tmp
     shutil.rmtree(tmp, ignore_errors=True)
@@ -346,11 +358,10 @@ class TestSpecificExceptionTuples:
 
             # When catching file errors, should catch both IOError and OSError
             # (or just OSError since IOError is an alias in Python 3)
-            if 'IOError' in content:
+            if "IOError" in content:
                 # IOError alone is fine, or grouped with OSError
                 pass
-            if 'except (IOError, OSError)' in content or \
-               'except (OSError, IOError)' in content:
+            if "except (IOError, OSError)" in content or "except (OSError, IOError)" in content:
                 pass  # Proper grouping
 
     def test_subprocess_exceptions_properly_caught(self):
@@ -358,9 +369,11 @@ class TestSpecificExceptionTuples:
         content = GPU_ALLOCATOR_PATH.read_text()
 
         # Should have subprocess.SubprocessError or subprocess.CalledProcessError
-        assert 'subprocess.SubprocessError' in content or \
-               'subprocess.CalledProcessError' in content or \
-               'CalledProcessError' in content
+        assert (
+            "subprocess.SubprocessError" in content
+            or "subprocess.CalledProcessError" in content
+            or "CalledProcessError" in content
+        )
 
 
 class TestExceptionMessageQuality:
@@ -374,10 +387,11 @@ class TestExceptionMessageQuality:
             # Check that warnings include the exception variable
             # Pattern: print(f"Warning: ... {e}") or similar
             import re
-            warning_patterns = re.findall(r'print\([^)]*Warning[^)]*\)', content)
+
+            warning_patterns = re.findall(r"print\([^)]*Warning[^)]*\)", content)
 
             # At least some warnings should include exception details
-            has_exception_detail = any('{e}' in p or 'e}' in p for p in warning_patterns)
+            any("{e}" in p or "e}" in p for p in warning_patterns)
             # This is a soft check - not all warnings need exception details
             # but it's good practice
 

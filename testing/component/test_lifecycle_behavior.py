@@ -66,7 +66,7 @@ class _MockEnv:
         self._write_mock_simple("who", 'echo ""')
         self._write_mock_simple("logger", "true")
         self._write_mock_simple("getent", 'echo ""')
-        self._write_mock_simple("tee", 'cat > /dev/null')
+        self._write_mock_simple("tee", "cat > /dev/null")
         self._write_mock_get_resource_limits()
         self._write_default_config()
 
@@ -280,7 +280,8 @@ esac
         self._make_executable(mock_script)
 
     def _write_default_config(self):
-        self.config_dir.joinpath("resource-limits.yaml").write_text(textwrap.dedent("""\
+        self.config_dir.joinpath("resource-limits.yaml").write_text(
+            textwrap.dedent("""\
             defaults:
               max_runtime: 24h
               idle_timeout: 0.5h
@@ -310,7 +311,8 @@ esac
                 idle_timeout: 15m
                 max_runtime: 24h
                 sigterm_grace_seconds: 30
-        """))
+        """)
+        )
 
     # -- Mock data helpers ---------------------------------------------------
 
@@ -381,9 +383,9 @@ esac
             "ds01_parse_duration() {\n"
             '    local d="$1"\n'
             '    case "$d" in\n'
-            '        *d) echo $(( ${d%d} * 86400 )) ;;\n'
-            '        *h) echo $(( ${d%h} * 3600 )) ;;\n'
-            '        *m) echo $(( ${d%m} * 60 )) ;;\n'
+            "        *d) echo $(( ${d%d} * 86400 )) ;;\n"
+            "        *h) echo $(( ${d%h} * 3600 )) ;;\n"
+            "        *m) echo $(( ${d%m} * 60 )) ;;\n"
             '        *s) echo "${d%s}" ;;\n'
             '        null|never|"") echo "-1" ;;\n'
             '        *) echo "$d" ;;\n'
@@ -420,9 +422,7 @@ class TestMultiSignalAndLogic:
         mock_env.set_mock_data("gpu_util_GPU-UUID-123", "80")
         mock_env.set_docker_inspect("test-ctr", "gpu_uuid", "GPU-UUID-123")
 
-        code = mock_env.harness_idle(
-            'result=$(check_gpu_idle "test-ctr" 5); echo "gpu:$result"'
-        )
+        code = mock_env.harness_idle('result=$(check_gpu_idle "test-ctr" 5); echo "gpu:$result"')
         result = mock_env.run(code)
         assert "gpu:active" in result.stdout
 
@@ -462,9 +462,7 @@ class TestMultiSignalAndLogic:
         mock_env.set_docker_inspect("test-ctr", "gpu_uuid", "<no value>")
         mock_env.set_docker_inspect("test-ctr", "device_ids", "")
 
-        code = mock_env.harness_idle(
-            'result=$(check_gpu_idle "test-ctr" 5); echo "gpu:$result"'
-        )
+        code = mock_env.harness_idle('result=$(check_gpu_idle "test-ctr" 5); echo "gpu:$result"')
         result = mock_env.run(code)
         assert "gpu:unknown" in result.stdout
 
@@ -494,20 +492,21 @@ class TestIdleDetectionWindow:
     @pytest.mark.component
     def test_streak_below_window_no_action(self, mock_env):
         """Idle streak < detection_window → waiting."""
-        mock_env.set_state_file("test-ctr", idle_streak="1", warned="false",
-                                last_activity="1699999000", last_cpu="0.0")
+        mock_env.set_state_file(
+            "test-ctr", idle_streak="1", warned="false", last_activity="1699999000", last_cpu="0.0"
+        )
         code = mock_env.harness_idle(
             f'state_file="{mock_env.state_dir}/test-ctr.state"\n'
             'source "$state_file"\n'
-            'current_streak=${IDLE_STREAK:-0}\n'
-            'current_streak=$((current_streak + 1))\n'
+            "current_streak=${IDLE_STREAK:-0}\n"
+            "current_streak=$((current_streak + 1))\n"
             'sed -i "s/^IDLE_STREAK=.*/IDLE_STREAK=$current_streak/" "$state_file"\n'
-            'detection_window=3\n'
+            "detection_window=3\n"
             'if [ "$current_streak" -lt "$detection_window" ]; then\n'
             '    echo "result:waiting"\n'
-            'else\n'
+            "else\n"
             '    echo "result:triggered"\n'
-            'fi\n'
+            "fi\n"
         )
         result = mock_env.run(code)
         assert "result:waiting" in result.stdout
@@ -516,20 +515,21 @@ class TestIdleDetectionWindow:
     @pytest.mark.component
     def test_streak_reaches_window_triggers(self, mock_env):
         """Idle streak == detection_window → triggered."""
-        mock_env.set_state_file("test-ctr", idle_streak="2", warned="false",
-                                last_activity="1699999000", last_cpu="0.0")
+        mock_env.set_state_file(
+            "test-ctr", idle_streak="2", warned="false", last_activity="1699999000", last_cpu="0.0"
+        )
         code = mock_env.harness_idle(
             f'state_file="{mock_env.state_dir}/test-ctr.state"\n'
             'source "$state_file"\n'
-            'current_streak=${IDLE_STREAK:-0}\n'
-            'current_streak=$((current_streak + 1))\n'
+            "current_streak=${IDLE_STREAK:-0}\n"
+            "current_streak=$((current_streak + 1))\n"
             'sed -i "s/^IDLE_STREAK=.*/IDLE_STREAK=$current_streak/" "$state_file"\n'
-            'detection_window=3\n'
+            "detection_window=3\n"
             'if [ "$current_streak" -lt "$detection_window" ]; then\n'
             '    echo "result:waiting"\n'
-            'else\n'
+            "else\n"
             '    echo "result:triggered"\n'
-            'fi\n'
+            "fi\n"
         )
         result = mock_env.run(code)
         assert "result:triggered" in result.stdout
@@ -538,8 +538,9 @@ class TestIdleDetectionWindow:
     @pytest.mark.component
     def test_activity_resets_streak(self, mock_env):
         """Activity detection resets IDLE_STREAK to 0 and WARNED to false."""
-        mock_env.set_state_file("test-ctr", idle_streak="5", warned="true",
-                                last_activity="1699999000", last_cpu="0.0")
+        mock_env.set_state_file(
+            "test-ctr", idle_streak="5", warned="true", last_activity="1699999000", last_cpu="0.0"
+        )
         code = mock_env.harness_idle(
             'update_activity "test-ctr" "true"\n'
             f'source "{mock_env.state_dir}/test-ctr.state"\n'
@@ -565,10 +566,10 @@ class TestIdleDetectionWindow:
         )
         code = mock_env.harness_idle(
             'r=$(get_lifecycle_policies "researcher1")\n'
-            'rw=$(/usr/bin/python3 -c "import json; print(json.loads(\'$r\')[\'idle_detection_window\'])")\n'
+            "rw=$(/usr/bin/python3 -c \"import json; print(json.loads('$r')['idle_detection_window'])\")\n"
             'echo "researcher:$rw"\n'
             's=$(get_lifecycle_policies "student1")\n'
-            'sw=$(/usr/bin/python3 -c "import json; print(json.loads(\'$s\')[\'idle_detection_window\'])")\n'
+            "sw=$(/usr/bin/python3 -c \"import json; print(json.loads('$s')['idle_detection_window'])\")\n"
             'echo "student:$sw"'
         )
         result = mock_env.run(code)
@@ -588,14 +589,13 @@ class TestExemptUserIdleHandling:
     @pytest.mark.component
     def test_exempt_user_detected(self, mock_env):
         """check_exemption returns 'exempt:...' for exempt users."""
-        mock_env.set_mock_data("exemption_testuser_idle_timeout",
-                               "exempt: research waiver")
+        mock_env.set_mock_data("exemption_testuser_idle_timeout", "exempt: research waiver")
         code = mock_env.harness_idle(
             'status=$(check_exemption "testuser" "idle_timeout")\n'
             'case "$status" in\n'
             '    exempt:*) echo "result:exempt" ;;\n'
             '    *) echo "result:enforced" ;;\n'
-            'esac'
+            "esac"
         )
         result = mock_env.run(code)
         assert "result:exempt" in result.stdout
@@ -609,7 +609,7 @@ class TestExemptUserIdleHandling:
             'case "$status" in\n'
             '    exempt:*) echo "result:exempt" ;;\n'
             '    *) echo "result:enforced" ;;\n'
-            'esac'
+            "esac"
         )
         result = mock_env.run(code)
         assert "result:enforced" in result.stdout
@@ -617,32 +617,37 @@ class TestExemptUserIdleHandling:
     @pytest.mark.component
     def test_fyi_warning_sent_once(self, mock_env):
         """FYI warning for exempt users fires once, then suppressed by WARNED flag."""
-        mock_env.set_state_file("exempt-ctr", idle_streak="5", warned="false",
-                                last_activity="1699990000", last_cpu="0.0")
+        mock_env.set_state_file(
+            "exempt-ctr",
+            idle_streak="5",
+            warned="false",
+            last_activity="1699990000",
+            last_cpu="0.0",
+        )
         code = mock_env.harness_idle(
             f'state_file="{mock_env.state_dir}/exempt-ctr.state"\n'
             'source "$state_file"\n'
-            'is_exempt=true\n'
-            'idle_seconds=2000\n'
-            'warning_seconds=1800\n'
+            "is_exempt=true\n"
+            "idle_seconds=2000\n"
+            "warning_seconds=1800\n"
             # First check
             'if [ "$is_exempt" = true ]; then\n'
             '    if [ "$idle_seconds" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then\n'
             '        echo "action:send_fyi"\n'
             '        sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"\n'
-            '    else\n'
+            "    else\n"
             '        echo "action:none"\n'
-            '    fi\n'
-            'fi\n'
+            "    fi\n"
+            "fi\n"
             # Second check
             'source "$state_file"\n'
             'if [ "$is_exempt" = true ]; then\n'
             '    if [ "$idle_seconds" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then\n'
             '        echo "second:send_fyi"\n'
-            '    else\n'
+            "    else\n"
             '        echo "second:suppressed"\n'
-            '    fi\n'
-            'fi'
+            "    fi\n"
+            "fi"
         )
         result = mock_env.run(code)
         assert "action:send_fyi" in result.stdout
@@ -651,19 +656,18 @@ class TestExemptUserIdleHandling:
     @pytest.mark.component
     def test_exempt_user_never_stopped(self, mock_env):
         """Even when idle exceeds timeout, exempt user is not stopped."""
-        mock_env.set_mock_data("exemption_exemptuser_idle_timeout",
-                               "exempt: PhD thesis")
+        mock_env.set_mock_data("exemption_exemptuser_idle_timeout", "exempt: PhD thesis")
         code = mock_env.harness_idle(
-            'is_exempt=false\n'
+            "is_exempt=false\n"
             'status=$(check_exemption "exemptuser" "idle_timeout")\n'
             'case "$status" in exempt:*) is_exempt=true ;; esac\n'
-            'idle_seconds=50000\n'
-            'timeout_seconds=1800\n'
+            "idle_seconds=50000\n"
+            "timeout_seconds=1800\n"
             'if [ "$is_exempt" = true ]; then\n'
             '    echo "result:skip_stop"\n'
             'elif [ "$idle_seconds" -ge "$timeout_seconds" ]; then\n'
             '    echo "result:would_stop"\n'
-            'fi'
+            "fi"
         )
         result = mock_env.run(code)
         assert "result:skip_stop" in result.stdout
@@ -687,25 +691,19 @@ class TestVariableSigtermGrace:
 
     @pytest.mark.component
     def test_compose_grace_45s(self, mock_env):
-        code = mock_env.harness_idle(
-            'grace=$(get_sigterm_grace "compose"); echo "grace:$grace"'
-        )
+        code = mock_env.harness_idle('grace=$(get_sigterm_grace "compose"); echo "grace:$grace"')
         result = mock_env.run(code)
         assert "grace:45" in result.stdout
 
     @pytest.mark.component
     def test_docker_grace_60s(self, mock_env):
-        code = mock_env.harness_idle(
-            'grace=$(get_sigterm_grace "docker"); echo "grace:$grace"'
-        )
+        code = mock_env.harness_idle('grace=$(get_sigterm_grace "docker"); echo "grace:$grace"')
         result = mock_env.run(code)
         assert "grace:60" in result.stdout
 
     @pytest.mark.component
     def test_unknown_grace_30s(self, mock_env):
-        code = mock_env.harness_idle(
-            'grace=$(get_sigterm_grace "unknown"); echo "grace:$grace"'
-        )
+        code = mock_env.harness_idle('grace=$(get_sigterm_grace "unknown"); echo "grace:$grace"')
         result = mock_env.run(code)
         assert "grace:30" in result.stdout
 
@@ -715,7 +713,7 @@ class TestVariableSigtermGrace:
         mock_env.set_mock_data("docker_ps", "compose-ctr\n")
         mock_env.set_docker_inspect("compose-ctr", "container_type", "compose")
         mock_env.set_docker_inspect("compose-ctr", "name", "/compose-ctr")
-        mock_env.set_docker_inspect("compose-ctr", "labels_json", '{}')
+        mock_env.set_docker_inspect("compose-ctr", "labels_json", "{}")
 
         code = mock_env.harness_idle(
             'stop_idle_container "testuser" "compose-ctr" 3600 2>/dev/null; true'
@@ -738,14 +736,13 @@ class TestMaxRuntimeExemption:
     @pytest.mark.component
     def test_exempt_user_skips_enforcement(self, mock_env):
         """Exempt user detected via check_exemption."""
-        mock_env.set_mock_data("exemption_exemptuser_max_runtime",
-                               "exempt: faculty override")
+        mock_env.set_mock_data("exemption_exemptuser_max_runtime", "exempt: faculty override")
         code = mock_env.harness_runtime(
             'status=$(check_exemption "exemptuser" "max_runtime")\n'
             'case "$status" in\n'
             '    exempt:*) echo "result:exempt" ;;\n'
             '    *) echo "result:enforced" ;;\n'
-            'esac'
+            "esac"
         )
         result = mock_env.run(code)
         assert "result:exempt" in result.stdout
@@ -759,12 +756,12 @@ class TestMaxRuntimeExemption:
         code = mock_env.harness_runtime(
             'runtime_str=$(get_max_runtime "normaluser")\n'
             'runtime_seconds=$(runtime_to_seconds "$runtime_str")\n'
-            'runtime_seconds_actual=90000\n'  # 25 hours
+            "runtime_seconds_actual=90000\n"  # 25 hours
             'if [ "$runtime_seconds_actual" -ge "$runtime_seconds" ]; then\n'
             '    echo "result:would_stop"\n'
-            'else\n'
+            "else\n"
             '    echo "result:running"\n'
-            'fi'
+            "fi"
         )
         result = mock_env.run(code)
         assert "result:would_stop" in result.stdout
@@ -777,15 +774,15 @@ class TestMaxRuntimeExemption:
         code = mock_env.harness_runtime(
             f'state_file="{mock_env.state_dir}/warn-ctr.state"\n'
             'source "$state_file"\n'
-            'runtime_seconds=86400\n'  # 24h
-            'warning_seconds=$((runtime_seconds * 90 / 100))\n'
-            'runtime_seconds_actual=79200\n'  # 22h — past 90%
+            "runtime_seconds=86400\n"  # 24h
+            "warning_seconds=$((runtime_seconds * 90 / 100))\n"
+            "runtime_seconds_actual=79200\n"  # 22h — past 90%
             'if [ "$runtime_seconds_actual" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then\n'
             '    echo "action:warn"\n'
             '    sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"\n'
-            'else\n'
+            "else\n"
             '    echo "action:none"\n'
-            'fi\n'
+            "fi\n"
             'source "$state_file"\n'
             'echo "warned:$WARNED"'
         )
