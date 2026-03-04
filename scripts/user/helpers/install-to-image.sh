@@ -1,10 +1,9 @@
-# File: /opt/ds01-infra/scripts/user/install-to-image.sh
 #!/bin/bash
 # Helper to install packages and update image
 
 CONTAINER_NAME="$1"
 shift
-PACKAGES="$@"
+PACKAGES="$*"
 
 if [ -z "$CONTAINER_NAME" ] || [ -z "$PACKAGES" ]; then
     echo "Usage: install-to-image <container-name> <packages...>"
@@ -15,7 +14,6 @@ if [ -z "$CONTAINER_NAME" ] || [ -z "$PACKAGES" ]; then
     exit 1
 fi
 
-USERNAME=$(whoami)
 USER_ID=$(id -u)
 CONTAINER_TAG="${CONTAINER_NAME}._.$USER_ID"
 
@@ -37,14 +35,12 @@ echo ""
 docker start "$CONTAINER_TAG" 2>/dev/null || true
 
 # Install packages
-docker exec "$CONTAINER_TAG" pip install --no-cache-dir $PACKAGES
-
-if [ $? -eq 0 ]; then
+if docker exec "$CONTAINER_TAG" pip install --no-cache-dir "$PACKAGES"; then
     echo ""
     echo "✓ Packages installed successfully"
     echo ""
-    read -p "Commit changes to image? (creates new image version) [y/N]: " COMMIT
-    
+    read -r -p "Commit changes to image? (creates new image version) [y/N]: " COMMIT
+
     if [[ "$COMMIT" =~ ^[Yy] ]]; then
         NEW_TAG="${IMAGE_NAME}-$(date +%Y%m%d-%H%M)"
         # CRITICAL: Truncate lastlog/faillog before commit to prevent huge sparse files

@@ -1,4 +1,3 @@
-# File: /opt/ds01-infra/scripts/monitoring/container-audit.sh
 #!/bin/bash
 # Audit script to check container ownership and security
 
@@ -8,7 +7,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Check all running containers
-docker ps --format "{{.Names}}" | while read container; do
+docker ps --format "{{.Names}}" | while read -r container; do
     echo "Auditing: $container"
     
     # Check if it's a DS01 container
@@ -55,7 +54,7 @@ echo "Unlabeled Containers (not DS01 managed)"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-docker ps -a --format "{{.Names}}" | while read container; do
+docker ps -a --format "{{.Names}}" | while read -r container; do
     if ! docker inspect "$container" --format='{{index .Config.Labels "ds01.user"}}' 2>/dev/null | grep -q .; then
         status=$(docker inspect "$container" --format='{{.State.Status}}')
         created=$(docker inspect "$container" --format='{{.Created}}' | cut -d'T' -f1)
