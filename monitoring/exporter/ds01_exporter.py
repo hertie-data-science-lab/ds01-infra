@@ -257,6 +257,76 @@ def collect_event_counts() -> List[str]:
     return lines
 
 
+LIFECYCLE_EVENT_MAP: Dict[str, Dict[str, str]] = {
+    "maintenance.idle_kill": {"action": "idle_kill"},
+    "maintenance.runtime_kill": {"action": "runtime_kill"},
+    "resource.oom_kill": {"action": "oom_kill"},
+    "alert.gpu_warning": {"action": "gpu_warning"},
+    "alert.memory_warning": {"action": "memory_warning"},
+    "alert.container_warning": {"action": "container_warning"},
+    "bare_metal.warning": {"action": "bare_metal_warning"},
+}
+
+
+def collect_lifecycle_metrics() -> List[str]:
+    """Emit lifecycle event counters from events.jsonl cache.
+
+    Depends on collect_event_counts() having been called first to populate _event_cache.
+    Always emits all label combinations (with 0 for missing) so dashboard panels don't break
+    when an event type hasn't occurred yet.
+    """
+    lines = []
+    lines.append("# HELP ds01_lifecycle_events_total Lifecycle enforcement events in last 24 hours")
+    lines.append("# TYPE ds01_lifecycle_events_total gauge")
+
+    for event_type, labels in LIFECYCLE_EVENT_MAP.items():
+        count = _event_cache.get(event_type, 0)
+        label_str = ",".join(f'{k}="{v}"' for k, v in labels.items())
+        lines.append(f"ds01_lifecycle_events_total{{{label_str}}} {count}")
+
+    return lines
+
+
+def collect_ssh_metrics() -> List[str]:
+    """Collect active SSH session counts per user.
+
+    Parses output of the `who` command (available on all Linux systems, no dependencies).
+    Emits per-user gauge and a total aggregate gauge.
+    """
+    lines = []
+    try:
+        result = subprocess.run(["who"], capture_output=True, text=True, timeout=5)
+        if result.returncode != 0:
+            return lines
+
+        # Count sessions per user
+        sessions: Dict[str, int] = {}
+        for line in result.stdout.strip().split("\n"):
+            if not line.strip():
+                continue
+            # who output format: "username  pts/0  2026-02-25 10:30 (192.168.1.1)"
+            parts = line.split()
+            if parts:
+                user = parts[0]
+                sessions[user] = sessions.get(user, 0) + 1
+
+        lines.append("# HELP ds01_ssh_sessions_active Active SSH sessions per user")
+        lines.append("# TYPE ds01_ssh_sessions_active gauge")
+        for user, count in sorted(sessions.items()):
+            safe_user = user.replace('"', '\\"')
+            lines.append(f'ds01_ssh_sessions_active{{user="{safe_user}"}} {count}')
+
+        lines.append("# HELP ds01_ssh_sessions_total Total active SSH sessions")
+        lines.append("# TYPE ds01_ssh_sessions_total gauge")
+        total = sum(sessions.values())
+        lines.append(f"ds01_ssh_sessions_total {total}")
+
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+        lines.append(f"# Error collecting SSH metrics: {e}")
+
+    return lines
+
+
 def collect_system_metrics() -> List[str]:
     """Collect basic system metrics."""
     lines = []
@@ -554,7 +624,7 @@ def collect_all_metrics() -> str:
     # Exporter info
     lines.append("# HELP ds01_exporter_info DS01 exporter information")
     lines.append("# TYPE ds01_exporter_info gauge")
-    lines.append('ds01_exporter_info{version="2.1.0",type="slim"} 1')
+    lines.append('ds01_exporter_info{version="2.2.0",type="slim"} 1')
     lines.append("")
 
     # Collect DS01-specific metrics only (allocation, user, events, system)
@@ -565,11 +635,15 @@ def collect_all_metrics() -> str:
     lines.append("")
     lines.extend(collect_event_counts())
     lines.append("")
+    lines.extend(collect_lifecycle_metrics())
+    lines.append("")
     lines.extend(collect_system_metrics())
     lines.append("")
     lines.extend(collect_mig_slot_mapping())
     lines.append("")
     lines.extend(collect_unmanaged_metrics())
+    lines.append("")
+    lines.extend(collect_ssh_metrics())
 
     return "\n".join(lines) + "\n"
 
