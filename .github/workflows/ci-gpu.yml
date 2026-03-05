@@ -5,6 +5,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: gpu-ci
+  cancel-in-progress: true
+
 jobs:
   gpu-tests:
     name: Full test suite (GPU + runtime)
