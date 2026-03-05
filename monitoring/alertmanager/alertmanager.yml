@@ -1,33 +1,20 @@
 # DS01 Alertmanager Configuration
-# Dual-channel alerting (email + Microsoft Teams webhook)
+# Teams-only alerting via msteamsv2_configs
 #
-# SETUP for SMTP:
-#   Option 1: Set in .env file (monitoring/.env):
-#     SMTP_AUTH_PASSWORD=your_password_here
-#   Option 2: Uncomment smtp_auth_password below and add password directly
-#   Option 3: Create alertmanager-local.yml with credentials (gitignored)
+# SETUP:
+#   Replace PLACEHOLDER_TEAMS_WEBHOOK_URL with the actual Power Automate webhook URL.
+#   This will be configured in Plan 05 (Teams webhook integration checkpoint).
 #
-# SETUP for Teams:
-#   1. In Microsoft Teams: Channel -> Manage channel -> Connectors
-#   2. Search "Incoming Webhook" -> Configure -> Create -> Copy URL
-#   3. Set in .env file: TEAMS_WEBHOOK_URL=https://your-tenant.webhook.office.com/...
-#   4. Or replace ${TEAMS_WEBHOOK_URL} placeholder below
+# NOTE: Requires Alertmanager v0.28.0+ for msteamsv2_configs support.
+#   Current image: prom/alertmanager:v0.28.1
 
 global:
-  # Hertie School SMTP settings
-  smtp_smarthost: 'smtp.hertie-school.org:587'
-  smtp_from: 'h.baker@hertie-school.org'
-  smtp_auth_username: 'h.baker@hertie-school.org'
-  # smtp_auth_password: 'YOUR_PASSWORD_HERE'  # Uncomment and fill in, or set via SMTP_AUTH_PASSWORD env var
-  smtp_require_tls: true
-
-  # Resolve timeout
   resolve_timeout: 5m
 
 # Alert routing tree
 route:
   # Default receiver (all alerts go here unless matched by child route)
-  receiver: 'ds01-admin'
+  receiver: 'ds01-teams'
 
   # Group alerts by alertname only (aggressive grouping for batch notifications)
   group_by: ['alertname']
@@ -46,9 +33,9 @@ route:
     # Critical alerts - faster notification path
     - match:
         severity: critical
-      receiver: 'ds01-critical'
-      group_wait: 30s          # Send critical alerts quickly
-      repeat_interval: 1h      # Remind more frequently
+      receiver: 'ds01-teams-critical'
+      group_wait: 30s      # Send critical alerts quickly
+      repeat_interval: 1h  # Remind more frequently
 
 # Inhibition rules - suppress alerts when related critical is firing
 inhibit_rules:
@@ -66,40 +53,28 @@ inhibit_rules:
       alertname: 'DS01.*'
     equal: ['job']
 
-# Receivers - dual-channel configuration (email + Teams)
+# Receivers - Teams-only delivery via msteamsv2_configs
 receivers:
-  # Admin receiver - warning/info alerts (email + Teams)
-  - name: 'ds01-admin'
-    email_configs:
-      - to: 'datasciencelab@hertie-school.org'
+  - name: 'ds01-teams'
+    msteamsv2_configs:
+      - webhook_url: 'PLACEHOLDER_TEAMS_WEBHOOK_URL'
         send_resolved: true
-        headers:
-          Subject: '[DS01] {{ .Status | toUpper }}: {{ .GroupLabels.alertname }}'
-      - to: 'h.baker@hertie-school.org'
-        send_resolved: true
-        headers:
-          Subject: '[DS01] {{ .Status | toUpper }}: {{ .GroupLabels.alertname }}'
-    webhook_configs:
-      # Microsoft Teams webhook (native support in v0.28.1+)
-      - url: 'https://hertieschool.webhook.office.com/webhookb2/34f05edb-c358-4de0-9c27-6f42feb70a20@93527bf6-801e-4865-92ce-d4667ecbde2a/IncomingWebhook/cf7980f2ddf741f29488907b82953bd1/2a0a7d80-7335-47c6-bc00-768375f53933/V24DVhu5E3wWUf1wYa2l859YPySTXNxCN94fpHHrhazFs1'
-        send_resolved: true
+        title: '[DS01] {{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
+        text: |
+          **Severity:** {{ .CommonLabels.severity }}
+          {{ range .Alerts }}
+          **{{ .Annotations.summary }}**
+          {{ .Annotations.description }}
+          {{ end }}
 
-  # Critical receiver - immediate notification (email + Teams with priority)
-  - name: 'ds01-critical'
-    email_configs:
-      - to: 'datasciencelab@hertie-school.org'
+  - name: 'ds01-teams-critical'
+    msteamsv2_configs:
+      - webhook_url: 'PLACEHOLDER_TEAMS_WEBHOOK_URL'
         send_resolved: true
-        headers:
-          Subject: '[DS01 CRITICAL] {{ .GroupLabels.alertname }}'
-      - to: 'h.baker@hertie-school.org'
-        send_resolved: true
-        headers:
-          Subject: '[DS01 CRITICAL] {{ .GroupLabels.alertname }}'
-    webhook_configs:
-      # Microsoft Teams webhook for critical alerts
-      - url: 'https://hertieschool.webhook.office.com/webhookb2/34f05edb-c358-4de0-9c27-6f42feb70a20@93527bf6-801e-4865-92ce-d4667ecbde2a/IncomingWebhook/cf7980f2ddf741f29488907b82953bd1/2a0a7d80-7335-47c6-bc00-768375f53933/V24DVhu5E3wWUf1wYa2l859YPySTXNxCN94fpHHrhazFs1'
-        send_resolved: true
-
-# Email templates
-templates:
-  - '/etc/alertmanager/templates/*.tmpl'
+        title: '[DS01 CRITICAL] {{ .CommonLabels.alertname }}'
+        text: |
+          **CRITICAL ALERT**
+          {{ range .Alerts }}
+          **{{ .Annotations.summary }}**
+          {{ .Annotations.description }}
+          {{ end }}
