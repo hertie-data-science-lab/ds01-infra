@@ -48,6 +48,7 @@ groups:
     rules:
       # Per-user GPU utilization (avg across all their allocated GPUs)
       # Works for both full GPUs and MIG instances
+      # NOTE: Returns 0 when DCGM is down — dashboard should check up{job="dcgm-exporter"} status
       - record: ds01:user_gpu_utilization_avg
         expr: |
           avg by (user) (
@@ -358,3 +359,18 @@ groups:
       - record: ds01:unrestricted_gpu_present
         expr: |
           clamp_max(ds01_unmanaged_gpu_all_access, 1) or vector(0)
+
+  # Lifecycle enforcement activity aggregations
+  # Bridges ds01_lifecycle_events_total (emitted by ds01-exporter Plan 02) to dashboard stat/trend panels
+  # NOTE: or vector(0) is appropriate here — 0 is correct when no enforcement events have occurred
+  - name: ds01_lifecycle_metrics
+    interval: 1m
+    rules:
+      # Total enforcement events in last 24h (for dashboard stat panel)
+      - record: ds01:lifecycle_events_24h
+        expr: sum(ds01_lifecycle_events_total) or vector(0)
+
+      # Kill-type enforcement events (idle, runtime, OOM kills — for trend panels)
+      - record: ds01:lifecycle_kills_24h
+        expr: |
+          sum(ds01_lifecycle_events_total{action=~"idle_kill|runtime_kill|oom_kill"}) or vector(0)

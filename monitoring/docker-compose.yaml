@@ -28,12 +28,14 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      - /run/dbus/system_bus_socket:/host/run/dbus/system_bus_socket:ro
     command:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
       - '--collector.systemd'
+      - '--collector.logind'
       - '--no-collector.arp'
       - '--no-collector.infiniband'
       - '--no-collector.ipvs'
@@ -60,7 +62,7 @@ services:
       - "ds01.managed_by=ds01-monitoring-stack"
       - "ds01.container_type=infrastructure"
       - "ds01.protected=true"
-      - "ds01.description=System metrics (CPU, memory, disk, network)"
+      - "ds01.description=System metrics (CPU, memory, disk, network, SSH sessions)"
 
   # DCGM Exporter - restart lifecycle managed by systemd service
   # See: config/deploy/systemd/ds01-dcgm-exporter.service
@@ -113,6 +115,50 @@ services:
       - "ds01.protected=true"
       - "ds01.description=GPU metrics via NVIDIA DCGM (utilization, memory, temperature)"
 
+  # cAdvisor - Per-container resource metrics (CPU, memory, network, disk I/O)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: ds01-cadvisor
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.15'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+        labels: "ds01.component"
+    networks:
+      - ds01-monitoring
+    labels:
+      - "ds01.monitoring=true"
+      - "ds01.component=cadvisor"
+      - "ds01.owner=system"
+      - "ds01.managed_by=ds01-monitoring-stack"
+      - "ds01.container_type=infrastructure"
+      - "ds01.protected=true"
+      - "ds01.description=Per-container resource metrics (CPU, memory, network, disk I/O)"
+
   # Prometheus - Time series database and alerting
   prometheus:
     image: prom/prometheus:v2.48.0
@@ -130,8 +176,8 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=7d'
-      - '--storage.tsdb.retention.size=20GB'
+      - '--storage.tsdb.retention.time=90d'
+      - '--storage.tsdb.retention.size=15GB'
       - '--storage.tsdb.wal-compression'
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
@@ -150,6 +196,8 @@ services:
       # dcgm-exporter is optional - Prometheus will work without GPU metrics
       dcgm-exporter:
         condition: service_started
+      cadvisor:
+        condition: service_started
     logging:
       driver: json-file
       options:
@@ -167,7 +215,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 4G
           cpus: '0.5'
 
   # Alertmanager - Alert routing and notifications
@@ -179,15 +227,10 @@ services:
       - "127.0.0.1:9093:9093"
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - ./alertmanager/templates:/etc/alertmanager/templates:ro
       - alertmanager-data:/alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
-    environment:
-      # SMTP credentials (set in .env file)
-      - SMTP_AUTH_USER=${SMTP_AUTH_USER:-}
-      - SMTP_AUTH_PASSWORD=${SMTP_AUTH_PASSWORD:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
       interval: 30s
@@ -209,7 +252,7 @@ services:
       - "ds01.managed_by=ds01-monitoring-stack"
       - "ds01.container_type=infrastructure"
       - "ds01.protected=true"
-      - "ds01.description=Alert routing and email notifications"
+      - "ds01.description=Alert routing and Teams notifications"
     deploy:
       resources:
         limits:
