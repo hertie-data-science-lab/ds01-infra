@@ -11,6 +11,8 @@ providers:
     type: file
     disableDeletion: true
     updateIntervalSeconds: 30
-    allowUiUpdates: false
+    # NOTE: allowUiUpdates is true during Phase 12 dashboard development.
+    # Set back to false once Phase 12 is complete to prevent untracked edits.
+    allowUiUpdates: true
     options:
       path: /etc/grafana/provisioning/dashboards/dashboards
