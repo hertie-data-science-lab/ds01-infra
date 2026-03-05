@@ -7,10 +7,11 @@ groups:
     interval: 30s
     rules:
       # GPU waste detection - allocated but idle
+      # Uses recording rule ds01:gpu_utilization_by_slot (DCGM-backed, supports MIG)
       - alert: DS01GPUWaste
         expr: |
-          ds01_gpu_allocated == 1
-          and on(gpu_slot) (ds01_gpu_utilization_percent < 5)
+          (ds01_gpu_allocated == 1)
+          and on(gpu_slot) (ds01:gpu_utilization_by_slot < 5)
         for: 30m
         labels:
           severity: warning
@@ -20,27 +21,28 @@ groups:
 
       # High GPU temperature
       - alert: DS01GPUHighTemperature
-        expr: ds01_gpu_temperature_celsius > 85
+        expr: DCGM_FI_DEV_GPU_TEMP > 85
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: "GPU temperature above 85C"
-          description: "GPU {{ $labels.gpu }} at {{ $value }}C"
+          summary: "GPU {{ $labels.gpu }} temperature above 85C"
+          description: "GPU {{ $labels.gpu }} ({{ $labels.modelName }}) at {{ $value }}C"
 
       # Critical GPU temperature
       - alert: DS01GPUCriticalTemperature
-        expr: ds01_gpu_temperature_celsius > 90
+        expr: DCGM_FI_DEV_GPU_TEMP > 90
         for: 2m
         labels:
           severity: critical
         annotations:
-          summary: "GPU temperature critical (>90C)"
-          description: "GPU {{ $labels.gpu }} at {{ $value }}C - thermal throttling likely"
+          summary: "GPU {{ $labels.gpu }} temperature critical (>90C)"
+          description: "GPU {{ $labels.gpu }} ({{ $labels.modelName }}) at {{ $value }}C - thermal throttling likely"
 
-      # High GPU memory usage
+      # High GPU memory usage (uses DCGM framebuffer metrics)
       - alert: DS01GPUMemoryHigh
-        expr: (ds01_gpu_memory_used_bytes / ds01_gpu_memory_total_bytes) > 0.95
+        expr: |
+          (DCGM_FI_DEV_FB_USED / (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE)) > 0.95
         for: 10m
         labels:
           severity: warning
@@ -48,29 +50,35 @@ groups:
           summary: "GPU memory usage above 95%"
           description: "GPU {{ $labels.gpu }} memory at {{ $value | humanizePercentage }}"
 
-  # Container alerts
+  # Container alerts (uses cAdvisor metrics from Plan 01)
   - name: ds01_container_alerts
     interval: 30s
     rules:
-      # Container high CPU
+      # Container high CPU (cAdvisor: rate of CPU seconds × 100 = percent; 400% = 4 cores)
       - alert: DS01ContainerHighCPU
-        expr: ds01_container_cpu_percent > 400
+        expr: |
+          sum by (name) (rate(container_cpu_usage_seconds_total{name=~".+"}[5m])) * 100 > 400
         for: 30m
         labels:
           severity: info
         annotations:
           summary: "Container high CPU usage"
-          description: "{{ $labels.container }} using {{ $value }}% CPU for 30m"
+          description: "{{ $labels.name }} using >400% CPU for 30m"
 
-      # Container high memory
+      # Container high memory (cAdvisor; excludes containers with no memory limit set)
       - alert: DS01ContainerHighMemory
-        expr: ds01_container_memory_percent > 90
+        expr: |
+          (
+            container_memory_usage_bytes{name=~".+"}
+            / container_spec_memory_limit_bytes{name=~".+"}
+          ) > 0.9
+          and container_spec_memory_limit_bytes{name=~".+"} > 0
         for: 15m
         labels:
           severity: warning
         annotations:
           summary: "Container near memory limit"
-          description: "{{ $labels.container }} using {{ $value }}% of memory limit"
+          description: "{{ $labels.name }} using {{ $value | humanizePercentage }} of memory limit"
 
   # System health alerts
   - name: ds01_system_alerts
@@ -96,6 +104,16 @@ groups:
           summary: "Node exporter is down"
           description: "System metrics are not being collected"
 
+      # cAdvisor down (added in Plan 01)
+      - alert: DS01CAdvisorDown
+        expr: up{job="cadvisor"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "cAdvisor is down"
+          description: "Per-container metrics are not being collected"
+
       # DS01 state directory disk space
       - alert: DS01DiskSpaceLow
         expr: (ds01_state_disk_bytes{type="free"} / ds01_state_disk_bytes{type="total"}) < 0.1
@@ -106,17 +124,27 @@ groups:
           summary: "DS01 state directory low on space"
           description: "Less than 10% disk space remaining"
 
-      # Prometheus storage (from node_exporter if available)
+      # Root filesystem low space (Docker named volumes live on root filesystem)
       - alert: DS01PrometheusStorageLow
         expr: |
-          (node_filesystem_avail_bytes{mountpoint=~"/var/lib/docker/volumes/ds01-prometheus.*"}
-           / node_filesystem_size_bytes{mountpoint=~"/var/lib/docker/volumes/ds01-prometheus.*"}) < 0.1
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: "Prometheus storage low"
-          description: "Prometheus data volume has less than 10% free space"
+          description: "Root filesystem (where Docker volumes reside) has less than 10% free space"
+
+      # General disk space warning at 15% threshold
+      - alert: DS01HighDiskUsage
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.15
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root filesystem below 15% free space"
+          description: "{{ $value | humanizePercentage }} available on root filesystem"
 
       # High system load
       - alert: DS01HighSystemLoad
@@ -159,7 +187,7 @@ groups:
           summary: "DCGM exporter is down"
           description: "GPU hardware metrics are not being collected"
 
-      # Grafana down
+      # Grafana down (scrape job added in Plan 01)
       - alert: DS01GrafanaDown
         expr: up{job="grafana"} == 0
         for: 5m
@@ -169,7 +197,7 @@ groups:
           summary: "Grafana is down"
           description: "Dashboard UI is not responding"
 
-      # Alertmanager down
+      # Alertmanager down (scrape job added in Plan 01)
       - alert: DS01AlertmanagerDown
         expr: up{job="alertmanager"} == 0
         for: 3m
@@ -194,14 +222,15 @@ groups:
     interval: 30s
     rules:
       # User has GPUs with very low utilization
+      # Returns 0 when DCGM is down — check ds01:user_gpu_utilization_avg source before acting
       - alert: DS01UserGPUWaste
         expr: ds01:user_gpu_utilization_avg < 5
-        for: 1h
+        for: 2h
         labels:
-          severity: info
+          severity: warning
         annotations:
           summary: "User {{ $labels.user }} has low GPU utilization"
-          description: "User {{ $labels.user }} has avg GPU utilization of {{ $value | printf \"%.1f\" }}% for 1+ hour. Consider releasing unused GPUs."
+          description: "User {{ $labels.user }} has avg GPU utilization of {{ $value | printf \"%.1f\" }}% for 2+ hours. Consider releasing unused GPUs."
 
       # High GPU waste across system (>50% of allocated GPUs idle)
       - alert: DS01SystemHighGPUWaste
