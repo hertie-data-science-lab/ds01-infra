@@ -136,7 +136,7 @@ if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]] || [[ $# -eq 0 ]]; then
 fi
 
 if [[ "$1" == "--show-limits" ]]; then
-    CURRENT_USER=$(whoami)
+    CURRENT_USER="${SUDO_USER:-$(whoami)}"
     if [ -f "$RESOURCE_PARSER" ]; then
         python3 "$RESOURCE_PARSER" "$CURRENT_USER"
     else
@@ -209,7 +209,7 @@ while [[ $# -gt 0 ]]; do
             PREFER_FULL_GPU=true
             ;;
         --show-limits)
-            CURRENT_USER=$(whoami)
+            CURRENT_USER="${SUDO_USER:-$(whoami)}"
             if [ -f "$RESOURCE_PARSER" ]; then
                 python3 "$RESOURCE_PARSER" "$CURRENT_USER"
             else
@@ -269,9 +269,21 @@ if [[ -z "$FRAMEWORK" ]]; then
     log_info "No framework specified, defaulting to Pytorch 2.5.1"
 fi
 
-# Get current user
-CURRENT_USER=$(whoami)
-USER_ID=$(id -u)
+# Get current user (sudo-aware: resolve to real user if run via sudo)
+if [ -n "${SUDO_USER:-}" ]; then
+    CURRENT_USER="$SUDO_USER"
+    USER_ID=$(id -u "$SUDO_USER")
+    HOME=$(eval echo "~$SUDO_USER")
+    WORKSPACE_DIR="$HOME/workspace"
+    log_warning "Running via sudo — resolving to user '$CURRENT_USER'. You don't need sudo for mlc-create."
+elif [ "$(whoami)" = "root" ]; then
+    log_error "mlc-create should not be run as root directly"
+    log_info "Run as a normal user: mlc-create <name> <framework>"
+    exit 1
+else
+    CURRENT_USER=$(whoami)
+    USER_ID=$(id -u)
+fi
 
 # Validate container name
 if [[ -z "$CONTAINER_NAME" ]]; then

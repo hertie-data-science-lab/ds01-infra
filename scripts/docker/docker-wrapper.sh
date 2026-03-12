@@ -99,6 +99,7 @@ log_debug() {
 # Get current user info
 CURRENT_USER=$(whoami)
 CURRENT_UID=$(id -u)
+SUDO_REAL_USER="${SUDO_USER:-}"
 
 # Check if this is a 'run' or 'create' command that needs cgroup injection
 needs_cgroup_injection() {
@@ -1060,12 +1061,19 @@ main() {
     if needs_cgroup_injection "$subcommand"; then
         log_debug "Intercepting '$subcommand' for user $CURRENT_USER"
 
+        # When run via sudo, resolve group/slice for the real user, not root
+        local EFFECTIVE_USER="$CURRENT_USER"
+        if [ "$CURRENT_UID" = "0" ] && [ -n "$SUDO_REAL_USER" ]; then
+            EFFECTIVE_USER="$SUDO_REAL_USER"
+            log_debug "sudo detected: resolving cgroup/slice for real user $EFFECTIVE_USER"
+        fi
+
         # Get user's group
-        USER_GROUP=$(get_user_group "$CURRENT_USER")
+        USER_GROUP=$(get_user_group "$EFFECTIVE_USER")
         log_debug "User group: $USER_GROUP"
 
         # Build the cgroup-parent path (with sanitized username for systemd compatibility)
-        SANITIZED_USER=$(sanitize_username_for_slice "$CURRENT_USER")
+        SANITIZED_USER=$(sanitize_username_for_slice "$EFFECTIVE_USER")
         SLICE_NAME="ds01-${USER_GROUP}-${SANITIZED_USER}.slice"
         log_debug "Sanitized user: $SANITIZED_USER"
 
@@ -1166,6 +1174,10 @@ main() {
                 # VS Code container - extract owner from devcontainer.local_folder path
                 INJECT_ARGS+=("--label" "ds01.user=$devcontainer_owner")
                 log_debug "Injecting owner label from devcontainer: ds01.user=$devcontainer_owner"
+            elif [ "$CURRENT_UID" = "0" ] && [ -n "$SUDO_REAL_USER" ]; then
+                # sudo context - use real user, not root
+                INJECT_ARGS+=("--label" "ds01.user=$SUDO_REAL_USER")
+                log_debug "Injecting owner label from sudo context: ds01.user=$SUDO_REAL_USER"
             else
                 # Regular container - use current user
                 INJECT_ARGS+=("--label" "ds01.user=$CURRENT_USER")

@@ -41,6 +41,7 @@ import csv  # Read/write CSV files
 import json  # Handle JSON data
 import os  # OS interactions
 import pathlib  # File system paths
+import pwd  # User account database
 import re  # Regular expressions
 import subprocess  # Run external commands
 import sys  # System-specific functions
@@ -80,16 +81,23 @@ mlc_container_version = 4  # Version number of AIME MLC setup (mlc create). In v
 mlc_version = "2.1.2"  # Version number of AIME MLC
 
 # Obtain user and group id, user name for different tasks by create, open,...
-user_id = os.getuid()
-# os.getlogin() can fail in some situations (sudo, cron, certain terminals)
-# Fallback to pwd.getpwuid() which is more reliable
-try:
-    user_name = os.getlogin()
-except OSError:
-    import pwd
-
-    user_name = pwd.getpwuid(user_id).pw_name
-group_id = os.getgid()
+# DS01 PATCH: Check SUDO_USER first — when run via sudo, we need the real user's
+# identity for container naming (name._.uid) and ownership labels (ds01.user)
+_sudo_user = os.environ.get("SUDO_USER")
+if _sudo_user:
+    _pw = pwd.getpwnam(_sudo_user)
+    user_id = _pw.pw_uid
+    user_name = _pw.pw_name
+    group_id = _pw.pw_gid
+else:
+    user_id = os.getuid()
+    # os.getlogin() can fail in some situations (sudo, cron, certain terminals)
+    # Fallback to pwd.getpwuid() which is more reliable
+    try:
+        user_name = os.getlogin()
+    except OSError:
+        user_name = pwd.getpwuid(user_id).pw_name
+    group_id = os.getgid()
 
 # Sanitized username for use inside containers (LDAP usernames may contain @)
 container_user_name = sanitize_username_for_container(user_name)

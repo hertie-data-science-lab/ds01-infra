@@ -14,8 +14,8 @@ source "$INFRA_ROOT/scripts/lib/init.sh"
 [[ -f "$INFRA_ROOT/scripts/lib/ds01-context.sh" ]] && \
     source "$INFRA_ROOT/scripts/lib/ds01-context.sh"
 
-USERNAME=$(whoami)
-USER_ID=$(id -u)
+USERNAME="${SUDO_USER:-$(whoami)}"
+USER_ID=$(id -u "$USERNAME")
 
 usage() {
     echo ""
@@ -113,6 +113,14 @@ get_user_containers() {
             is_owner=true
             # If detected via devcontainer path, it's a devcontainer
             [ -z "$container_type" ] && detected_type="devcontainer"
+        fi
+
+        # Check container name UID suffix (name._.uid pattern)
+        if [ "$is_owner" = false ] && [[ "$name" == *"._."* ]]; then
+            local name_uid="${name##*._.}"
+            if [ "$name_uid" = "$USER_ID" ]; then
+                is_owner=true
+            fi
         fi
 
         if [ "$is_owner" = true ]; then

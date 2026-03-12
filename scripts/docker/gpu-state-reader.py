@@ -11,6 +11,7 @@ Updated for DS01 Layered Architecture:
 """
 
 import json
+import pwd
 import re
 import subprocess
 import sys
@@ -206,6 +207,42 @@ class GPUStateReader:
         # 5. Default: Docker direct
         return INTERFACE_DOCKER
 
+    def _resolve_user_from_container_name(self, container_name: str) -> Optional[str]:
+        """Resolve username from AIME container name convention (name._.uid).
+
+        Extracts the UID from the container name and resolves it to a username
+        via pwd/getent. This handles containers with missing or incorrect labels.
+        """
+        if "._." not in container_name:
+            return None
+
+        try:
+            uid_str = container_name.split("._.")[-1]
+            uid = int(uid_str)
+        except (ValueError, IndexError):
+            return None
+
+        # Try local passwd first
+        try:
+            return pwd.getpwuid(uid).pw_name
+        except KeyError:
+            pass
+
+        # Try getent for LDAP/SSSD users
+        try:
+            result = subprocess.run(
+                ["getent", "passwd", str(uid)],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0 and result.stdout:
+                return result.stdout.split(":")[0]
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+            pass
+
+        return None
+
     def _extract_user_from_cgroup(self, cgroup_parent: str) -> Optional[str]:
         """
         Extract (sanitized) username from cgroup path.
@@ -291,6 +328,10 @@ class GPUStateReader:
             if not user:
                 cgroup_parent = container_data.get("HostConfig", {}).get("CgroupParent", "")
                 user = self._extract_user_from_cgroup(cgroup_parent) or ""
+
+            # Fall back to UID extraction from container name (name._.uid)
+            if not user:
+                user = self._resolve_user_from_container_name(container_name) or ""
 
             return {
                 "container_name": container_name,
@@ -640,7 +681,9 @@ class GPUStateReader:
             user = labels.get("ds01.user") or labels.get("aime.mlc.USER", "")
             if not user:
                 cgroup_parent = container_data.get("HostConfig", {}).get("CgroupParent", "")
-                user = self._extract_user_from_cgroup(cgroup_parent) or "unknown"
+                user = self._extract_user_from_cgroup(cgroup_parent) or ""
+            if not user:
+                user = self._resolve_user_from_container_name(container_name) or "unknown"
 
             container_info = {
                 "name": container_name,
