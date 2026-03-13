@@ -1511,6 +1511,8 @@ def build_docker_run_command(
         "--name",
         container_tag,
         "--tty",
+        "-e",
+        "DEBIAN_FRONTEND=noninteractive",  # DS01 FIX: Prevent dpkg interactive prompts from hanging
         "--cap-add",
         "SYS_PTRACE",  # For debugging (gdb, strace)
         "--cap-add",
@@ -2561,9 +2563,31 @@ def main():
                 # This temp container runs user setup (adduser, etc.) and is removed immediately.
                 # Without bypass, the wrapper detects --gpus and tries to allocate a second GPU.
                 setup_env = {**os.environ, "DS01_WRAPPER_BYPASS": "1"}
-                result_run_cmd = subprocess.run(
-                    docker_prepare_container, capture_output=True, text=True, env=setup_env
-                )
+
+                # DS01 FIX: Add 120s timeout to prevent indefinite hang if apt-get or
+                # dpkg blocks on interactive prompts (DEBIAN_FRONTEND=noninteractive
+                # should prevent this, but timeout is a safety net).
+                try:
+                    result_run_cmd = subprocess.run(
+                        docker_prepare_container,
+                        capture_output=True,
+                        text=True,
+                        env=setup_env,
+                        timeout=120,
+                    )
+                except subprocess.TimeoutExpired:
+                    print(f"{ERROR}Error: User setup container timed out after 120 seconds{RESET}")
+                    print(f"{HINT}The setup container may be stuck. Cleaning up...{RESET}")
+                    # Force-stop and remove the stuck setup container
+                    subprocess.run(
+                        ["docker", "rm", "-f", container_tag],
+                        capture_output=True,
+                        env=setup_env,
+                    )
+                    print(
+                        f"{HINT}If this persists, rebuild your image: image-update {validated_container_name}{RESET}"
+                    )
+                    sys.exit(1)
 
                 # DS01: Print user setup result for debugging
                 if "User setup: FAILED" in result_run_cmd.stdout:
