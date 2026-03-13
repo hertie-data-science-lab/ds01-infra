@@ -335,8 +335,8 @@ show_gpu_error() {
 }
 
 # Attempt GPU allocation with blocking retry
-# Returns: GPU device UUID on success, empty on failure
-# Sets: GPU_ALLOC_ERROR with error type if failed
+# Outputs on success: GPU device UUID
+# Outputs on failure: ERROR:TYPE:DETAILS (parsed by caller)
 allocate_gpu_for_container() {
     local user="$1"
     local container_type="$2"
@@ -353,8 +353,8 @@ allocate_gpu_for_container() {
 
         # Check timeout
         if [ $elapsed -ge $GPU_ALLOCATION_TIMEOUT ]; then
-            GPU_ALLOC_ERROR="TIMEOUT"
             log_debug "GPU allocation timeout after ${elapsed}s"
+            echo "ERROR:TIMEOUT:"
             return 1
         fi
 
@@ -379,9 +379,10 @@ allocate_gpu_for_container() {
 
         # Check for quota exceeded (immediate fail, no retry)
         if echo "$result" | grep -q "QUOTA_EXCEEDED\|USER_AT_LIMIT"; then
-            GPU_ALLOC_ERROR="QUOTA_EXCEEDED"
-            GPU_ALLOC_DETAILS=$(echo "$result" | grep -oP '\(\K[^)]+' | head -1)
-            log_debug "Quota exceeded: $GPU_ALLOC_DETAILS"
+            local details
+            details=$(echo "$result" | grep -oP '\(\K[^)]+' | head -1)
+            log_debug "Quota exceeded: $details"
+            echo "ERROR:QUOTA_EXCEEDED:$details"
             return 1
         fi
 
@@ -1129,20 +1130,27 @@ main() {
                 fi
 
                 # Allocate GPU
-                GPU_UUID=$(allocate_gpu_for_container "$effective_owner" "$CONTAINER_TYPE")
+                local alloc_result
+                alloc_result=$(allocate_gpu_for_container "$effective_owner" "$CONTAINER_TYPE")
+                local alloc_exit=$?
 
-                if [ -z "$GPU_UUID" ]; then
-                    # Allocation failed - log auth denial
+                if [ $alloc_exit -ne 0 ]; then
+                    # Parse structured error output: ERROR:TYPE:DETAILS
+                    local GPU_ALLOC_ERROR GPU_ALLOC_DETAILS
+                    GPU_ALLOC_ERROR=$(echo "$alloc_result" | grep '^ERROR:' | cut -d: -f2)
+                    GPU_ALLOC_DETAILS=$(echo "$alloc_result" | grep '^ERROR:' | cut -d: -f3-)
+
                     if command -v log_event &>/dev/null; then
                         log_event "auth.denied" "$effective_owner" "docker-wrapper" \
                             reason="${GPU_ALLOC_ERROR}: ${GPU_ALLOC_DETAILS}" \
                             container_type="$CONTAINER_TYPE" || true
                     fi
 
-                    # Show error to user
                     show_gpu_error "$GPU_ALLOC_ERROR" "$GPU_ALLOC_DETAILS"
                     exit 1
                 fi
+
+                GPU_UUID="$alloc_result"
 
                 # Show notice about ephemeral nature
                 local idle_timeout
