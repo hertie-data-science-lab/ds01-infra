@@ -2677,6 +2677,11 @@ def main():
             if os.path.exists(profile_file):
                 volumes += ["-v", f"{profile_file}:/etc/profile.d/ds01.sh:ro"]
 
+            # DS01: Mount user's .ssh directory for git/SSH operations inside container
+            ssh_dir = os.path.expanduser(f"~{user_name}/.ssh")
+            if os.path.isdir(ssh_dir):
+                volumes += ["-v", f"{ssh_dir}:/home/{user_name}/.ssh:ro"]
+
             docker_create_cmd = build_docker_create_command(
                 user_name,
                 user_id,
