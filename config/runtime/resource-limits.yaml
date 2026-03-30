@@ -256,7 +256,18 @@ container_types:
       faculty: 2
       admin: null
 
-  # API-created containers (Portainer, SDK, etc.) - stricter limits
+  # ds01-jobs API containers (remote job submission)
+  api:
+    idle_timeout: null               # Jobs manage their own lifecycle
+    max_runtime: 24h                 # 1 day max
+    sigterm_grace_seconds: 30
+    default_mig_count:
+      student: 1
+      researcher: 2
+      faculty: 2
+      admin: null
+
+  # Unrecognised containers (Portainer, SDK, etc.) - stricter limits
   unknown:
     idle_timeout: 15m              # Short timeout for unidentified containers
     max_runtime: 24h               # 1 day max
