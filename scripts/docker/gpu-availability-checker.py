@@ -26,6 +26,28 @@ class GPUAvailabilityChecker:
     def __init__(self):
         self.state_reader = GPUStateReader()
 
+    def _get_mig_mode_gpus(self) -> set[str]:
+        """Get set of GPU indices that have MIG mode enabled (via nvidia-smi query)."""
+        try:
+            result = subprocess.run(
+                [
+                    "/usr/bin/nvidia-smi",
+                    "--query-gpu=index,mig.mode.current",
+                    "--format=csv,noheader",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            mig_gpus = set()
+            for line in result.stdout.strip().split("\n"):
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) == 2 and parts[1] == "Enabled":
+                    mig_gpus.add(parts[0])
+            return mig_gpus
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return set()
+
     def _get_nvidia_smi_output(self) -> str:
         """Get nvidia-smi -L output. Device permissions are 0666 so all users can query."""
         try:
@@ -113,6 +135,7 @@ class GPUAvailabilityChecker:
         all_migs = self._get_all_mig_instances()
         allocations = self.state_reader.get_all_allocations()
         all_physical_gpus = self._get_physical_gpus()
+        mig_mode_gpus = self._get_mig_mode_gpus()
 
         full_available = {}
 
@@ -120,6 +143,9 @@ class GPUAvailabilityChecker:
             mig_slots_on_gpu = [s for s in all_migs if all_migs[s]["physical_gpu"] == gpu_id]
 
             if not mig_slots_on_gpu:
+                # Skip GPUs with MIG enabled but no instances — CUDA can't use them
+                if gpu_id in mig_mode_gpus:
+                    continue
                 # Real full GPU - no MIG partitions exist on this GPU
                 if gpu_id not in allocations:
                     full_available[gpu_id] = {
@@ -172,9 +198,18 @@ class GPUAvailabilityChecker:
 
             # Full GPUs without MIG partitions
             all_physical = self._get_physical_gpus()
+            mig_mode_gpus = self._get_mig_mode_gpus()
             for gpu_id, gpu_info in all_physical.items():
                 has_mig = any(all_migs[s]["physical_gpu"] == gpu_id for s in all_migs)
                 if not has_mig and gpu_id not in allocations:
+                    # Skip GPUs with MIG enabled but no instances — CUDA can't use them
+                    if gpu_id in mig_mode_gpus:
+                        print(
+                            f"Warning: GPU {gpu_id} has MIG enabled but no instances — "
+                            f"unusable until instances are created or MIG is disabled",
+                            file=sys.stderr,
+                        )
+                        continue
                     available[gpu_id] = {
                         "slot": gpu_id,
                         "uuid": gpu_info["uuid"],
@@ -373,11 +408,13 @@ class GPUAvailabilityChecker:
             all_migs = self._get_all_mig_instances()
             allocations = self.state_reader.get_all_allocations()
             all_physical = self._get_physical_gpus()
+            mig_mode_gpus = self._get_mig_mode_gpus()
 
             full_gpu_slots = [
                 gpu_id
                 for gpu_id in all_physical
                 if not any(all_migs[s]["physical_gpu"] == gpu_id for s in all_migs)
+                and gpu_id not in mig_mode_gpus  # Exclude MIG-enabled GPUs with no instances
             ]
 
             total = len(all_migs) + len(full_gpu_slots)
