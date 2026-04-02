@@ -159,7 +159,8 @@ except Exception:
 PYEOF
 )
 
-    local created_timeout_seconds=$(duration_to_seconds "$created_timeout" "m")
+    local created_timeout_seconds
+    created_timeout_seconds=$(duration_to_seconds "$created_timeout" "m")
 
     # Find all containers in created state
     local created_containers

@@ -157,7 +157,8 @@ get_container_owner() {
 # Convert bare numeric runtime value (hours) to seconds
 runtime_to_seconds() {
     local runtime="$1"
-    local result=$(ds01_duration_to_seconds "$runtime" "h")
+    local result
+    result=$(ds01_duration_to_seconds "$runtime" "h")
     # ds01_duration_to_seconds returns -1 for null/never, convert to 0 for "no limit"
     if [ "$result" = "-1" ]; then
         echo "0"
@@ -373,7 +374,8 @@ process_container_runtime_universal() {
     local container_type="$3"
 
     # Check exemption before enforcement
-    local exemption_status=$(check_exemption "$username" "max_runtime_h")
+    local exemption_status
+    exemption_status=$(check_exemption "$username" "max_runtime_h")
     if [[ "$exemption_status" == exempt:* ]]; then
         local exempt_reason="${exemption_status#exempt: }"
         log "Container $container (user: $username) is EXEMPT from max runtime: $exempt_reason"
