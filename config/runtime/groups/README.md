@@ -65,8 +65,8 @@ w.lowe@hertie-school.lan:faculty
 ```yaml
 # Example: Researcher with no idle timeout
 204214@hertie-school.lan:
-  idle_timeout: null
-  max_runtime: null
+  idle_timeout_h: null
+  max_runtime_h: null
 ```
 
 **When to use**:

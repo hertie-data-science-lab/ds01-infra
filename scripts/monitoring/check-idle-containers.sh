@@ -110,9 +110,9 @@ import yaml
 try:
     with open("$CONFIG_FILE") as f:
         config = yaml.safe_load(f)
-    print(config.get('policies', {}).get('grace_period', '30m'))
+    print(config.get('policies', {}).get('grace_period_m', 30))
 except Exception:
-    print('30m')  # Default to 30m if config read fails
+    print(30)  # Default to 30m if config read fails
 PYEOF
 }
 
@@ -172,11 +172,11 @@ try:
 
     container_types = config.get('container_types', {})
     type_config = container_types.get('$container_type', {})
-    timeout = type_config.get('idle_timeout', '30m')
+    timeout = type_config.get('idle_timeout_h', 0.5)
 
-    print(timeout if timeout else '30m')
+    print(timeout if timeout is not None else 0.5)
 except Exception:
-    print('30m')
+    print(0.5)
 PYEOF
 )
     echo "$timeout"
@@ -223,13 +223,16 @@ get_container_owner() {
     echo ""
 }
 
-# Convert timeout string (e.g., "48h", "7d") to seconds
-# Uses centralized ds01_parse_duration from init.sh
+# Convert bare numeric duration value to seconds
+# Uses ds01_duration_to_seconds from init.sh
+# Usage: timeout_to_seconds <value> <unit>
+# Example: timeout_to_seconds 0.5 h  -> 1800
 timeout_to_seconds() {
     local timeout="$1"
+    local unit="$2"
     local result
-    result=$(ds01_parse_duration "$timeout")
-    # ds01_parse_duration returns -1 for null/never, convert to 0 for "no timeout"
+    result=$(ds01_duration_to_seconds "$timeout" "$unit")
+    # ds01_duration_to_seconds returns -1 for null/never, convert to 0 for "no timeout"
     if [ "$result" = "-1" ]; then
         echo "0"
     else
@@ -470,11 +473,11 @@ try:
     with open("$CONFIG_FILE") as f:
         config = yaml.safe_load(f)
     ct_config = config.get('container_types', {}).get('$container_type', {})
-    grace = ct_config.get('sigterm_grace_seconds')
+    grace = ct_config.get('sigterm_grace_s')
     if grace is not None:
         print(grace)
     else:
-        print(config.get('policies', {}).get('sigterm_grace_seconds', 60))
+        print(config.get('policies', {}).get('sigterm_grace_s', 60))
 except Exception:
     print(60)
 PYEOF
@@ -583,7 +586,7 @@ monitor_containers() {
     local grace_period_str
     grace_period_str=$(get_grace_period)
     local grace_period_seconds
-    grace_period_seconds=$(timeout_to_seconds "$grace_period_str")
+    grace_period_seconds=$(timeout_to_seconds "$grace_period_str" "m")
 
     if [ "$HIGH_DEMAND_MODE" = "true" ]; then
         log_color "HIGH DEMAND MODE: GPU allocation above ${hd_threshold}. Idle timeouts reduced by ${hd_reduction}." "$YELLOW"
@@ -669,7 +672,7 @@ monitor_containers() {
 
         if [ "$container_age" -lt "$grace_period_seconds" ]; then
             local age_minutes=$((container_age / 60))
-            log "Container $container within grace period (age: ${age_minutes}m < ${grace_period_str})"
+            log "Container $container within grace period (age: ${age_minutes}m < ${grace_period_str}m)"
             ((skipped_grace += 1))
             continue
         fi
@@ -706,7 +709,7 @@ process_container_universal() {
 
     # Check exemption before enforcement
     local exemption_status
-    exemption_status=$(check_exemption "$username" "idle_timeout")
+    exemption_status=$(check_exemption "$username" "idle_timeout_h")
     local is_exempt=false
     local exempt_reason=""
     if [[ "$exemption_status" == exempt:* ]]; then
@@ -727,13 +730,13 @@ process_container_universal() {
             timeout_str=$(get_container_type_idle_timeout "$container_type")
             ;;
         *)
-            # Fallback to strictest timeout
-            timeout_str="15m"
+            # Fallback to strictest timeout (0.25h = 15 minutes)
+            timeout_str="0.25"
             ;;
     esac
 
     local timeout_seconds
-    timeout_seconds=$(timeout_to_seconds "$timeout_str")
+    timeout_seconds=$(timeout_to_seconds "$timeout_str" "h")
 
     # Skip if no timeout set (null timeout = exempt)
     if [ "$timeout_seconds" -eq 0 ]; then
@@ -839,7 +842,7 @@ process_container_universal() {
         local warning_seconds=$((timeout_seconds * 80 / 100))
         local final_warning_seconds=$((timeout_seconds * 95 / 100))
 
-        log "Container $container (user: $username, type: $container_type): idle for ${idle_minutes}m (timeout: $timeout_str, streak: $current_streak)"
+        log "Container $container (user: $username, type: $container_type): idle for ${idle_minutes}m (timeout: ${timeout_str}h, streak: $current_streak)"
 
         # If user is exempt, send informational warning only
         if [ "$is_exempt" = true ]; then

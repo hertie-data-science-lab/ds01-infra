@@ -33,7 +33,7 @@ PYEOF
 ## Test Scripts
 
 ### 1. `test-functions-only.sh` - Unit Tests
-Tests the get_idle_timeout() and get_max_runtime() functions in isolation.
+Tests the get_idle_timeout() and get_max_runtime() functions (using `idle_timeout_h` and `max_runtime_h` config fields) in isolation.
 
 **Usage**:
 ```bash
@@ -42,9 +42,9 @@ Tests the get_idle_timeout() and get_max_runtime() functions in isolation.
 
 **Expected Output**:
 ```
-[Test 1] get_idle_timeout for datasciencelab... ✅ PASS
-[Test 2] get_max_runtime for datasciencelab... ✅ PASS
-[Test 3] get_idle_timeout for non-existent user... ✅ PASS
+[Test 1] get_idle_timeout for datasciencelab... PASS
+[Test 2] get_max_runtime for datasciencelab... PASS
+[Test 3] get_idle_timeout for non-existent user... PASS
 ```
 
 ### 2. `test-idle-timeout.sh` - Integration Test
@@ -69,10 +69,10 @@ To test the cleanup automation without waiting hours, temporarily modify `resour
 
 ```yaml
 defaults:
-  idle_timeout: 0.01h          # 36 seconds (was 0.5h)
-  max_runtime: 0.02h           # 72 seconds (was 12h)
-  gpu_hold_after_stop: 0.005h  # 18 seconds (was 0.25h)
-  container_hold_after_stop: 0.01h  # 36 seconds (was 0.5h)
+  idle_timeout_h: 0.01          # 36 seconds (was 0.5)
+  max_runtime_h: 0.02           # 72 seconds (was 12)
+  gpu_hold_after_stop_h: 0.005  # 18 seconds (was 0.25)
+  container_hold_after_stop_h: 0.01  # 36 seconds (was 0.5)
 ```
 
 Then:
@@ -87,7 +87,7 @@ Then:
 
 **Script**: `scripts/maintenance/enforce-max-runtime.sh`
 
-**What it does**: Stops containers that have been running longer than `max_runtime`
+**What it does**: Stops containers that have been running longer than `max_runtime_h`
 
 **Test procedure**:
 ```bash
@@ -111,7 +111,7 @@ docker ps -a | grep test._.1001
 
 **Script**: `scripts/monitoring/check-idle-containers.sh`
 
-**What it does**: Stops containers with no activity (CPU < 1%) for longer than `idle_timeout`
+**What it does**: Stops containers with no activity (CPU < 1%) for longer than `idle_timeout_h`
 
 **Test procedure**:
 ```bash
@@ -135,7 +135,7 @@ docker ps -a | grep test._.1001
 
 **Script**: `scripts/maintenance/cleanup-stale-gpu-allocations.sh`
 
-**What it does**: Releases GPU allocations from stopped containers after `gpu_hold_after_stop` timeout
+**What it does**: Releases GPU allocations from stopped containers after `gpu_hold_after_stop_h` timeout
 
 **Test procedure**:
 ```bash
@@ -165,7 +165,7 @@ python3 scripts/docker/gpu_allocator.py status
 
 **Script**: `scripts/maintenance/cleanup-stale-containers.sh`
 
-**What it does**: Removes stopped containers after `container_hold_after_stop` timeout
+**What it does**: Removes stopped containers after `container_hold_after_stop_h` timeout
 
 **Test procedure**:
 ```bash
@@ -207,7 +207,7 @@ grep "check-idle-containers" /var/log/syslog
 ## Current Status
 
 ✅ **FIXED**: Python heredoc variable substitution bugs
-✅ **TESTED**: get_idle_timeout() and get_max_runtime() functions work correctly
+✅ **TESTED**: get_idle_timeout() and get_max_runtime() functions work correctly (using `idle_timeout_h` / `max_runtime_h` fields)
 ⚠️ **PENDING**: Full end-to-end testing with real containers and short timeouts
 ⚠️ **PENDING**: Cron job execution verification
 

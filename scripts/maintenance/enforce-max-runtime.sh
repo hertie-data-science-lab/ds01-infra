@@ -1,8 +1,8 @@
 #!/bin/bash
 # /opt/ds01-infra/scripts/maintenance/enforce-max-runtime.sh
-# Enforce max_runtime limits for containers
+# Enforce max_runtime_h limits for containers
 #
-# This script checks running containers against their max_runtime limits
+# This script checks running containers against their max_runtime_h limits
 # and stops containers that have exceeded their maximum walltime.
 
 set -e
@@ -40,17 +40,18 @@ log_color() {
     echo -e "${2}[$(date '+%Y-%m-%d %H:%M:%S')]${NC} $1" | tee -a "$LOG_FILE"
 }
 
-# Get max runtime for user (in hours)
+# Get max runtime for user (bare number in hours)
 get_max_runtime() {
     local username="$1"
     # Use centralized get_resource_limits.py CLI instead of embedded heredoc
+    # Returns bare number (hours) — caller must convert with unit "h"
     python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --max-runtime
 }
 
 # Check if user is exempt from enforcement
 check_exemption() {
     local username="$1"
-    local enforcement_type="$2"
+    local enforcement_type="$2"  # e.g., "max_runtime_h", "idle_timeout_h"
     python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --check-exemption "$enforcement_type"
 }
 
@@ -91,6 +92,7 @@ get_container_type() {
 }
 
 # Get max runtime for container type (external containers)
+# Returns bare number in hours
 get_container_type_max_runtime() {
     local container_type="$1"
 
@@ -105,11 +107,11 @@ try:
 
     container_types = config.get('container_types', {})
     type_config = container_types.get('$container_type', {})
-    runtime = type_config.get('max_runtime', '48h')
+    runtime = type_config.get('max_runtime_h', 48)
 
-    print(runtime if runtime else '48h')
+    print(runtime if runtime is not None else 48)
 except Exception:
-    print('48h')
+    print(48)
 PYEOF
 )
     echo "$runtime"
@@ -152,12 +154,11 @@ get_container_owner() {
     echo ""
 }
 
-# Convert runtime string (e.g., "48h", "7d") to seconds
-# Uses centralized ds01_parse_duration from init.sh
+# Convert bare numeric runtime value (hours) to seconds
 runtime_to_seconds() {
     local runtime="$1"
-    local result=$(ds01_parse_duration "$runtime")
-    # ds01_parse_duration returns -1 for null/never, convert to 0 for "no limit"
+    local result=$(ds01_duration_to_seconds "$runtime" "h")
+    # ds01_duration_to_seconds returns -1 for null/never, convert to 0 for "no limit"
     if [ "$result" = "-1" ]; then
         echo "0"
     else
@@ -244,7 +245,7 @@ stop_runtime_exceeded() {
 
     # Stop container directly (designed for automation efficiency)
     # Note: Container is stopped but NOT removed - will be removed by cleanup-stale-containers
-    # after container_hold_after_stop timeout. GPU will be freed after gpu_hold_after_stop timeout.
+    # after container_hold_after_stop_h timeout. GPU will be freed after gpu_hold_after_stop_h timeout.
 
     # Get container type for logging (already available from caller, but re-get if needed)
     if [ -z "$container_type" ]; then
@@ -259,11 +260,11 @@ try:
     with open('$CONFIG_FILE') as f:
         config = yaml.safe_load(f)
     ct_config = config.get('container_types', {}).get('$container_type', {})
-    grace = ct_config.get('sigterm_grace_seconds')
+    grace = ct_config.get('sigterm_grace_s')
     if grace is not None:
         print(grace)
     else:
-        print(config.get('policies', {}).get('sigterm_grace_seconds', 60))
+        print(config.get('policies', {}).get('sigterm_grace_s', 60))
 except Exception:
     print(60)
 " 2>/dev/null || echo 60)
@@ -283,8 +284,8 @@ except Exception:
         fi
 
         # Container is now stopped:
-        # - GPU will be freed by cleanup-stale-gpu-allocations after gpu_hold_after_stop timeout
-        # - Container will be removed by cleanup-stale-containers after container_hold_after_stop timeout
+        # - GPU will be freed by cleanup-stale-gpu-allocations after gpu_hold_after_stop_h timeout
+        # - Container will be removed by cleanup-stale-containers after container_hold_after_stop_h timeout
 
         # Send stop notification
         local body="Container: $container_name
@@ -333,7 +334,7 @@ monitor_containers() {
         # Core principle: GPU access = ephemeral enforcement, No GPU = permanent OK
         if ! container_has_gpu "$container"; then
             ((skipped_no_gpu += 1))
-            continue  # No GPU = no max_runtime limit
+            continue  # No GPU = no max_runtime_h limit
         fi
 
         # Skip monitoring infrastructure containers (they need GPU but aren't user workloads)
@@ -365,14 +366,14 @@ monitor_containers() {
     log_color "Runtime enforcement complete: monitored=$monitored_count (GPU), skipped=$skipped_no_gpu (no GPU), warned=$warned_count, stopped=$stopped_count" "$BLUE"
 }
 
-# Process a single container with type-aware max_runtime (universal)
+# Process a single container with type-aware max_runtime_h (universal)
 process_container_runtime_universal() {
     local container="$1"
     local username="$2"
     local container_type="$3"
 
     # Check exemption before enforcement
-    local exemption_status=$(check_exemption "$username" "max_runtime")
+    local exemption_status=$(check_exemption "$username" "max_runtime_h")
     if [[ "$exemption_status" == exempt:* ]]; then
         local exempt_reason="${exemption_status#exempt: }"
         log "Container $container (user: $username) is EXEMPT from max runtime: $exempt_reason"
@@ -391,7 +392,7 @@ process_container_runtime_universal() {
     local runtime_str
     case "$container_type" in
         orchestration|atomic)
-            # DS01 native containers - use user's configured max_runtime
+            # DS01 native containers - use user's configured max_runtime_h
             runtime_str=$(get_max_runtime "$username")
             ;;
         devcontainer|compose|docker|unknown)
@@ -433,7 +434,7 @@ process_container_runtime_universal() {
 
     source "$state_file"
 
-    log "Container $container (user: $username, type: $container_type): runtime ${runtime_hours}h / limit $runtime_str"
+    log "Container $container (user: $username, type: $container_type): runtime ${runtime_hours}h / limit ${runtime_str}h"
 
     # Calculate warning thresholds: first at 75%, final at 90%
     local warning_seconds=$((runtime_seconds * 75 / 100))

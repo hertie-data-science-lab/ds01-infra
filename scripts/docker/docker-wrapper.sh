@@ -279,8 +279,8 @@ show_gpu_notice() {
         printf "│  Allocated GPU: %-46s │\n" "$gpu_device" >&2
         echo "│                                                                  │" >&2
         echo "│  IMPORTANT: GPU containers are ephemeral:                        │" >&2
-        printf "│  • Idle timeout: %-44s │\n" "$idle_timeout of GPU inactivity → auto-stop" >&2
-        printf "│  • Max runtime: %-45s │\n" "$max_runtime → auto-stop" >&2
+        printf "│  • Idle timeout: %-44s │\n" "${idle_timeout}h of GPU inactivity → auto-stop" >&2
+        printf "│  • Max runtime: %-45s │\n" "${max_runtime}h → auto-stop" >&2
         echo "│                                                                  │" >&2
         echo "│  Save work to mounted volumes (/home/\$USER/).                   │" >&2
         echo "│                                                                  │" >&2
@@ -437,19 +437,19 @@ get_container_type_timeout() {
     case "$container_type" in
         orchestration|atomic)
             # Use user's configured timeout
-            echo "30m"
+            echo "0.5"
             ;;
         devcontainer)
-            echo "30m"
+            echo "0.5"
             ;;
         compose)
-            echo "30m"
+            echo "0.5"
             ;;
         docker)
-            echo "30m"
+            echo "0.5"
             ;;
         *)
-            echo "15m"
+            echo "0.25"
             ;;
     esac
 }
@@ -460,19 +460,19 @@ get_container_type_max_runtime() {
 
     case "$container_type" in
         orchestration|atomic)
-            echo "24h"
+            echo "24"
             ;;
         devcontainer)
-            echo "168h"
+            echo "168"
             ;;
         compose)
-            echo "72h"
+            echo "72"
             ;;
         docker)
-            echo "48h"
+            echo "48"
             ;;
         *)
-            echo "24h"
+            echo "24"
             ;;
     esac
 }

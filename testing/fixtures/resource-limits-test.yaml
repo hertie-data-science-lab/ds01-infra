@@ -7,10 +7,10 @@ defaults:
   memory: "32g"
   shm_size: "16g"
   max_containers_per_user: 2
-  idle_timeout: "0.01h"              # 36 seconds (for testing)
-  max_runtime: "0.02h"               # 72 seconds (for testing)
-  gpu_hold_after_stop: "0.01h"       # 36 seconds (for testing)
-  container_hold_after_stop: "0.01h" # 36 seconds (for testing)
+  idle_timeout_h: 0.01               # 36 seconds (for testing)
+  max_runtime_h: 0.02                # 72 seconds (for testing)
+  gpu_hold_after_stop_h: 0.01        # 36 seconds (for testing)
+  container_hold_after_stop_h: 0.01  # 36 seconds (for testing)
   priority: 50
 
 groups:
@@ -47,6 +47,6 @@ user_overrides:
   special_user:
     max_mig_instances: 4
     priority: 90
-    max_runtime: "0.05h"  # 3 minutes
+    max_runtime_h: 0.05  # 3 minutes
 
 default_group: students

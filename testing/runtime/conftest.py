@@ -97,14 +97,14 @@ def lowered_timeouts(runtime_config_backup):
         config = yaml.safe_load(f)
 
     # Lower timeouts for testing
-    config["policies"]["grace_period"] = "2m"
-    config["policies"]["created_container_timeout"] = "2m"
-    config["defaults"]["idle_timeout"] = "5m"
-    config["defaults"]["container_hold_after_stop"] = "2m"
+    config["policies"]["grace_period_m"] = 2
+    config["policies"]["created_container_timeout_m"] = 2
+    config["defaults"]["idle_timeout_h"] = 0.083
+    config["defaults"]["container_hold_after_stop_h"] = 0.033
 
-    # Also lower container_types docker idle to 5m
+    # Also lower container_types docker idle to ~5m
     if "container_types" in config and "docker" in config["container_types"]:
-        config["container_types"]["docker"]["idle_timeout"] = "5m"
+        config["container_types"]["docker"]["idle_timeout_h"] = 0.083
 
     with open(CONFIG_FILE, "w") as f:
         yaml.safe_dump(config, f, default_flow_style=False)

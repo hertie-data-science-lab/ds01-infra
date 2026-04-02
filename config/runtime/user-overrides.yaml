@@ -12,9 +12,9 @@
 # - Check with: ls /home/ | grep -i "name"
 #
 # Common override fields:
-#   idle_timeout: null          # Disable auto-stop on idle
-#   max_runtime: null           # Disable max runtime limit
-#   container_hold_after_stop: null  # Don't auto-remove containers
+#   idle_timeout_h: null          # Disable auto-stop on idle
+#   max_runtime_h: null           # Disable max runtime limit
+#   container_hold_after_stop_h: null  # Don't auto-remove containers
 #   max_mig_instances: N        # Custom GPU limit
 #   allow_full_gpu: true        # Grant full GPU access
 # ================================================
@@ -24,14 +24,17 @@
 # In the resarcher group, but this overrides 
 # ----------------------------------------------
 204214@hertie-school.lan:
-  idle_timeout: null               # No idle timeout (exempt from auto-stop)
-  max_runtime: null                # No runtime limit
-  container_hold_after_stop: null  # Don't auto-remove stopped containers
+  idle_timeout_h: null               # No idle timeout (exempt from auto-stop)
+  max_runtime_h: null                # No runtime limit
+  container_hold_after_stop_h: null  # Don't auto-remove stopped containers
 
 # ----------------------------------------------
 # Add more user overrides below
 # ----------------------------------------------
 # Example:
+241248@hertie-school.lan:
+  max_runtime_h: 48
+
 # h.baker@hertie-school.lan:
 #   max_mig_instances: 4
 #   allow_full_gpu: true

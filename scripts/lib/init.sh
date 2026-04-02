@@ -69,6 +69,8 @@ ds01_get_config() {
 }
 
 # Parse duration string to seconds using Python library
+# DEPRECATED: Use ds01_duration_to_seconds for config values with known units.
+# Only use this for legacy duration strings with unit suffixes (e.g., "2h", "30m").
 # Usage: ds01_parse_duration <duration>
 # Example: ds01_parse_duration "2h"  -> 7200
 ds01_parse_duration() {
@@ -78,6 +80,23 @@ import sys
 sys.path.insert(0, '${DS01_LIB}')
 from ds01_core import parse_duration
 print(parse_duration('$duration'))
+"
+}
+
+# Convert bare numeric duration value to seconds using a known unit
+# Config fields encode the unit in the name (e.g., max_runtime_h: 48)
+# so the unit is always known at call time.
+# Usage: ds01_duration_to_seconds <value> <unit>
+# Example: ds01_duration_to_seconds 48 h  -> 172800
+# Example: ds01_duration_to_seconds 30 m  -> 1800
+ds01_duration_to_seconds() {
+    local value="${1:-}"
+    local unit="${2:?Usage: ds01_duration_to_seconds <value> <unit>}"
+    python3 -c "
+import sys
+sys.path.insert(0, '${DS01_LIB}')
+from ds01_core import duration_to_seconds
+print(duration_to_seconds('$value', '$unit'))
 "
 }
 

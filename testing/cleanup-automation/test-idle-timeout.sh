@@ -1,6 +1,6 @@
 #!/bin/bash
-# Test script for idle_timeout detection
-# This tests that containers idle beyond idle_timeout are automatically stopped
+# Test script for idle_timeout_h detection
+# This tests that containers idle beyond idle_timeout_h are automatically stopped
 
 set -e
 
@@ -9,7 +9,7 @@ INFRA_ROOT="/opt/ds01-infra"
 TEST_LOG="$SCRIPT_DIR/test-idle-timeout.log"
 
 echo "=====================================" | tee "$TEST_LOG"
-echo "Testing idle_timeout Detection" | tee -a "$TEST_LOG"
+echo "Testing idle_timeout_h Detection" | tee -a "$TEST_LOG"
 echo "=====================================" | tee -a "$TEST_LOG"
 echo "" | tee -a "$TEST_LOG"
 
@@ -18,8 +18,8 @@ echo "[1] Checking running containers..." | tee -a "$TEST_LOG"
 docker ps --format "table {{.Names}}\t{{.Status}}" | grep '\._\.' | tee -a "$TEST_LOG" || echo "No DS01 containers running" | tee -a "$TEST_LOG"
 echo "" | tee -a "$TEST_LOG"
 
-# Check user's idle_timeout limit
-echo "[2] Checking datasciencelab's idle_timeout limit..." | tee -a "$TEST_LOG"
+# Check user's idle_timeout_h limit
+echo "[2] Checking datasciencelab's idle_timeout_h limit..." | tee -a "$TEST_LOG"
 python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" datasciencelab | grep -i "idle" | tee -a "$TEST_LOG"
 echo "" | tee -a "$TEST_LOG"
 

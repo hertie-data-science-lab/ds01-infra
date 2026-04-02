@@ -30,7 +30,7 @@ When bash processes the heredoc:
 
 1. **`scripts/maintenance/enforce-max-runtime.sh`** (lines 42-73)
    - Function: `get_max_runtime()`
-   - Impact: Never enforces max_runtime limits
+   - Impact: Never enforces max_runtime_h limits
 
 2. **`scripts/monitoring/check-idle-containers.sh`** (lines 33-67)
    - Function: `get_idle_timeout()`
@@ -73,10 +73,10 @@ Debug output shows:
 ## Configuration Values (from resource-limits.yaml)
 
 For `datasciencelab` (admin group):
-- `max_runtime`: 12h (commented out in admin group, uses default)
-- `idle_timeout`: 0.5h
-- `gpu_hold_after_stop`: 0.25h
-- `container_hold_after_stop`: 0.5h
+- `max_runtime_h`: 12 (commented out in admin group, uses default)
+- `idle_timeout_h`: 0.5
+- `gpu_hold_after_stop_h`: 0.25
+- `container_hold_after_stop_h`: 0.5
 
 ## Secondary Issues Found
 
@@ -101,11 +101,11 @@ Replace single quotes with escaped double quotes in Python code:
 ```python
 # BEFORE (broken):
 if 'user_overrides' in config and '$username' in config['user_overrides']:
-    timeout = config['user_overrides']['$username'].get('idle_timeout')
+    timeout = config['user_overrides']['$username'].get('idle_timeout_h')
 
 # AFTER (fixed):
 if 'user_overrides' in config and \"$username\" in config['user_overrides']:
-    timeout = config['user_overrides'][\"$username\"].get('idle_timeout')
+    timeout = config['user_overrides'][\"$username\"].get('idle_timeout_h')
 ```
 
 Apply to:

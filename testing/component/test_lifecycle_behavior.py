@@ -253,10 +253,10 @@ extra="$1"
 
 case "$flag" in
     --max-runtime)
-        cat "$MOCK_DATA/max_runtime_$username" 2>/dev/null || echo "24h"
+        cat "$MOCK_DATA/max_runtime_$username" 2>/dev/null || echo "24"
         ;;
     --idle-timeout)
-        cat "$MOCK_DATA/idle_timeout_$username" 2>/dev/null || echo "0.5h"
+        cat "$MOCK_DATA/idle_timeout_$username" 2>/dev/null || echo "0.5"
         ;;
     --check-exemption)
         cat "$MOCK_DATA/exemption_${username}_${extra}" 2>/dev/null || echo "not_exempt"
@@ -283,34 +283,34 @@ esac
         self.config_dir.joinpath("resource-limits.yaml").write_text(
             textwrap.dedent("""\
             defaults:
-              max_runtime: 24h
-              idle_timeout: 0.5h
+              max_runtime_h: 24
+              idle_timeout_h: 0.5
 
             policies:
-              sigterm_grace_seconds: 60
+              sigterm_grace_s: 60
               gpu_idle_threshold: 5
               cpu_idle_threshold: 2.0
               network_idle_threshold: 1048576
               idle_detection_window: 3
-              grace_period: 30m
+              grace_period_m: 30
 
             container_types:
               devcontainer:
-                idle_timeout: null
-                max_runtime: 168h
-                sigterm_grace_seconds: 30
+                idle_timeout_h: null
+                max_runtime_h: 168
+                sigterm_grace_s: 30
               compose:
-                idle_timeout: 30m
-                max_runtime: 72h
-                sigterm_grace_seconds: 45
+                idle_timeout_h: 0.5
+                max_runtime_h: 72
+                sigterm_grace_s: 45
               docker:
-                idle_timeout: 30m
-                max_runtime: 48h
-                sigterm_grace_seconds: 60
+                idle_timeout_h: 0.5
+                max_runtime_h: 48
+                sigterm_grace_s: 60
               unknown:
-                idle_timeout: 15m
-                max_runtime: 24h
-                sigterm_grace_seconds: 30
+                idle_timeout_h: 0.25
+                max_runtime_h: 24
+                sigterm_grace_s: 30
         """)
         )
 
@@ -389,6 +389,18 @@ esac
             '        *s) echo "${d%s}" ;;\n'
             '        null|never|"") echo "-1" ;;\n'
             '        *) echo "$d" ;;\n'
+            "    esac\n"
+            "}\n"
+            # Pure bash ds01_duration_to_seconds (overrides the python-based one)
+            # Takes bare numeric value + unit, returns seconds
+            "ds01_duration_to_seconds() {\n"
+            '    local val="$1" unit="$2"\n'
+            '    case "$val" in null|never|None|"") echo "-1"; return ;; esac\n'
+            '    case "$unit" in\n'
+            '        h) echo $(echo "$val * 3600" | bc | cut -d. -f1) ;;\n'
+            '        m) echo $(echo "$val * 60" | bc | cut -d. -f1) ;;\n'
+            '        s) echo "$val" ;;\n'
+            '        *) echo "0" ;;\n'
             "    esac\n"
             "}\n"
             # Restore mkdir for test code that might need it
@@ -589,9 +601,9 @@ class TestExemptUserIdleHandling:
     @pytest.mark.component
     def test_exempt_user_detected(self, mock_env):
         """check_exemption returns 'exempt:...' for exempt users."""
-        mock_env.set_mock_data("exemption_testuser_idle_timeout", "exempt: research waiver")
+        mock_env.set_mock_data("exemption_testuser_idle_timeout_h", "exempt: research waiver")
         code = mock_env.harness_idle(
-            'status=$(check_exemption "testuser" "idle_timeout")\n'
+            'status=$(check_exemption "testuser" "idle_timeout_h")\n'
             'case "$status" in\n'
             '    exempt:*) echo "result:exempt" ;;\n'
             '    *) echo "result:enforced" ;;\n'
@@ -603,9 +615,9 @@ class TestExemptUserIdleHandling:
     @pytest.mark.component
     def test_non_exempt_user_enforced(self, mock_env):
         """check_exemption returns 'not_exempt' for non-exempt users."""
-        mock_env.set_mock_data("exemption_normaluser_idle_timeout", "not_exempt")
+        mock_env.set_mock_data("exemption_normaluser_idle_timeout_h", "not_exempt")
         code = mock_env.harness_idle(
-            'status=$(check_exemption "normaluser" "idle_timeout")\n'
+            'status=$(check_exemption "normaluser" "idle_timeout_h")\n'
             'case "$status" in\n'
             '    exempt:*) echo "result:exempt" ;;\n'
             '    *) echo "result:enforced" ;;\n'
@@ -656,10 +668,10 @@ class TestExemptUserIdleHandling:
     @pytest.mark.component
     def test_exempt_user_never_stopped(self, mock_env):
         """Even when idle exceeds timeout, exempt user is not stopped."""
-        mock_env.set_mock_data("exemption_exemptuser_idle_timeout", "exempt: PhD thesis")
+        mock_env.set_mock_data("exemption_exemptuser_idle_timeout_h", "exempt: PhD thesis")
         code = mock_env.harness_idle(
             "is_exempt=false\n"
-            'status=$(check_exemption "exemptuser" "idle_timeout")\n'
+            'status=$(check_exemption "exemptuser" "idle_timeout_h")\n'
             'case "$status" in exempt:*) is_exempt=true ;; esac\n'
             "idle_seconds=50000\n"
             "timeout_seconds=1800\n"
@@ -736,9 +748,9 @@ class TestMaxRuntimeExemption:
     @pytest.mark.component
     def test_exempt_user_skips_enforcement(self, mock_env):
         """Exempt user detected via check_exemption."""
-        mock_env.set_mock_data("exemption_exemptuser_max_runtime", "exempt: faculty override")
+        mock_env.set_mock_data("exemption_exemptuser_max_runtime_h", "exempt: faculty override")
         code = mock_env.harness_runtime(
-            'status=$(check_exemption "exemptuser" "max_runtime")\n'
+            'status=$(check_exemption "exemptuser" "max_runtime_h")\n'
             'case "$status" in\n'
             '    exempt:*) echo "result:exempt" ;;\n'
             '    *) echo "result:enforced" ;;\n'
@@ -750,8 +762,8 @@ class TestMaxRuntimeExemption:
     @pytest.mark.component
     def test_non_exempt_user_stopped_when_exceeded(self, mock_env):
         """Non-exempt user's container stopped when runtime > max_runtime."""
-        mock_env.set_mock_data("exemption_normaluser_max_runtime", "not_exempt")
-        mock_env.set_mock_data("max_runtime_normaluser", "24h")
+        mock_env.set_mock_data("exemption_normaluser_max_runtime_h", "not_exempt")
+        mock_env.set_mock_data("max_runtime_normaluser", "24")
 
         code = mock_env.harness_runtime(
             'runtime_str=$(get_max_runtime "normaluser")\n'

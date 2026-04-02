@@ -29,16 +29,16 @@ container-create → mlc-create-wrapper.sh
 ```
 container-stop → mlc-stop
     → gpu_allocator.py mark-stopped (record timestamp)
-    → GPU held for gpu_hold_after_stop duration
+    → GPU held for gpu_hold_after_stop_h duration
 ```
 
 ### Automatic Cleanup (Cron)
 | Job | Schedule | Action |
 |-----|----------|--------|
-| `enforce-max-runtime.sh` | :45/hour | Stop containers exceeding max_runtime |
-| `check-idle-containers.sh` | :30/hour | Stop containers idle beyond idle_timeout |
-| `cleanup-stale-gpu-allocations.sh` | :15/hour | Release GPUs after gpu_hold_after_stop |
-| `cleanup-stale-containers.sh` | :00/hour | Remove containers after container_hold_after_stop |
+| `enforce-max-runtime.sh` | :45/hour | Stop containers exceeding max_runtime_h |
+| `check-idle-containers.sh` | :30/hour | Stop containers idle beyond idle_timeout_h |
+| `cleanup-stale-gpu-allocations.sh` | :15/hour | Release GPUs after gpu_hold_after_stop_h |
+| `cleanup-stale-containers.sh` | :00/hour | Remove containers after container_hold_after_stop_h |
 
 ## Docker Wrapper (Universal Container Management)
 

@@ -107,7 +107,7 @@ class TestUserLimitEnforcement:
 
         defaults = config.get("defaults", {})
         # Should have GPU-related settings
-        gpu_settings = ["max_mig_instances", "gpu_hold_after_stop"]
+        gpu_settings = ["max_mig_instances", "gpu_hold_after_stop_h"]
         has_gpu_settings = any(s in defaults for s in gpu_settings)
         assert has_gpu_settings
 

@@ -126,8 +126,8 @@ c.fusarbassini@hertie-school.lan  # Chiara Fusarbassini
 
 ```yaml
 204214@hertie-school.lan:
-  idle_timeout: null      # No timeout
-  max_runtime: null       # No runtime limit
+  idle_timeout_h: null    # No timeout
+  max_runtime_h: null     # No runtime limit
   # Reason: Thesis work - approved 2025-XX-XX
 ```
 
@@ -292,7 +292,7 @@ nano config/runtime/user-overrides.yaml
 # Add:
 username@domain:
   max_mig_instances: 4
-  idle_timeout: null
+  idle_timeout_h: null
   # Reason: Special project
 
 # Test

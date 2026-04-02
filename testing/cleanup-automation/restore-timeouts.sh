@@ -31,14 +31,14 @@ echo ""
 
 # Show current test values
 echo -e "${BLUE}Current (test) values:${NC}"
-grep -E "max_runtime:|idle_timeout:|gpu_hold_after_stop:|container_hold_after_stop:" "$CONFIG_FILE" | head -4
+grep -E "max_runtime_h:|idle_timeout_h:|gpu_hold_after_stop_h:|container_hold_after_stop_h:" "$CONFIG_FILE" | head -4
 
 # Restore
 cp "$LATEST_BACKUP" "$CONFIG_FILE"
 
 echo ""
 echo -e "${BLUE}Restored values:${NC}"
-grep -E "max_runtime:|idle_timeout:|gpu_hold_after_stop:|container_hold_after_stop:" "$CONFIG_FILE" | head -4
+grep -E "max_runtime_h:|idle_timeout_h:|gpu_hold_after_stop_h:|container_hold_after_stop_h:" "$CONFIG_FILE" | head -4
 
 echo ""
 echo -e "${GREEN}✓ Original timeouts restored${NC}"

@@ -18,10 +18,10 @@ pytestmark = [pytest.mark.runtime]
 
 # Expected production values (must match resource-limits.yaml defaults)
 EXPECTED = {
-    "policies.grace_period": "30m",
-    "policies.created_container_timeout": "30m",
-    "defaults.idle_timeout": "0.5h",
-    "defaults.container_hold_after_stop": "0.5h",
+    "policies.grace_period_m": 30,
+    "policies.created_container_timeout_m": 30,
+    "defaults.idle_timeout_h": 0.5,
+    "defaults.container_hold_after_stop_h": 0.5,
 }
 
 
@@ -34,10 +34,10 @@ def test_config_restored_after_lifecycle_tests():
     defaults = config.get("defaults", {})
 
     values = {
-        "policies.grace_period": policies.get("grace_period"),
-        "policies.created_container_timeout": policies.get("created_container_timeout"),
-        "defaults.idle_timeout": defaults.get("idle_timeout"),
-        "defaults.container_hold_after_stop": defaults.get("container_hold_after_stop"),
+        "policies.grace_period_m": policies.get("grace_period_m"),
+        "policies.created_container_timeout_m": policies.get("created_container_timeout_m"),
+        "defaults.idle_timeout_h": defaults.get("idle_timeout_h"),
+        "defaults.container_hold_after_stop_h": defaults.get("container_hold_after_stop_h"),
     }
 
     for key, expected in EXPECTED.items():

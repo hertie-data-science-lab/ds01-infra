@@ -12,8 +12,8 @@ ALL containers with GPU access are subject to lifecycle enforcement regardless o
 
 | File | Purpose |
 |------|---------|
-| `enforce-max-runtime.sh` | **Universal** max_runtime enforcement for ALL GPU containers |
-| `cleanup-stale-gpu-allocations.sh` | Release GPUs after gpu_hold_after_stop |
+| `enforce-max-runtime.sh` | **Universal** max_runtime_h enforcement for ALL GPU containers |
+| `cleanup-stale-gpu-allocations.sh` | Release GPUs after gpu_hold_after_stop_h |
 | `cleanup-stale-containers.sh` | Remove stopped containers after timeout |
 | `fix-home-permissions.sh` | Fix home directory permissions |
 | `existing-users-permissions.sh` | Apply permissions to existing users |
@@ -39,11 +39,11 @@ Container Stop
     ↓
 mark-stopped (record timestamp)
     ↓
-gpu_hold_after_stop elapsed?
+gpu_hold_after_stop_h elapsed?
     ↓ yes
 cleanup-stale-gpu-allocations.sh (release GPU)
     ↓
-container_hold_after_stop elapsed?
+container_hold_after_stop_h elapsed?
     ↓ yes
 cleanup-stale-containers.sh (remove container)
 ```
@@ -53,18 +53,18 @@ cleanup-stale-containers.sh (remove container)
 Both `enforce-max-runtime.sh` and `check-idle-containers.sh` use container type detection:
 
 **Max runtimes by container type** (from `config/resource-limits.yaml`):
-- `orchestration/atomic`: User's configured max_runtime
-- `devcontainer`: 168h (7 days)
-- `compose`: 72h (3 days)
-- `docker`: 48h (2 days)
-- `unknown`: 24h (strictest)
+- `orchestration/atomic`: User's configured max_runtime_h
+- `devcontainer`: 168 (7 days)
+- `compose`: 72 (3 days)
+- `docker`: 48 (2 days)
+- `unknown`: 24 (strictest)
 
 ## Idle Detection
 
 `check-idle-containers.sh` (in `scripts/monitoring/`):
 - Checks CPU usage (< 1% = idle)
 - Respects `.keep-alive` file in workspace
-- Warns at 80% of idle_timeout
+- Warns at 80% of idle_timeout_h
 - Stops at 100%
 
 ## Log Locations

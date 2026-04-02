@@ -29,7 +29,7 @@ try:
     # Check user overrides first
     if 'user_overrides' in config and config['user_overrides'] is not None:
         if username in config['user_overrides']:
-            timeout = config['user_overrides'][username].get('idle_timeout')
+            timeout = config['user_overrides'][username].get('idle_timeout_h')
             if timeout:
                 print(timeout)
                 sys.exit(0)
@@ -38,16 +38,16 @@ try:
     if 'groups' in config and config['groups'] is not None:
         for group_name, group_config in config['groups'].items():
             if 'members' in group_config and username in group_config['members']:
-                timeout = group_config.get('idle_timeout')
+                timeout = group_config.get('idle_timeout_h')
                 if timeout:
                     print(timeout)
                     sys.exit(0)
 
     # Default timeout
-    default_timeout = config.get('defaults', {}).get('idle_timeout', '48h')
+    default_timeout = config.get('defaults', {}).get('idle_timeout_h', 48)
     print(default_timeout)
 except Exception as e:
-    print("48h", file=sys.stderr)
+    print(48, file=sys.stderr)
     sys.exit(1)
 PYEOF
 }
@@ -71,7 +71,7 @@ try:
     # Check user overrides first
     if 'user_overrides' in config and config['user_overrides'] is not None:
         if username in config['user_overrides']:
-            runtime = config['user_overrides'][username].get('max_runtime')
+            runtime = config['user_overrides'][username].get('max_runtime_h')
             if runtime:
                 print(runtime)
                 sys.exit(0)
@@ -80,13 +80,13 @@ try:
     if 'groups' in config and config['groups'] is not None:
         for group_name, group_config in config['groups'].items():
             if 'members' in group_config and username in group_config['members']:
-                runtime = group_config.get('max_runtime')
+                runtime = group_config.get('max_runtime_h')
                 if runtime:
                     print(runtime)
                     sys.exit(0)
 
     # Default runtime
-    default_runtime = config.get('defaults', {}).get('max_runtime', 'null')
+    default_runtime = config.get('defaults', {}).get('max_runtime_h', 'null')
     print(default_runtime)
 except Exception as e:
     print("null", file=sys.stderr)
@@ -97,22 +97,22 @@ PYEOF
 echo "[Test 1] get_idle_timeout for datasciencelab..."
 timeout=$(get_idle_timeout "datasciencelab")
 echo "  Result: '$timeout'"
-echo "  Expected: '0.5h'"
-[ "$timeout" = "0.5h" ] && echo "  ✅ PASS" || echo "  ❌ FAIL (got '$timeout')"
+echo "  Expected: '0.5'"
+[ "$timeout" = "0.5" ] && echo "  ✅ PASS" || echo "  ❌ FAIL (got '$timeout')"
 echo ""
 
 echo "[Test 2] get_max_runtime for datasciencelab..."
 runtime=$(get_max_runtime "datasciencelab")
 echo "  Result: '$runtime'"
-echo "  Expected: '12h'"
-[ "$runtime" = "12h" ] && echo "  ✅ PASS" || echo "  ❌ FAIL (got '$runtime')"
+echo "  Expected: '12'"
+[ "$runtime" = "12" ] && echo "  ✅ PASS" || echo "  ❌ FAIL (got '$runtime')"
 echo ""
 
 echo "[Test 3] get_idle_timeout for non-existent user..."
 timeout=$(get_idle_timeout "nobody")
 echo "  Result: '$timeout'"
-echo "  Expected: '0.5h' (from defaults)"
-[ "$timeout" = "0.5h" ] && echo "  ✅ PASS" || echo "  ❌ FAIL (got '$timeout')"
+echo "  Expected: '0.5' (from defaults)"
+[ "$timeout" = "0.5" ] && echo "  ✅ PASS" || echo "  ❌ FAIL (got '$timeout')"
 echo ""
 
 echo "============================"

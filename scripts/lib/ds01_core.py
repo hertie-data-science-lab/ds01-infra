@@ -111,6 +111,39 @@ def parse_duration(duration: str) -> int:
     return int(value * multiplier)
 
 
+def duration_to_seconds(value, unit: str) -> int:
+    """Convert a numeric duration value to seconds using a known unit.
+
+    Unlike parse_duration() which parses arbitrary strings like "2h" or "30m",
+    this function takes a bare numeric value and an explicit unit. This pairs
+    with config fields that encode the unit in the field name (e.g.,
+    max_runtime_h: 48 → duration_to_seconds(48, "h") → 172800).
+
+    Args:
+        value: Numeric value (int/float), None, or "null"/"never"/"indefinite"
+        unit: One of "h" (hours), "m" (minutes), "s" (seconds)
+
+    Returns:
+        Duration in seconds, or -1 for no-limit values
+    """
+    if value is None:
+        return -1
+
+    str_value = str(value).strip().lower()
+    if str_value in ("null", "none", "never", "indefinite", ""):
+        return -1
+
+    multipliers = {"s": 1, "m": 60, "h": 3600}
+    multiplier = multipliers.get(unit)
+    if multiplier is None:
+        raise ValueError(f"Unknown unit '{unit}', expected one of: h, m, s")
+
+    try:
+        return int(float(str_value) * multiplier)
+    except ValueError:
+        return 0
+
+
 def format_duration(seconds: int) -> str:
     """
     Format seconds as human-readable duration.

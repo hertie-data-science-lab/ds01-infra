@@ -4,7 +4,7 @@
 #
 # This script should be run periodically (e.g., via cron every hour)
 # to release GPU allocations from stopped containers that have exceeded
-# their gpu_hold_after_stop timeout.
+# their gpu_hold_after_stop_h timeout.
 
 set -e
 

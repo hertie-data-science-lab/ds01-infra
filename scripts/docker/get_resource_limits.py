@@ -278,12 +278,16 @@ class ResourceLimitParser:
         output += f"    Data (/data):             {limits.get('storage_data', 'N/A')}\n"
         output += f"    Tmp (/tmp in container):  {limits.get('storage_tmp', 'N/A')}\n"
         output += "\n  Lifecycle:\n"
-        output += f"    Idle timeout:             {limits.get('idle_timeout', 'N/A')}\n"
-        output += f"    GPU hold after stop:      {limits.get('gpu_hold_after_stop', 'N/A')}\n"
+        idle_t = limits.get("idle_timeout_h")
+        output += f"    Idle timeout:             {f'{idle_t}h' if idle_t is not None else 'N/A'}\n"
+        gpu_h = limits.get("gpu_hold_after_stop_h")
+        output += f"    GPU hold after stop:      {f'{gpu_h}h' if gpu_h is not None else 'N/A'}\n"
+        ctr_h = limits.get("container_hold_after_stop_h")
+        output += f"    Container hold (stopped): {f'{ctr_h}h' if ctr_h is not None else 'N/A'}\n"
+        max_rt = limits.get("max_runtime_h")
         output += (
-            f"    Container hold (stopped): {limits.get('container_hold_after_stop', 'N/A')}\n"
+            f"    Max runtime:              {f'{max_rt}h' if max_rt is not None else 'unlimited'}\n"
         )
-        output += f"    Max runtime:              {limits.get('max_runtime', 'unlimited')}\n"
         output += "\n  Enforcement:\n"
         sanitized = sanitize_username_for_slice(username)
         output += f"    Systemd slice:            ds01-{group}-{sanitized}.slice\n"
@@ -360,18 +364,18 @@ class ResourceLimitParser:
         which can be used by maintenance scripts instead of embedded heredocs.
 
         Returns:
-            JSON string with keys: idle_timeout, max_runtime,
-            gpu_hold_after_stop, container_hold_after_stop
+            JSON string with keys: idle_timeout_h, max_runtime_h,
+            gpu_hold_after_stop_h, container_hold_after_stop_h
         """
         import json
 
         limits = self.get_user_limits(username)
 
         lifecycle = {
-            "idle_timeout": limits.get("idle_timeout"),
-            "max_runtime": limits.get("max_runtime"),
-            "gpu_hold_after_stop": limits.get("gpu_hold_after_stop"),
-            "container_hold_after_stop": limits.get("container_hold_after_stop"),
+            "idle_timeout_h": limits.get("idle_timeout_h"),
+            "max_runtime_h": limits.get("max_runtime_h"),
+            "gpu_hold_after_stop_h": limits.get("gpu_hold_after_stop_h"),
+            "container_hold_after_stop_h": limits.get("container_hold_after_stop_h"),
         }
         return json.dumps(lifecycle)
 
@@ -386,7 +390,7 @@ class ResourceLimitParser:
 
         Returns:
             dict with keys: gpu_idle_threshold, cpu_idle_threshold,
-            network_idle_threshold, idle_detection_window, sigterm_grace_seconds
+            network_idle_threshold, idle_detection_window, sigterm_grace_s
         """
         if not self.config:
             raise ValueError("Configuration is empty or invalid")
@@ -400,7 +404,7 @@ class ResourceLimitParser:
             "cpu_idle_threshold": policies.get("cpu_idle_threshold", 2.0),
             "network_idle_threshold": policies.get("network_idle_threshold", 1048576),
             "idle_detection_window": policies.get("idle_detection_window", 3),
-            "sigterm_grace_seconds": policies.get("sigterm_grace_seconds", 60),
+            "sigterm_grace_s": policies.get("sigterm_grace_s", 60),
         }
 
         sanitized = sanitize_username_for_slice(username)
@@ -452,7 +456,7 @@ class ResourceLimitParser:
 
         Args:
             username: The username to check
-            enforcement_type: 'idle_timeout' or 'max_runtime'
+            enforcement_type: 'idle_timeout_h' or 'max_runtime_h'
 
         Returns:
             tuple: (is_exempt: bool, reason: str | None)
@@ -536,7 +540,7 @@ def main():
         print("  --all-lifecycle        All lifecycle limits as JSON")
         print("  --lifecycle-policies   Per-group lifecycle policies as JSON")
         print(
-            "  --check-exemption TYPE Check if user is exempt from TYPE (idle_timeout or max_runtime)"
+            "  --check-exemption TYPE Check if user is exempt from TYPE (idle_timeout_h or max_runtime_h)"
         )
         print("  --high-demand-threshold  GPU allocation threshold for high demand mode")
         print("  --high-demand-reduction  Idle timeout reduction factor in high demand")
@@ -584,19 +588,19 @@ def main():
         print(limits.get("priority", 10))
     elif "--gpu-hold-time" in sys.argv:
         limits = parser.get_user_limits(username)
-        hold_time = limits.get("gpu_hold_after_stop")
+        hold_time = limits.get("gpu_hold_after_stop_h")
         print(hold_time if hold_time is not None else "indefinite")
     elif "--container-hold-time" in sys.argv:
         limits = parser.get_user_limits(username)
-        hold_time = limits.get("container_hold_after_stop")
+        hold_time = limits.get("container_hold_after_stop_h")
         print(hold_time if hold_time is not None else "never")
     elif "--idle-timeout" in sys.argv:
         limits = parser.get_user_limits(username)
-        idle_timeout = limits.get("idle_timeout")
+        idle_timeout = limits.get("idle_timeout_h")
         print(idle_timeout if idle_timeout is not None else "None")
     elif "--max-runtime" in sys.argv:
         limits = parser.get_user_limits(username)
-        max_runtime = limits.get("max_runtime")
+        max_runtime = limits.get("max_runtime_h")
         print(max_runtime if max_runtime is not None else "None")
     elif "--all-lifecycle" in sys.argv:
         print(parser.get_lifecycle_limits_json(username))
@@ -642,7 +646,7 @@ def main():
                 print("not_exempt")
         except (IndexError, ValueError):
             print(
-                "Error: --check-exemption requires enforcement type (idle_timeout or max_runtime)"
+                "Error: --check-exemption requires enforcement type (idle_timeout_h or max_runtime_h)"
             )
             sys.exit(1)
     else:

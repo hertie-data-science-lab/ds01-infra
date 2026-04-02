@@ -160,7 +160,7 @@ class TestEnforceRuntimeStructure:
 
     @pytest.mark.component
     def test_calls_check_exemption_cli(self):
-        """Script calls get_resource_limits.py --check-exemption max_runtime."""
+        """Script calls get_resource_limits.py --check-exemption max_runtime_h."""
         assert "--check-exemption" in self.content
 
     @pytest.mark.component
@@ -237,14 +237,14 @@ class TestConfigFileStructure:
             "cpu_idle_threshold",
             "network_idle_threshold",
             "idle_detection_window",
-            "sigterm_grace_seconds",
+            "sigterm_grace_s",
         ]
         for field in required:
             assert field in policies, f"Global policies missing '{field}'"
 
     @pytest.mark.component
     def test_container_types_sigterm_grace(self):
-        """All container types have sigterm_grace_seconds."""
+        """All container types have sigterm_grace_s."""
         import yaml
 
         config_path = INFRA_ROOT / "config" / "runtime" / "resource-limits.yaml"
@@ -257,11 +257,9 @@ class TestConfigFileStructure:
         container_types = config.get("container_types", {})
         for ct_name in ["devcontainer", "compose", "docker", "unknown"]:
             ct = container_types.get(ct_name, {})
-            assert "sigterm_grace_seconds" in ct, (
-                f"container_types.{ct_name} missing sigterm_grace_seconds"
-            )
-            assert isinstance(ct["sigterm_grace_seconds"], (int, float)), (
-                f"container_types.{ct_name}.sigterm_grace_seconds should be numeric"
+            assert "sigterm_grace_s" in ct, f"container_types.{ct_name} missing sigterm_grace_s"
+            assert isinstance(ct["sigterm_grace_s"], (int, float)), (
+                f"container_types.{ct_name}.sigterm_grace_s should be numeric"
             )
 
     @pytest.mark.component
@@ -285,6 +283,6 @@ class TestConfigFileStructure:
                 f"Exemption {i} 'exempt_from' should be a list"
             )
             for ef in exemption["exempt_from"]:
-                assert ef in ("idle_timeout", "max_runtime"), (
+                assert ef in ("idle_timeout_h", "max_runtime_h"), (
                     f"Exemption {i} has unknown exempt_from value: {ef}"
                 )
