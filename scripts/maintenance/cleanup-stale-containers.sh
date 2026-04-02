@@ -1,9 +1,9 @@
 #!/bin/bash
-# Cleanup stale containers that have been stopped longer than container_hold_after_stop
+# Cleanup stale containers that have been stopped longer than container_hold_after_stop_h
 # /opt/ds01-infra/scripts/maintenance/cleanup-stale-containers.sh
 #
 # This script should be run periodically (e.g., via cron every hour)
-# to remove stopped containers that have exceeded their container_hold_after_stop timeout.
+# to remove stopped containers that have exceeded their container_hold_after_stop_h timeout.
 # Uses Docker-native queries (no metadata files needed).
 
 set -e
@@ -41,11 +41,12 @@ get_container_hold_timeout() {
     python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --container-hold-time
 }
 
-# Parse duration string (e.g., "12h", "0.5h") to seconds
-# Wrapper around centralized ds01_parse_duration from init.sh
-parse_duration() {
-    local duration="$1"
-    ds01_parse_duration "$duration"
+# Convert bare numeric value to seconds using known unit
+# Wrapper around ds01_duration_to_seconds from init.sh
+duration_to_seconds() {
+    local value="$1"
+    local unit="$2"
+    ds01_duration_to_seconds "$value" "$unit"
 }
 
 # Get container owner from labels/path/name (fallback chain)
@@ -114,7 +115,7 @@ get_container_type() {
 get_container_type_hold_timeout() {
     local container_type="$1"
 
-    # Read from config - container_types section
+    # Read from config - container_types section (values are bare hours)
     local timeout=$(python3 << PYEOF
 import yaml
 import sys
@@ -125,17 +126,17 @@ try:
 
     container_types = config.get('container_types', {})
     type_config = container_types.get('$container_type', {})
-    timeout = type_config.get('container_hold_after_stop')
+    timeout = type_config.get('container_hold_after_stop_h')
 
     # Fallback to defaults if not defined per container type
-    if not timeout:
+    if timeout is None:
         defaults = config.get('defaults', {})
-        timeout = defaults.get('container_hold_after_stop', '0.5h')
+        timeout = defaults.get('container_hold_after_stop_h', 0.5)
 
-    print(timeout if timeout else '0.5h')
+    print(timeout if timeout is not None else 0.5)
 except Exception as e:
-    print('0.5h', file=sys.stderr)
-    print('0.5h')
+    print(0.5, file=sys.stderr)
+    print(0.5)
 PYEOF
 )
     echo "$timeout"
@@ -145,20 +146,21 @@ PYEOF
 cleanup_created_containers() {
     log "Checking for created-never-started containers..."
 
-    # Get created container timeout from policies
+    # Get created container timeout from policies (bare minutes)
     local created_timeout=$(python3 << PYEOF
 import yaml
 try:
     with open("$CONFIG_FILE") as f:
         config = yaml.safe_load(f)
-    timeout = config.get('policies', {}).get('created_container_timeout', '30m')
+    timeout = config.get('policies', {}).get('created_container_timeout_m', 30)
     print(timeout)
 except Exception:
-    print('30m')
+    print(30)
 PYEOF
 )
 
-    local created_timeout_seconds=$(parse_duration "$created_timeout")
+    local created_timeout_seconds
+    created_timeout_seconds=$(duration_to_seconds "$created_timeout" "m")
 
     # Find all containers in created state
     local created_containers
@@ -328,14 +330,14 @@ while IFS= read -r container_tag; do
 
     # Get container hold timeout based on type and owner
     if [ "$username" != "unknown" ]; then
-        # Known owner - use their group's container_hold_after_stop
+        # Known owner - use their group's container_hold_after_stop_h
         container_hold=$(get_container_hold_timeout "$username")
     else
         # Unknown owner - use container type config or strictest timeout
         container_hold=$(get_container_type_hold_timeout "$container_type")
     fi
 
-    hold_seconds=$(parse_duration "$container_hold")
+    hold_seconds=$(duration_to_seconds "$container_hold" "h")
 
     # If never remove, skip
     if [ "$hold_seconds" -eq -1 ]; then
@@ -368,7 +370,7 @@ while IFS= read -r container_tag; do
 
     # Check if exceeded timeout
     if [ "$elapsed_seconds" -gt "$hold_seconds" ]; then
-        log "Removing stale container: $container_tag (user: $username, type: $container_type, stopped: ${elapsed_hours}h ago, limit: $container_hold)"
+        log "Removing stale container: $container_tag (user: $username, type: $container_type, stopped: ${elapsed_hours}h ago, limit: ${container_hold}h)"
 
         # Check if GPU was allocated and release before removal
         gpu_info=$(docker inspect "$container_tag" --format '{{.HostConfig.DeviceRequests}}' 2>/dev/null)

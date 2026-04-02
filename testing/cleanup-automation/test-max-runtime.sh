@@ -1,6 +1,6 @@
 #!/bin/bash
-# Test script for max_runtime enforcement
-# This tests that containers exceeding max_runtime are automatically stopped
+# Test script for max_runtime_h enforcement
+# This tests that containers exceeding max_runtime_h are automatically stopped
 
 set -e
 
@@ -9,7 +9,7 @@ INFRA_ROOT="/opt/ds01-infra"
 TEST_LOG="$SCRIPT_DIR/test-max-runtime.log"
 
 echo "=====================================" | tee "$TEST_LOG"
-echo "Testing max_runtime Enforcement" | tee -a "$TEST_LOG"
+echo "Testing max_runtime_h Enforcement" | tee -a "$TEST_LOG"
 echo "=====================================" | tee -a "$TEST_LOG"
 echo "" | tee -a "$TEST_LOG"
 
@@ -34,10 +34,10 @@ else
 fi
 echo "" | tee -a "$TEST_LOG"
 
-# Check user's max_runtime limit
-echo "[3] Checking datasciencelab's max_runtime limit..." | tee -a "$TEST_LOG"
-MAX_RUNTIME=$(python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" datasciencelab 2>/dev/null | grep -i "max_runtime" | awk '{print $NF}')
-echo "  max_runtime: $MAX_RUNTIME" | tee -a "$TEST_LOG"
+# Check user's max_runtime_h limit
+echo "[3] Checking datasciencelab's max_runtime_h limit..." | tee -a "$TEST_LOG"
+MAX_RUNTIME=$(python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" datasciencelab 2>/dev/null | grep -i "max_runtime_h" | awk '{print $NF}')
+echo "  max_runtime_h: $MAX_RUNTIME" | tee -a "$TEST_LOG"
 echo "" | tee -a "$TEST_LOG"
 
 # Run enforcement script manually

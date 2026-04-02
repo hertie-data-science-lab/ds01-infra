@@ -97,8 +97,8 @@ class TestResourceLimitParser:
         """Group limits inherit from defaults."""
         limits = parser_with_config.get_user_limits("student1")
         # These should come from defaults since not specified in group
-        assert "idle_timeout" in limits
-        assert "max_runtime" in limits
+        assert "idle_timeout_h" in limits
+        assert "max_runtime_h" in limits
 
     # =========================================================================
     # Priority Resolution Tests
@@ -166,7 +166,7 @@ class TestResourceLimitParser:
                 "max_mig_instances": 1,
                 "max_cpus": 8,
                 "memory": "32g",
-                "idle_timeout": None,  # null = disabled
+                "idle_timeout_h": None,  # null = disabled
                 "priority": 50,
             },
             "groups": {},
@@ -182,7 +182,7 @@ class TestResourceLimitParser:
         parser = ResourceLimitParser(str(config_file))
         limits = parser.get_user_limits("anyone")
 
-        assert limits.get("idle_timeout") is None  # Should be None, not error
+        assert limits.get("idle_timeout_h") is None  # Should be None, not error
 
 
 class TestLifecycleLimitsJson:
@@ -203,10 +203,10 @@ class TestLifecycleLimitsJson:
         result = parser_with_config.get_lifecycle_limits_json("student1")
         data = json.loads(result)
 
-        assert "idle_timeout" in data
-        assert "max_runtime" in data
-        assert "gpu_hold_after_stop" in data
-        assert "container_hold_after_stop" in data
+        assert "idle_timeout_h" in data
+        assert "max_runtime_h" in data
+        assert "gpu_hold_after_stop_h" in data
+        assert "container_hold_after_stop_h" in data
 
     @pytest.mark.unit
     def test_lifecycle_json_is_valid_json(self, parser_with_config):

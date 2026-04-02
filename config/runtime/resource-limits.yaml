@@ -51,10 +51,10 @@ defaults:
 
   # === Container lifecycle ===
   max_containers_per_user: 3        # Max simultaneous containers
-  max_runtime: 24h                  # Max walltime (null = no limit)
-  idle_timeout: 0.5h                # Auto-stop after X hours of GPU inactivity
-  gpu_hold_after_stop: 0.25h        # How long to hold GPU after container stopped (null = indefinite)
-  container_hold_after_stop: 0.5h   # Auto-remove container after X hours stopped (null = never auto-remove)
+  max_runtime_h: 24                  # Max walltime in hours (null = no limit)
+  idle_timeout_h: 0.5                # Auto-stop after X hours of GPU inactivity
+  gpu_hold_after_stop_h: 0.25        # How long to hold GPU after container stopped (null = indefinite)
+  container_hold_after_stop_h: 0.5   # Auto-remove container after X hours stopped (null = never auto-remove)
   max_tasks: 32768                  # Max tasks for systemd slice (fixes libgomp thread creation)
 
 default_group: student
@@ -97,8 +97,8 @@ groups:
     memory: 64g                     # Increased for large datasets
     memory_swap: 64g
     shm_size: 32g
-    max_runtime: 48h                # Longer runtime for research jobs
-    idle_timeout: 1h
+    max_runtime_h: 48                # Longer runtime for research jobs
+    idle_timeout_h: 1
     max_tasks: 65536                # High for parallel workloads
     max_containers_per_user: 5
     # Per-user aggregate limits (systemd slice enforcement)
@@ -128,8 +128,8 @@ groups:
     memory: 128g                    # Large memory for big models
     memory_swap: 128g
     shm_size: 64g
-    max_runtime: 72h                # Extended runtime for faculty
-    idle_timeout: 2h                # Longer idle timeout (teaching demos, etc.)
+    max_runtime_h: 72                # Extended runtime for faculty
+    idle_timeout_h: 2                # Longer idle timeout (teaching demos, etc.)
     max_tasks: 65536
     max_containers_per_user: 5
     # Per-user aggregate limits (systemd slice enforcement)
@@ -158,9 +158,9 @@ groups:
     memory: 128g
     memory_swap: 128g
     shm_size: 64g
-    idle_timeout: 1h
-    max_runtime: 24h
-    gpu_hold_after_stop: 1h         # Hold GPU for 1h after stop
+    idle_timeout_h: 1
+    max_runtime_h: 24
+    gpu_hold_after_stop_h: 1         # Hold GPU for 1h after stop
     max_containers_per_user: 10
     max_tasks: null
     # NOTE: No aggregate section — admin users have no aggregate cap
@@ -204,11 +204,11 @@ policies:
   cpu_idle_threshold: 2.0          # CPU utilisation % threshold for idle detection (was hardcoded 1.0)
   network_idle_threshold: 1048576  # Network I/O bytes threshold for idle detection (1MB)
   idle_detection_window: 3         # Consecutive idle checks before action
-  grace_period: 30m                # Startup grace period before idle detection begins
-  keepalive_max_duration: 24h      # Max time .keep-alive file is respected
-  sigterm_grace_seconds: 60        # SIGTERM grace period for GPU containers
-  gpu_hold_after_manual_stop: 15m  # GPU hold duration when user manually stops
-  created_container_timeout: 30m   # Cleanup timeout for created-never-started containers
+  grace_period_m: 30                # Startup grace period in minutes before idle detection begins
+  keepalive_max_duration_h: 24      # Max time in hours .keep-alive file is respected
+  sigterm_grace_s: 60               # SIGTERM grace period in seconds for GPU containers
+  gpu_hold_after_manual_stop_m: 15  # GPU hold duration in minutes when user manually stops
+  created_container_timeout_m: 30   # Cleanup timeout in minutes for created-never-started containers
 
   # TODO-NOT-IMPLEMENTED: Policy enforcement
   # auto_stop_idle: true
@@ -225,9 +225,9 @@ policies:
 container_types:
   # Dev containers (VS Code, Cursor, etc.) - development work
   devcontainer:
-    idle_timeout: null             # Exempt from idle timeout (only subject to max_runtime)
-    max_runtime: 168h              # 1 week max
-    sigterm_grace_seconds: 30       # Dev containers: K8s default
+    idle_timeout_h: null             # Exempt from idle timeout (only subject to max_runtime_h)
+    max_runtime_h: 168               # 1 week max
+    sigterm_grace_s: 30              # Dev containers: K8s default
     default_mig_count:             # Group-based MIG allocation for external containers
       student: 1                   # Students get 1 MIG for dev containers
       researcher: 2                # Researchers can have 2 MIGs in dev containers
@@ -236,9 +236,9 @@ container_types:
 
   # Docker Compose containers
   compose:
-    idle_timeout: 30m
-    max_runtime: 72h               # 3 days max
-    sigterm_grace_seconds: 45       # Compose: middle ground
+    idle_timeout_h: 0.5
+    max_runtime_h: 72               # 3 days max
+    sigterm_grace_s: 45              # Compose: middle ground
     default_mig_count:
       student: 1
       researcher: 2
@@ -247,9 +247,9 @@ container_types:
 
   # Direct docker run commands
   docker:
-    idle_timeout: 30m
-    max_runtime: 48h               # 2 days max
-    sigterm_grace_seconds: 60       # Direct docker: full minute (likely GPU)
+    idle_timeout_h: 0.5
+    max_runtime_h: 48               # 2 days max
+    sigterm_grace_s: 60              # Direct docker: full minute (likely GPU)
     default_mig_count:
       student: 1
       researcher: 1                # Slightly stricter for raw docker
@@ -258,9 +258,9 @@ container_types:
 
   # ds01-jobs API containers (remote job submission)
   api:
-    idle_timeout: null               # Jobs manage their own lifecycle
-    max_runtime: 24h                 # 1 day max
-    sigterm_grace_seconds: 30
+    idle_timeout_h: null               # Jobs manage their own lifecycle
+    max_runtime_h: 24                  # 1 day max
+    sigterm_grace_s: 30
     default_mig_count:
       student: 1
       researcher: 2
@@ -269,9 +269,9 @@ container_types:
 
   # Unrecognised containers (Portainer, SDK, etc.) - stricter limits
   unknown:
-    idle_timeout: 15m              # Short timeout for unidentified containers
-    max_runtime: 24h               # 1 day max
-    sigterm_grace_seconds: 30       # Unknown: K8s default
+    idle_timeout_h: 0.25              # Short timeout for unidentified containers (15 min)
+    max_runtime_h: 24                  # 1 day max
+    sigterm_grace_s: 30                # Unknown: K8s default
     default_mig_count:
       student: 1
       researcher: 1
@@ -301,7 +301,7 @@ bare_metal_access:
   exempt_users:                     # Users permanently exempt from CUDA_VISIBLE_DEVICES="" block
     - datasciencelab
   admin_group: ds01-admin           # Group with admin privileges for bare-metal-access CLI
-  default_grant_duration: 24h       # Default duration for temporary grants
+  default_grant_duration_h: 24       # Default duration in hours for temporary grants
   state_dir: /var/lib/ds01/bare-metal-grants  # Grant state files (JSON, one per user)
 
 # === Access control ===

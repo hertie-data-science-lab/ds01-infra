@@ -356,20 +356,22 @@ class TestResourceLimitFunctions:
         assert output.isdigit() or output == "" or output == "1" or output == "unlimited"
 
     def test_ds01_get_idle_timeout_returns_value_or_default(self):
-        """ds01_get_idle_timeout should return a duration string or default."""
+        """ds01_get_idle_timeout should return a bare number (hours) or default."""
         result = self.run_bash_function("ds01_get_idle_timeout")
         assert result.returncode == 0
         output = result.stdout.strip()
-        # Should be a duration like "2h", "48h", "24h", etc. or default "2h"
-        assert output == "" or "h" in output or "d" in output or "m" in output
+        # Should be a bare number like "0.5", "1", "2", etc. or empty
+        if output:
+            float(output)  # raises ValueError if not numeric
 
     def test_ds01_get_max_runtime_returns_value_or_default(self):
-        """ds01_get_max_runtime should return a duration string or default."""
+        """ds01_get_max_runtime should return a bare number (hours) or default."""
         result = self.run_bash_function("ds01_get_max_runtime")
         assert result.returncode == 0
         output = result.stdout.strip()
-        # Should be a duration or default "24h"
-        assert output == "" or "h" in output or "d" in output
+        # Should be a bare number like "24", "48", "72", etc. or empty
+        if output:
+            float(output)  # raises ValueError if not numeric
 
     def test_ds01_get_max_containers_returns_value_or_default(self):
         """ds01_get_max_containers should return a numeric value or default."""

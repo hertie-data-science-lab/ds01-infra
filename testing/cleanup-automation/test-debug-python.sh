@@ -33,7 +33,7 @@ try:
         print(f"DEBUG: user_overrides exists, keys: {list(config['user_overrides'].keys())}")
         if username in config['user_overrides']:
             print(f"DEBUG: Found {username} in user_overrides")
-            timeout = config['user_overrides'][username].get('idle_timeout')
+            timeout = config['user_overrides'][username].get('idle_timeout_h')
             if timeout:
                 print(f"RESULT: {timeout} (from user_overrides)")
                 print(timeout)
@@ -49,23 +49,23 @@ try:
                 print(f"DEBUG:   members = {group_config['members']}")
                 if username in group_config['members']:
                     print(f"DEBUG:   ✓ {username} is in {group_name}")
-                    timeout = group_config.get('idle_timeout')
-                    print(f"DEBUG:   idle_timeout from group = {timeout}")
+                    timeout = group_config.get('idle_timeout_h')
+                    print(f"DEBUG:   idle_timeout_h from group = {timeout}")
                     if timeout:
                         print(f"RESULT: {timeout} (from group {group_name})")
                         print(timeout)
                         sys.exit(0)
                     else:
-                        print(f"DEBUG:   idle_timeout is None/null, checking next group")
+                        print(f"DEBUG:   idle_timeout_h is None/null, checking next group")
             print()
 
     # Default timeout
     print(f"DEBUG: Using default...")
-    default_timeout = config.get('defaults', {}).get('idle_timeout', '48h')
+    default_timeout = config.get('defaults', {}).get('idle_timeout_h', 48)
     print(f"RESULT: {default_timeout} (from defaults)")
     print(default_timeout)
 except Exception as e:
     print(f"ERROR: {e}")
-    print("48h", file=sys.stderr)
+    print(48, file=sys.stderr)
     sys.exit(1)
 PYEOF

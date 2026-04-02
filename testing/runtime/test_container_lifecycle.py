@@ -414,11 +414,11 @@ def test_config_has_phase5_policies():
 
     policies = config.get("policies", {})
     required_keys = [
-        "grace_period",
-        "keepalive_max_duration",
-        "sigterm_grace_seconds",
-        "gpu_hold_after_manual_stop",
-        "created_container_timeout",
+        "grace_period_m",
+        "keepalive_max_duration_h",
+        "sigterm_grace_s",
+        "gpu_hold_after_manual_stop_m",
+        "created_container_timeout_m",
         "gpu_idle_threshold",
         "high_demand_threshold",
         "high_demand_idle_reduction",

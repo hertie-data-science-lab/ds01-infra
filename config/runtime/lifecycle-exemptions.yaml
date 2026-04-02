@@ -9,7 +9,7 @@
 #
 # Fields:
 #   username:      Login username (must match /home/<username>)
-#   exempt_from:   List of enforcements to exempt: idle_timeout, max_runtime
+#   exempt_from:   List of enforcements to exempt: idle_timeout_h, max_runtime_h
 #   reason:        Human-readable justification
 #   approved_by:   Who approved (admin username)
 #   approved_on:   ISO 8601 date when approved
@@ -25,8 +25,8 @@ exemptions:
   - username: "204214@hertie-school.lan"
     category: "waiver"
     exempt_from:
-      - idle_timeout
-      - max_runtime
+      - idle_timeout_h
+      - max_runtime_h
     reason: "Pre-existing research workflow — continuous model training"
     approved_by: "datasciencelab"
     approved_on: "2026-02-14"
@@ -36,8 +36,8 @@ exemptions:
   # - username: "alice@hertie-school.lan"
   #   category: "research_grant"
   #   exempt_from:
-  #     - idle_timeout
-  #     - max_runtime
+  #     - idle_timeout_h
+  #     - max_runtime_h
   #   reason: "PhD thesis — deep learning model training"
   #   approved_by: "faculty_supervisor"
   #   approved_on: "2026-02-14"

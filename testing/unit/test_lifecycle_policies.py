@@ -37,8 +37,8 @@ def lifecycle_config(temp_dir):
             "max_cpus": 8,
             "memory": "32g",
             "priority": 50,
-            "idle_timeout": "48h",
-            "max_runtime": "168h",
+            "idle_timeout_h": 48,
+            "max_runtime_h": 168,
         },
         "default_group": "student",
         "groups": {
@@ -87,14 +87,14 @@ def lifecycle_config(temp_dir):
             "cpu_idle_threshold": 2.0,
             "network_idle_threshold": 1048576,
             "idle_detection_window": 3,
-            "sigterm_grace_seconds": 60,
+            "sigterm_grace_s": 60,
             "high_demand_threshold": 0.8,
         },
         "container_types": {
-            "devcontainer": {"sigterm_grace_seconds": 30},
-            "compose": {"sigterm_grace_seconds": 45},
-            "docker": {"sigterm_grace_seconds": 60},
-            "unknown": {"sigterm_grace_seconds": 30},
+            "devcontainer": {"sigterm_grace_s": 30},
+            "compose": {"sigterm_grace_s": 45},
+            "docker": {"sigterm_grace_s": 60},
+            "unknown": {"sigterm_grace_s": 30},
         },
     }
 
@@ -124,7 +124,7 @@ def exemptions_file(temp_dir):
             {
                 "username": "permanent_user",
                 "category": "waiver",
-                "exempt_from": ["idle_timeout", "max_runtime"],
+                "exempt_from": ["idle_timeout_h", "max_runtime_h"],
                 "reason": "Permanent research workflow",
                 "approved_by": "admin",
                 "approved_on": "2026-01-01",
@@ -133,7 +133,7 @@ def exemptions_file(temp_dir):
             {
                 "username": "temp_user",
                 "category": "research_grant",
-                "exempt_from": ["idle_timeout"],
+                "exempt_from": ["idle_timeout_h"],
                 "reason": "PhD thesis deadline",
                 "approved_by": "faculty",
                 "approved_on": "2026-01-01",
@@ -142,7 +142,7 @@ def exemptions_file(temp_dir):
             {
                 "username": "expired_user",
                 "category": "research_grant",
-                "exempt_from": ["idle_timeout", "max_runtime"],
+                "exempt_from": ["idle_timeout_h", "max_runtime_h"],
                 "reason": "Old grant",
                 "approved_by": "faculty",
                 "approved_on": "2025-01-01",
@@ -151,7 +151,7 @@ def exemptions_file(temp_dir):
             {
                 "username": "idle_only_user",
                 "category": "waiver",
-                "exempt_from": ["idle_timeout"],
+                "exempt_from": ["idle_timeout_h"],
                 "reason": "Idle only exemption",
                 "approved_by": "admin",
                 "approved_on": "2026-01-01",
@@ -244,15 +244,15 @@ class TestGetLifecyclePolicies:
             "cpu_idle_threshold",
             "network_idle_threshold",
             "idle_detection_window",
-            "sigterm_grace_seconds",
+            "sigterm_grace_s",
         }
         assert required.issubset(policies.keys())
 
     @pytest.mark.unit
     def test_sigterm_grace_from_global(self, parser):
-        """sigterm_grace_seconds inherited from global policies."""
+        """sigterm_grace_s inherited from global policies."""
         policies = parser.get_lifecycle_policies("alice")
-        assert policies["sigterm_grace_seconds"] == 60
+        assert policies["sigterm_grace_s"] == 60
 
     @pytest.mark.unit
     def test_empty_config_raises(self, temp_dir):
@@ -287,7 +287,7 @@ class TestGetLifecyclePolicies:
         assert policies["cpu_idle_threshold"] == 2.0
         assert policies["network_idle_threshold"] == 1048576
         assert policies["idle_detection_window"] == 3
-        assert policies["sigterm_grace_seconds"] == 60
+        assert policies["sigterm_grace_s"] == 60
 
 
 # =============================================================================
@@ -300,61 +300,63 @@ class TestCheckExemption:
 
     @pytest.mark.unit
     def test_permanent_exemption_idle(self, parser_with_exemptions):
-        """Permanent exemption for idle_timeout returns exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption("permanent_user", "idle_timeout")
+        """Permanent exemption for idle_timeout_h returns exempt."""
+        exempt, reason = parser_with_exemptions.check_exemption("permanent_user", "idle_timeout_h")
         assert exempt is True
         assert "Permanent exemption" in reason
 
     @pytest.mark.unit
     def test_permanent_exemption_runtime(self, parser_with_exemptions):
-        """Permanent exemption for max_runtime returns exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption("permanent_user", "max_runtime")
+        """Permanent exemption for max_runtime_h returns exempt."""
+        exempt, reason = parser_with_exemptions.check_exemption("permanent_user", "max_runtime_h")
         assert exempt is True
         assert "Permanent exemption" in reason
 
     @pytest.mark.unit
     def test_temporary_exemption_active(self, parser_with_exemptions):
         """Active (non-expired) temporary exemption returns exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption("temp_user", "idle_timeout")
+        exempt, reason = parser_with_exemptions.check_exemption("temp_user", "idle_timeout_h")
         assert exempt is True
         assert "Temporary exemption" in reason
 
     @pytest.mark.unit
     def test_temporary_exemption_wrong_type(self, parser_with_exemptions):
         """Temporary exemption for different enforcement type returns not exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption("temp_user", "max_runtime")
+        exempt, reason = parser_with_exemptions.check_exemption("temp_user", "max_runtime_h")
         assert exempt is False
         assert reason is None
 
     @pytest.mark.unit
     def test_expired_exemption(self, parser_with_exemptions):
         """Expired exemption returns not exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption("expired_user", "idle_timeout")
+        exempt, reason = parser_with_exemptions.check_exemption("expired_user", "idle_timeout_h")
         assert exempt is False
         assert reason is None
 
     @pytest.mark.unit
     def test_no_exemption(self, parser_with_exemptions):
         """User with no exemption returns not exempt."""
-        exempt, reason = parser_with_exemptions.check_exemption("nonexistent_user", "idle_timeout")
+        exempt, reason = parser_with_exemptions.check_exemption(
+            "nonexistent_user", "idle_timeout_h"
+        )
         assert exempt is False
         assert reason is None
 
     @pytest.mark.unit
     def test_partial_exemption_idle_only(self, parser_with_exemptions):
-        """User exempt only from idle_timeout, not max_runtime."""
-        # idle_only_user is exempt from idle_timeout only
-        exempt, reason = parser_with_exemptions.check_exemption("idle_only_user", "idle_timeout")
+        """User exempt only from idle_timeout_h, not max_runtime_h."""
+        # idle_only_user is exempt from idle_timeout_h only
+        exempt, reason = parser_with_exemptions.check_exemption("idle_only_user", "idle_timeout_h")
         assert exempt is True
 
-        exempt, reason = parser_with_exemptions.check_exemption("idle_only_user", "max_runtime")
+        exempt, reason = parser_with_exemptions.check_exemption("idle_only_user", "max_runtime_h")
         assert exempt is False
 
     @pytest.mark.unit
     def test_missing_exemption_file(self, parser):
         """Missing exemptions file returns not exempt (fail-open)."""
         # parser fixture's config_dir doesn't have lifecycle-exemptions.yaml
-        exempt, reason = parser.check_exemption("anyone", "idle_timeout")
+        exempt, reason = parser.check_exemption("anyone", "idle_timeout_h")
         assert exempt is False
         assert reason is None
 
@@ -367,7 +369,7 @@ class TestCheckExemption:
         from get_resource_limits import ResourceLimitParser
 
         p = ResourceLimitParser(str(lifecycle_config))
-        exempt, reason = p.check_exemption("anyone", "idle_timeout")
+        exempt, reason = p.check_exemption("anyone", "idle_timeout_h")
         assert exempt is False
 
     @pytest.mark.unit
@@ -379,7 +381,7 @@ class TestCheckExemption:
         from get_resource_limits import ResourceLimitParser
 
         p = ResourceLimitParser(str(lifecycle_config))
-        exempt, reason = p.check_exemption("anyone", "idle_timeout")
+        exempt, reason = p.check_exemption("anyone", "idle_timeout_h")
         assert exempt is False
 
     @pytest.mark.unit
@@ -390,7 +392,7 @@ class TestCheckExemption:
             "exemptions": [
                 {
                     "username": "z_user",
-                    "exempt_from": ["idle_timeout"],
+                    "exempt_from": ["idle_timeout_h"],
                     "reason": "Z suffix test",
                     "expires_on": future,
                 }
@@ -403,7 +405,7 @@ class TestCheckExemption:
         from get_resource_limits import ResourceLimitParser
 
         p = ResourceLimitParser(str(lifecycle_config))
-        exempt, reason = p.check_exemption("z_user", "idle_timeout")
+        exempt, reason = p.check_exemption("z_user", "idle_timeout_h")
         assert exempt is True
 
     @pytest.mark.unit
@@ -413,7 +415,7 @@ class TestCheckExemption:
             "exemptions": [
                 {
                     "username": "bad_date_user",
-                    "exempt_from": ["idle_timeout"],
+                    "exempt_from": ["idle_timeout_h"],
                     "reason": "Bad date",
                     "expires_on": "not-a-date",
                 }
@@ -426,7 +428,7 @@ class TestCheckExemption:
         from get_resource_limits import ResourceLimitParser
 
         p = ResourceLimitParser(str(lifecycle_config))
-        exempt, reason = p.check_exemption("bad_date_user", "idle_timeout")
+        exempt, reason = p.check_exemption("bad_date_user", "idle_timeout_h")
         assert exempt is False
 
     @pytest.mark.unit
@@ -448,7 +450,7 @@ class TestCheckExemption:
         from get_resource_limits import ResourceLimitParser
 
         p = ResourceLimitParser(str(lifecycle_config))
-        exempt, reason = p.check_exemption("no_field_user", "idle_timeout")
+        exempt, reason = p.check_exemption("no_field_user", "idle_timeout_h")
         assert exempt is False
 
 
@@ -475,7 +477,7 @@ class TestCLIFlags:
         assert "cpu_idle_threshold" in data
         assert "network_idle_threshold" in data
         assert "idle_detection_window" in data
-        assert "sigterm_grace_seconds" in data
+        assert "sigterm_grace_s" in data
 
     @pytest.mark.unit
     def test_check_exemption_flag_not_exempt(self):
@@ -486,7 +488,7 @@ class TestCLIFlags:
                 str(GET_RESOURCE_LIMITS),
                 "datasciencelab",
                 "--check-exemption",
-                "idle_timeout",
+                "idle_timeout_h",
             ],
             capture_output=True,
             text=True,
@@ -504,7 +506,7 @@ class TestCLIFlags:
                 str(GET_RESOURCE_LIMITS),
                 "204214@hertie-school.lan",
                 "--check-exemption",
-                "idle_timeout",
+                "idle_timeout_h",
             ],
             capture_output=True,
             text=True,
@@ -556,7 +558,7 @@ class TestRealConfigLifecyclePolicies:
         assert "cpu_idle_threshold" in policies
         assert "network_idle_threshold" in policies
         assert "idle_detection_window" in policies
-        assert "sigterm_grace_seconds" in policies
+        assert "sigterm_grace_s" in policies
 
     @pytest.mark.unit
     def test_real_config_student_has_policies(self, real_parser):
@@ -574,11 +576,11 @@ class TestRealConfigLifecyclePolicies:
 
     @pytest.mark.unit
     def test_real_config_container_types_have_sigterm(self, real_parser):
-        """All container types in real config have sigterm_grace_seconds."""
+        """All container types in real config have sigterm_grace_s."""
         container_types = real_parser.config.get("container_types", {})
         for ct_name, ct_config in container_types.items():
-            assert "sigterm_grace_seconds" in ct_config, (
-                f"container_types.{ct_name} missing sigterm_grace_seconds"
+            assert "sigterm_grace_s" in ct_config, (
+                f"container_types.{ct_name} missing sigterm_grace_s"
             )
 
     @pytest.mark.unit

@@ -140,7 +140,7 @@ class TestLivePolicyResolution:
                 str(GET_RESOURCE_LIMITS),
                 "datasciencelab",
                 "--check-exemption",
-                "idle_timeout",
+                "idle_timeout_h",
             ],
             capture_output=True,
             text=True,

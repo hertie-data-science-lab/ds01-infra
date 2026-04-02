@@ -25,7 +25,7 @@ echo ""
 echo -e "${BOLD}1. Current Configuration:${NC}"
 echo ""
 echo "Current resource limits from YAML:"
-python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" datasciencelab | grep -E "(max_runtime|idle_timeout|gpu_hold_after_stop|container_hold_after_stop)"
+python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" datasciencelab | grep -E "(max_runtime_h|idle_timeout_h|gpu_hold_after_stop_h|container_hold_after_stop_h)"
 echo ""
 
 # Show current containers
@@ -59,7 +59,7 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "Script: $INFRA_ROOT/scripts/monitoring/check-idle-containers.sh"
 echo "Schedule: :30 past each hour"
-echo "Purpose: Stop containers idle beyond user's idle_timeout"
+echo "Purpose: Stop containers idle beyond user's idle_timeout_h"
 echo ""
 read -p "Run idle check now? (y/n): " RUN_IDLE
 if [[ "$RUN_IDLE" == "y" ]]; then
@@ -79,7 +79,7 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "Script: $INFRA_ROOT/scripts/maintenance/enforce-max-runtime.sh"
 echo "Schedule: :45 past each hour"
-echo "Purpose: Stop containers exceeding user's max_runtime"
+echo "Purpose: Stop containers exceeding user's max_runtime_h"
 echo ""
 read -p "Run max runtime check now? (y/n): " RUN_RUNTIME
 if [[ "$RUN_RUNTIME" == "y" ]]; then
@@ -99,7 +99,7 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "Script: $INFRA_ROOT/scripts/maintenance/cleanup-stale-gpu-allocations.sh"
 echo "Schedule: :15 past each hour"
-echo "Purpose: Release GPUs from stopped containers after gpu_hold_after_stop"
+echo "Purpose: Release GPUs from stopped containers after gpu_hold_after_stop_h"
 echo ""
 read -p "Run GPU cleanup now? (y/n): " RUN_GPU
 if [[ "$RUN_GPU" == "y" ]]; then
@@ -119,7 +119,7 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "Script: $INFRA_ROOT/scripts/maintenance/cleanup-stale-containers.sh"
 echo "Schedule: :30 past each hour"
-echo "Purpose: Remove stopped containers after container_hold_after_stop"
+echo "Purpose: Remove stopped containers after container_hold_after_stop_h"
 echo ""
 read -p "Run container cleanup now? (y/n): " RUN_CONTAINER
 if [[ "$RUN_CONTAINER" == "y" ]]; then

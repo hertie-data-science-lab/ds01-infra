@@ -29,7 +29,7 @@ try:
 
     # Check user overrides first
     if 'user_overrides' in config and username in config['user_overrides']:
-        timeout = config['user_overrides'][username].get('idle_timeout')
+        timeout = config['user_overrides'][username].get('idle_timeout_h')
         if timeout:
             print(timeout)
             sys.exit(0)
@@ -38,36 +38,36 @@ try:
     if 'groups' in config:
         for group_name, group_config in config['groups'].items():
             if 'members' in group_config and username in group_config['members']:
-                timeout = group_config.get('idle_timeout')
+                timeout = group_config.get('idle_timeout_h')
                 if timeout:
                     print(timeout)
                     sys.exit(0)
 
     # Default timeout
-    default_timeout = config.get('defaults', {}).get('idle_timeout', '48h')
+    default_timeout = config.get('defaults', {}).get('idle_timeout_h', 48)
     print(default_timeout)
 except Exception as e:
-    print("48h", file=sys.stderr)
+    print(48, file=sys.stderr)
     sys.exit(1)
 PYEOF
 }
 
-echo "[1] Testing idle_timeout for datasciencelab (admin group)..."
+echo "[1] Testing idle_timeout_h for datasciencelab (admin group)..."
 timeout=$(get_idle_timeout "datasciencelab")
 echo "    Result: '$timeout'"
-echo "    Expected: '0.5h' (from admin group config)"
-if [ "$timeout" = "0.5h" ]; then
+echo "    Expected: '0.5' (from admin group config)"
+if [ "$timeout" = "0.5" ]; then
     echo "    ✅ CORRECT"
 else
     echo "    ❌ WRONG"
 fi
 echo ""
 
-echo "[2] Testing idle_timeout for default user..."
+echo "[2] Testing idle_timeout_h for default user..."
 timeout=$(get_idle_timeout "nonexistent_user")
 echo "    Result: '$timeout'"
-echo "    Expected: '0.5h' (from defaults)"
-if [ "$timeout" = "0.5h" ]; then
+echo "    Expected: '0.5' (from defaults)"
+if [ "$timeout" = "0.5" ]; then
     echo "    ✅ CORRECT"
 else
     echo "    ❌ WRONG"

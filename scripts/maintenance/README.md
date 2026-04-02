@@ -16,13 +16,13 @@ DS01 automates container lifecycle management through cron jobs that enforce:
 
 ### check-idle-containers.sh
 
-Detects and stops idle containers exceeding user's `idle_timeout`.
+Detects and stops idle containers exceeding user's `idle_timeout_h`.
 
 **Schedule:** `:30/hour` (via cron)
 
 **What it does:**
 1. Checks ALL running containers
-2. For each container, reads owner's `idle_timeout` from YAML
+2. For each container, reads owner's `idle_timeout_h` from YAML
 3. If CPU < 1% for longer than timeout: stops container
 4. Warns at 80% of idle time
 
@@ -61,9 +61,9 @@ Enforces max runtime limits per user.
 
 **What it does:**
 1. Checks ALL running containers
-2. For each container, reads owner's `max_runtime` from YAML
-3. If running longer than max_runtime: stops container
-4. Warns at 90% of max_runtime
+2. For each container, reads owner's `max_runtime_h` from YAML
+3. If running longer than max_runtime_h: stops container
+4. Warns at 90% of max_runtime_h
 
 **Runtime calculation:**
 - Based on container start time
@@ -84,14 +84,14 @@ sudo bash scripts/maintenance/enforce-max-runtime.sh
 
 ### cleanup-stale-gpu-allocations.sh
 
-Releases GPUs from stopped containers after `gpu_hold_after_stop` timeout.
+Releases GPUs from stopped containers after `gpu_hold_after_stop_h` timeout.
 
 **Schedule:** `:15/hour` (via cron)
 
 **What it does:**
 1. Reads GPU allocation state from `/var/lib/ds01/gpu-state.json`
 2. For each allocation with `stopped_at` timestamp:
-   - Reads owner's `gpu_hold_after_stop` from YAML
+   - Reads owner's `gpu_hold_after_stop_h` from YAML
    - If timeout exceeded: releases GPU
 3. Handles restarted containers (clears `stopped_at`)
 
@@ -110,14 +110,14 @@ sudo bash scripts/maintenance/cleanup-stale-gpu-allocations.sh
 
 ### cleanup-stale-containers.sh
 
-Removes stopped containers after `container_hold_after_stop` timeout.
+Removes stopped containers after `container_hold_after_stop_h` timeout.
 
 **Schedule:** `:30/hour` (via cron)
 
 **What it does:**
 1. Finds ALL stopped containers
 2. For each stopped container:
-   - Reads owner's `container_hold_after_stop` from YAML
+   - Reads owner's `container_hold_after_stop_h` from YAML
    - If timeout exceeded: removes container
 3. Skips containers without metadata (conservative)
 
@@ -151,11 +151,11 @@ sudo bash scripts/maintenance/cleanup-stale-containers.sh
 
    a. check-idle-containers.sh (:30/hour)
       - Checks CPU usage
-      - If idle > alice's idle_timeout (48h): stops container
+      - If idle > alice's idle_timeout_h (48h): stops container
 
    b. enforce-max-runtime.sh (:45/hour)
       - Checks runtime
-      - If runtime > alice's max_runtime (168h): stops container
+      - If runtime > alice's max_runtime_h (168h): stops container
 ```
 
 ### Container Stop
@@ -165,21 +165,21 @@ sudo bash scripts/maintenance/cleanup-stale-containers.sh
 
 6. GPU marked as stopped:
    - stopped_at: 2025-11-21T12:00:00 in gpu-state.json
-   - GPU held for alice's gpu_hold_after_stop (24h)
+   - GPU held for alice's gpu_hold_after_stop_h (24h)
 
 7. User prompted: "Remove container now? [y/N]"
    - If yes: container removed immediately
-   - If no: container held for alice's container_hold_after_stop (12h)
+   - If no: container held for alice's container_hold_after_stop_h (12h)
 ```
 
 ### Automated Cleanup
 ```
 8. cleanup-stale-gpu-allocations.sh (:15/hour)
-   - Checks: stopped_at + alice's gpu_hold_after_stop
+   - Checks: stopped_at + alice's gpu_hold_after_stop_h
    - If exceeded: releases GPU
 
 9. cleanup-stale-containers.sh (:30/hour)
-   - Checks: stop time + alice's container_hold_after_stop
+   - Checks: stop time + alice's container_hold_after_stop_h
    - If exceeded: removes container
 ```
 
@@ -189,27 +189,27 @@ All timeouts configured per-user in `config/resource-limits.yaml`:
 
 ```yaml
 defaults:
-  idle_timeout: "48h"              # Stop if idle
-  max_runtime: "168h"              # Stop after max runtime
-  gpu_hold_after_stop: "24h"       # Hold GPU after stop
-  container_hold_after_stop: "12h" # Remove container after stop
+  idle_timeout_h: 48               # Stop if idle
+  max_runtime_h: 168               # Stop after max runtime
+  gpu_hold_after_stop_h: 24        # Hold GPU after stop
+  container_hold_after_stop_h: 12  # Remove container after stop
 
 groups:
   researchers:
-    idle_timeout: "72h"            # Longer idle timeout
-    gpu_hold_after_stop: "48h"     # Hold GPU longer
+    idle_timeout_h: 72             # Longer idle timeout
+    gpu_hold_after_stop_h: 48      # Hold GPU longer
 
 user_overrides:
   long_job_user:
-    idle_timeout: null             # Never stop for idle
-    max_runtime: null              # No runtime limit
-    gpu_hold_after_stop: null      # Hold GPU indefinitely
-    container_hold_after_stop: null # Never auto-remove
+    idle_timeout_h: null           # Never stop for idle
+    max_runtime_h: null            # No runtime limit
+    gpu_hold_after_stop_h: null    # Hold GPU indefinitely
+    container_hold_after_stop_h: null # Never auto-remove
 ```
 
 **Special values:**
 - `null` = disabled (no timeout)
-- `"0h"` = immediate (no hold time)
+- `0` = immediate (no hold time)
 
 ## Cron Schedule
 
@@ -240,7 +240,7 @@ Cron configuration deployed separately to `/etc/cron.d/`:
 # config/resource-limits.yaml
 user_overrides:
   testuser:
-    idle_timeout: "0.01h"  # 36 seconds
+    idle_timeout_h: 0.01  # 36 seconds
 ```
 
 **Test:**
@@ -265,7 +265,7 @@ tail /var/log/ds01/idle-cleanup.log
 ```yaml
 user_overrides:
   testuser:
-    max_runtime: "0.02h"  # 72 seconds
+    max_runtime_h: 0.02  # 72 seconds
 ```
 
 **Test:**
@@ -286,7 +286,7 @@ tail /var/log/ds01/runtime-enforcement.log
 ```yaml
 user_overrides:
   testuser:
-    gpu_hold_after_stop: "0.01h"  # 36 seconds
+    gpu_hold_after_stop_h: 0.01  # 36 seconds
 ```
 
 **Test:**
@@ -313,7 +313,7 @@ tail /var/log/ds01/gpu-stale-cleanup.log
 ```yaml
 user_overrides:
   testuser:
-    container_hold_after_stop: "0.01h"  # 36 seconds
+    container_hold_after_stop_h: 0.01  # 36 seconds
 ```
 
 **Test:**
@@ -413,7 +413,7 @@ python3 -c "import yaml; yaml.safe_load(open('config/resource-limits.yaml'))"
 **Common issues:**
 - Typo in username
 - User not in any group
-- Wrong units (use "h" for hours: "48h", not "48")
+- Wrong value type (use bare numbers in hours: `48`, not `"48h"`)
 
 ### Container Not Stopped Despite Idle
 

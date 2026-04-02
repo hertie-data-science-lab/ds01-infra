@@ -395,7 +395,7 @@ user_overrides:
     max_mig_instances: 2
     memory: "64g"
     max_cpus: 16
-    idle_timeout: "168h"  # 1 week
+    idle_timeout_h: 168   # 1 week
     priority: 100
     reason: "Thesis work - approved 2025-11-21 by Prof. Smith"
 ```

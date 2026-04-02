@@ -7,10 +7,10 @@
 ## Problem Statement
 
 Four automated cleanup functions were not working despite cron jobs running:
-1. Max runtime enforcement (stop containers exceeding `max_runtime`)
-2. Idle timeout detection (stop idle containers exceeding `idle_timeout`)
-3. GPU hold cleanup (release GPUs after `gpu_hold_after_stop`)
-4. Container removal (remove stopped containers after `container_hold_after_stop`)
+1. Max runtime enforcement (stop containers exceeding `max_runtime_h`)
+2. Idle timeout detection (stop idle containers exceeding `idle_timeout_h`)
+3. GPU hold cleanup (release GPUs after `gpu_hold_after_stop_h`)
+4. Container removal (remove stopped containers after `container_hold_after_stop_h`)
 
 ## Root Cause Analysis
 
@@ -23,7 +23,7 @@ Four automated cleanup functions were not working despite cron jobs running:
 # BROKEN CODE:
 python3 - <<PYEOF
 if '$username' in config['user_overrides']:
-    timeout = config['user_overrides']['$username'].get('idle_timeout')
+    timeout = config['user_overrides']['$username'].get('idle_timeout_h')
 PYEOF
 ```
 
@@ -47,7 +47,7 @@ config_file = os.environ['CONFIG_FILE']
 
 if 'user_overrides' in config and config['user_overrides'] is not None:
     if username in config['user_overrides']:
-        timeout = config['user_overrides'][username].get('idle_timeout')
+        timeout = config['user_overrides'][username].get('idle_timeout_h')
 PYEOF
 ```
 
@@ -90,9 +90,9 @@ Accessing `config['user_overrides'].keys()` raises `AttributeError: 'NoneType' o
 **Test Script**: `testing/cleanup-automation/test-functions-only.sh`
 
 ```
-✅ get_idle_timeout("datasciencelab") → "0.5h" (PASS)
-✅ get_max_runtime("datasciencelab") → "12h" (PASS)
-✅ get_idle_timeout("nobody") → "0.5h" (PASS)
+✅ get_idle_timeout("datasciencelab") → "0.5" (PASS)
+✅ get_max_runtime("datasciencelab") → "12" (PASS)
+✅ get_idle_timeout("nobody") → "0.5" (PASS)
 ```
 
 All unit tests passing ✅
@@ -112,8 +112,8 @@ All unit tests passing ✅
 
 ### Before Fix
 
-- ❌ Containers never auto-stopped for max_runtime (always returned "null")
-- ❌ Containers never auto-stopped for idle_timeout (always returned "48h" default)
+- ❌ Containers never auto-stopped for max_runtime_h (always returned "null")
+- ❌ Containers never auto-stopped for idle_timeout_h (always returned default)
 - ⚠️  GPU cleanup: UNKNOWN (uses different code path via `gpu_allocator.py`)
 - ⚠️  Container removal: UNKNOWN (uses `get_resource_limits.py`, not heredocs)
 
@@ -181,14 +181,14 @@ All unit tests passing ✅
 
 **Critical bug identified and fixed** ✅
 
-The Python heredoc variable substitution bug was preventing both max_runtime enforcement and idle timeout detection from working. The fix has been tested at the function level and is working correctly.
+The Python heredoc variable substitution bug was preventing both max_runtime_h enforcement and idle timeout detection from working. The fix has been tested at the function level and is working correctly.
 
 Integration testing with actual containers is needed to verify end-to-end behavior, but the core issue is resolved.
 
 **Estimated impact**: All automated cleanup functions should now work as designed. Users can expect:
-- Containers to be stopped when exceeding max_runtime
-- Idle containers to be stopped after idle_timeout
-- GPUs to be released after gpu_hold_after_stop
-- Stopped containers to be removed after container_hold_after_stop
+- Containers to be stopped when exceeding max_runtime_h
+- Idle containers to be stopped after idle_timeout_h
+- GPUs to be released after gpu_hold_after_stop_h
+- Stopped containers to be removed after container_hold_after_stop_h
 
 **Recommendation**: Monitor system for 24-48 hours to confirm automated cleanup is working as expected.

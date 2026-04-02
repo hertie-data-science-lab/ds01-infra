@@ -1,5 +1,5 @@
 # DS01 - Cleanup stale containers every hour
-# This removes stopped containers that have exceeded their container_hold_after_stop timeout
+# This removes stopped containers that have exceeded their container_hold_after_stop_h timeout
 #
 # Deploy with: sudo cp /opt/ds01-infra/config/etc-mirrors/cron.d/ds01-container-cleanup /etc/cron.d/
 

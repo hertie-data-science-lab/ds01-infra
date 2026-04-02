@@ -201,10 +201,10 @@ show_post_exit_menu() {
         echo "   - You can reconnect anytime"
         echo "   - GPU remains allocated to this container"
         if [[ "$idle_timeout" != "None" && "$idle_timeout" != "null" ]]; then
-            echo -e "   - Will auto-stop after ${CYAN}$idle_timeout${NC} of GPU inactivity"
+            echo -e "   - Will auto-stop after ${CYAN}${idle_timeout}h${NC} of GPU inactivity"
         fi
         if [[ "$max_runtime" != "None" && "$max_runtime" != "null" ]]; then
-            echo -e "   - Max runtime: ${CYAN}$max_runtime${NC}"
+            echo -e "   - Max runtime: ${CYAN}${max_runtime}h${NC}"
         fi
         echo ""
         echo -e "${CYAN}2)${NC} ${BOLD}Retire container${NC} (stop + remove, free GPU immediately)"
@@ -227,7 +227,7 @@ show_post_exit_menu() {
                 echo -e "  Status:    ${GREEN}container-list${NC}"
                 echo ""
                 if [[ "$max_runtime" != "None" && "$max_runtime" != "null" ]]; then
-                    echo -e "${CYAN}i${NC} ${DIM}Container will auto-retire at max runtime (${max_runtime})${NC}"
+                    echo -e "${CYAN}i${NC} ${DIM}Container will auto-retire at max runtime (${max_runtime}h)${NC}"
                     echo ""
                 fi
                 echo -e "${YELLOW}Tip:${NC} When done, ${GREEN}container-retire $name${NC} (frees GPU)"
@@ -285,13 +285,13 @@ show_start_success_message() {
 
     echo -e "${CYAN}i${NC} ${BOLD}Your resource limits:${NC}"
     if [[ "$max_runtime" != "None" && "$max_runtime" != "null" ]]; then
-        echo -e "  - Max runtime: ${CYAN}$max_runtime${NC}"
+        echo -e "  - Max runtime: ${CYAN}${max_runtime}h${NC}"
     fi
     if [[ "$idle_timeout" != "None" && "$idle_timeout" != "null" ]]; then
-        echo -e "  - Idle timeout: ${CYAN}$idle_timeout${NC} ${DIM}(auto-stop after GPU idle)${NC}"
+        echo -e "  - Idle timeout: ${CYAN}${idle_timeout}h${NC} ${DIM}(auto-stop after GPU idle)${NC}"
     fi
     if [[ "$gpu_hold" != "None" && "$gpu_hold" != "null" && "$gpu_hold" != "indefinite" ]]; then
-        echo -e "  - GPU hold after stop: ${CYAN}$gpu_hold${NC}"
+        echo -e "  - GPU hold after stop: ${CYAN}${gpu_hold}h${NC}"
     fi
     echo ""
 

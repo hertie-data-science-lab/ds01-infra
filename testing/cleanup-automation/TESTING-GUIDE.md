@@ -7,21 +7,21 @@ This guide explains how to test the DS01 automated cleanup cron jobs with reduce
 DS01 has 4 automated cleanup cron jobs:
 
 1. **Idle Container Check** (`:30/hour`) - `check-idle-containers.sh`
-   - Stops containers idle beyond user's `idle_timeout`
+   - Stops containers idle beyond user's `idle_timeout_h`
    - Warns at 80% of timeout, stops at 100%
    - Log: `/var/log/ds01/idle-cleanup.log`
 
 2. **Max Runtime Enforcement** (`:45/hour`) - `enforce-max-runtime.sh`
-   - Stops containers exceeding user's `max_runtime`
+   - Stops containers exceeding user's `max_runtime_h`
    - Warns at 90% of limit, stops at 100%
    - Log: `/var/log/ds01/runtime-enforcement.log`
 
 3. **GPU Stale Cleanup** (`:15/hour`) - `cleanup-stale-gpu-allocations.sh`
-   - Releases GPUs from stopped containers after `gpu_hold_after_stop`
+   - Releases GPUs from stopped containers after `gpu_hold_after_stop_h`
    - Log: `/var/log/ds01/gpu-stale-cleanup.log`
 
 4. **Container Stale Cleanup** (`:30/hour`) - `cleanup-stale-containers.sh`
-   - Removes stopped containers after `container_hold_after_stop`
+   - Removes stopped containers after `container_hold_after_stop_h`
    - Log: `/var/log/ds01/container-stale-cleanup.log`
 
 ## Quick Test (Recommended)
@@ -77,10 +77,10 @@ cd /opt/ds01-infra/testing/cleanup-automation
 ```
 
 This sets:
-- `max_runtime: 0.05h` (3 minutes)
-- `idle_timeout: 0.02h` (~1 minute)
-- `gpu_hold_after_stop: 0.01h` (36 seconds)
-- `container_hold_after_stop: 0.02h` (~1 minute)
+- `max_runtime_h: 0.05` (3 minutes)
+- `idle_timeout_h: 0.02` (~1 minute)
+- `gpu_hold_after_stop_h: 0.01` (36 seconds)
+- `container_hold_after_stop_h: 0.02` (~1 minute)
 
 ### 2. Create Test Container
 

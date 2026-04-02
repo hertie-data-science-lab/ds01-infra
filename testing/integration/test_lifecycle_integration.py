@@ -58,13 +58,13 @@ class TestConfigResolverIntegration:
 
     @pytest.mark.integration
     def test_global_policies_set_sigterm_defaults(self, real_parser):
-        """Global sigterm_grace_seconds is resolved from policies section."""
+        """Global sigterm_grace_s is resolved from policies section."""
         with open(real_parser.config_path) as f:
             raw = yaml.safe_load(f)
 
-        expected_sigterm = raw["policies"]["sigterm_grace_seconds"]
+        expected_sigterm = raw["policies"]["sigterm_grace_s"]
         policies = real_parser.get_lifecycle_policies("unknown_user")
-        assert policies["sigterm_grace_seconds"] == expected_sigterm
+        assert policies["sigterm_grace_s"] == expected_sigterm
 
     @pytest.mark.integration
     def test_researcher_policies_differ_from_student(self, real_parser):
@@ -146,7 +146,7 @@ class TestCLIIntegration:
                 str(GET_RESOURCE_LIMITS),
                 username,
                 "--check-exemption",
-                "idle_timeout",
+                "idle_timeout_h",
             ],
             capture_output=True,
             text=True,
@@ -159,7 +159,7 @@ class TestCLIIntegration:
         from get_resource_limits import ResourceLimitParser
 
         parser = ResourceLimitParser()
-        is_exempt, reason = parser.check_exemption(username, "idle_timeout")
+        is_exempt, reason = parser.check_exemption(username, "idle_timeout_h")
 
         if is_exempt:
             assert cli_output.startswith("exempt:")
@@ -217,7 +217,7 @@ class TestBashPythonIntegration:
                 str(GET_RESOURCE_LIMITS),
                 "datasciencelab",
                 "--check-exemption",
-                "max_runtime",
+                "max_runtime_h",
             ],
             capture_output=True,
             text=True,
@@ -246,10 +246,10 @@ class TestSigtermGraceIntegration:
             config = yaml.safe_load(f)
 
         for ct_name, ct_config in config.get("container_types", {}).items():
-            grace = ct_config.get("sigterm_grace_seconds")
-            assert grace is not None, f"{ct_name} missing sigterm_grace_seconds"
+            grace = ct_config.get("sigterm_grace_s")
+            assert grace is not None, f"{ct_name} missing sigterm_grace_s"
             assert isinstance(grace, (int, float)) and grace > 0, (
-                f"{ct_name} sigterm_grace_seconds should be positive, got {grace}"
+                f"{ct_name} sigterm_grace_s should be positive, got {grace}"
             )
 
     @pytest.mark.integration
@@ -264,9 +264,9 @@ class TestSigtermGraceIntegration:
 
         ct = config.get("container_types", {})
         # devcontainer should be shortest (K8s default), docker longest
-        devcontainer_grace = ct.get("devcontainer", {}).get("sigterm_grace_seconds", 30)
-        compose_grace = ct.get("compose", {}).get("sigterm_grace_seconds", 45)
-        docker_grace = ct.get("docker", {}).get("sigterm_grace_seconds", 60)
+        devcontainer_grace = ct.get("devcontainer", {}).get("sigterm_grace_s", 30)
+        compose_grace = ct.get("compose", {}).get("sigterm_grace_s", 45)
+        docker_grace = ct.get("docker", {}).get("sigterm_grace_s", 60)
 
         assert devcontainer_grace <= compose_grace <= docker_grace
 
@@ -288,7 +288,7 @@ class TestExemptionPolicyInteraction:
 
         # 204214 is exempt in the real config
         username = "204214@hertie-school.lan"
-        is_exempt, _ = parser.check_exemption(username, "idle_timeout")
+        is_exempt, _ = parser.check_exemption(username, "idle_timeout_h")
 
         # Regardless of exemption, policies should resolve
         policies = parser.get_lifecycle_policies(username)
@@ -302,8 +302,8 @@ class TestExemptionPolicyInteraction:
 
         parser = ResourceLimitParser()
 
-        exempt_idle, _ = parser.check_exemption("datasciencelab", "idle_timeout")
-        exempt_runtime, _ = parser.check_exemption("datasciencelab", "max_runtime")
+        exempt_idle, _ = parser.check_exemption("datasciencelab", "idle_timeout_h")
+        exempt_runtime, _ = parser.check_exemption("datasciencelab", "max_runtime_h")
 
         assert not exempt_idle
         assert not exempt_runtime

@@ -1107,7 +1107,7 @@ class GPUAllocatorSmart:
                     # Atomic/Docker/Other: Full state model with hold timeout
                     if user:
                         limits = self._get_user_limits(user)
-                        hold_timeout_str = limits.get("gpu_hold_after_stop")
+                        hold_timeout_str = limits.get("gpu_hold_after_stop_h")
                         hold_timeout = parse_duration(hold_timeout_str)
 
                         if hold_timeout is None:
