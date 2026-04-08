@@ -68,17 +68,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.shell == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: redhat-plumbers-in-action/differential-shellcheck@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: find scripts/ -name '*.sh' -not -path '*/aime-ml-containers/*' -exec shellcheck -x -S warning {} +
 
   pytest:
     name: Tests

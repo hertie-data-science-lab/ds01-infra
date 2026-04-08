@@ -1,4 +1,3 @@
-# File: /opt/ds01-infra/scripts/monitoring/who-owns-containers.sh
 #!/bin/bash
 # Show container ownership and resource usage
 

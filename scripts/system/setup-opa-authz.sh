@@ -175,7 +175,7 @@ if [ ! -f "/usr/local/bin/opa-docker-authz" ]; then
 
     # Create temp directory for build
     BUILD_DIR=$(mktemp -d)
-    trap "rm -rf $BUILD_DIR" EXIT
+    trap 'rm -rf $BUILD_DIR' EXIT
 
     cd "$BUILD_DIR"
     git clone --depth 1 https://github.com/open-policy-agent/opa-docker-authz.git

@@ -258,7 +258,7 @@ _write_pip_install() {
 
     echo 'RUN pip install --no-cache-dir \' >>"$file"
 
-    local pkg_array=($packages)
+    read -ra pkg_array <<<"$packages"
     local pkg_count=${#pkg_array[@]}
     local i=0
 

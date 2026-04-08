@@ -1,4 +1,3 @@
-# File: /opt/ds01-infra/scripts/docker/enforce-containers.sh
 #!/bin/bash
 # Comprehensive container enforcement system
 

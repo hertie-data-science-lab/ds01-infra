@@ -1,4 +1,3 @@
-# File: /opt/ds01-infra/scripts/admin/emergency-container-stop.sh
 #!/bin/bash
 # Emergency stop for containers by user or all
 

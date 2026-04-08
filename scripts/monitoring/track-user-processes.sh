@@ -1,4 +1,3 @@
-# File: /opt/ds01-infra/scripts/monitoring/track-user-processes.sh
 #!/bin/bash
 # Track processes by user across containers and host
 

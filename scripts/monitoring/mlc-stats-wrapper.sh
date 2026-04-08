@@ -1,4 +1,3 @@
-# File: /opt/ds01-infra/scripts/monitoring/mlc-stats-wrapper.sh
 #!/bin/bash
 # Enhanced stats command with more detail
 

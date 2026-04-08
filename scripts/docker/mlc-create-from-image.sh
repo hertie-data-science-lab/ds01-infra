@@ -1,4 +1,3 @@
-# File: /opt/ds01-infra/scripts/docker/mlc-create-from-image.sh
 #!/bin/bash
 # Create container from custom image with user namespace support
 

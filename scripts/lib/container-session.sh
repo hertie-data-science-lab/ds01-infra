@@ -469,7 +469,7 @@ case "$MODE" in
 
     attach)
         if ! container_is_running "$CONTAINER_NAME"; then
-            local status=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_TAG" 2>/dev/null || echo "unknown")
+            status=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_TAG" 2>/dev/null || echo "unknown")
             echo -e "${YELLOW}Container '$CONTAINER_NAME' is not running${NC} (status: $status)"
             echo ""
             echo -e "Start and attach: ${GREEN}container-run $CONTAINER_NAME${NC}"

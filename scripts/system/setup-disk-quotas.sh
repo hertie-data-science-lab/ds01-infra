@@ -96,7 +96,7 @@ enable_quotas() {
     log_info "Enabling quotas on root filesystem..."
 
     # Backup fstab
-    cp /etc/fstab /etc/fstab.backup.$(date +%Y%m%d_%H%M%S)
+    cp /etc/fstab "/etc/fstab.backup.$(date +%Y%m%d_%H%M%S)"
     log_info "Backed up /etc/fstab"
 
     # Check if usrquota already in fstab

@@ -1,4 +1,3 @@
-# File: /opt/ds01-infra/scripts/user/bypass-enforce-container.sh
 #!/bin/bash
 # Give admin ability to bypass enforcement
 
