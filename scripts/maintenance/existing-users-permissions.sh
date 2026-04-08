@@ -8,7 +8,7 @@ for dir in /home/*; do
     if [ -d "$dir" ]; then
         # Get the directory name
         dirname=$(basename "$dir")
-        
+
         # Skip the special directories if needed
         if [ "$dirname" != "." ] && [ "$dirname" != ".." ]; then
             sudo chmod 700 "$dir"

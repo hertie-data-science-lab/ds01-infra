@@ -102,7 +102,7 @@ parse_duration() {
     local duration="$1"
 
     # Extract number and unit
-    if [[ "$duration" =~ ^([0-9]+)([mhd])$ ]]; then
+    if [[ $duration =~ ^([0-9]+)([mhd])$ ]]; then
         local value="${BASH_REMATCH[1]}"
         local unit="${BASH_REMATCH[2]}"
 
@@ -110,7 +110,10 @@ parse_duration() {
             m) echo "${value} minutes" ;;
             h) echo "${value} hours" ;;
             d) echo "$((value * 24)) hours" ;;
-            *) echo "" ; return 1 ;;
+            *)
+                echo ""
+                return 1
+                ;;
         esac
     else
         echo ""
@@ -203,7 +206,7 @@ grant_access() {
         mkdir -p "$STATE_DIR" 2>/dev/null || true
 
         # Record grant metadata
-        cat > "$STATE_DIR/${username}.json" <<EOF
+        cat >"$STATE_DIR/${username}.json" <<EOF
 {
   "user": "$username",
   "granted_by": "$(whoami)",
@@ -252,7 +255,7 @@ EOF
     mkdir -p "$STATE_DIR" 2>/dev/null || true
 
     # Record grant metadata
-    cat > "$STATE_DIR/${username}.json" <<EOF
+    cat >"$STATE_DIR/${username}.json" <<EOF
 {
   "user": "$username",
   "granted_by": "$(whoami)",
@@ -264,7 +267,7 @@ EOF
 EOF
 
     # Schedule warning 1 hour before expiry (only if duration > 1h)
-    if [[ "$duration" =~ ^([0-9]+)([hd])$ ]]; then
+    if [[ $duration =~ ^([0-9]+)([hd])$ ]]; then
         local value="${BASH_REMATCH[1]}"
         local unit="${BASH_REMATCH[2]}"
 
@@ -550,7 +553,7 @@ main() {
         list)
             show_all_status
             ;;
-        --help|-h|help)
+        --help | -h | help)
             show_help
             ;;
         *)

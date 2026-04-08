@@ -35,7 +35,7 @@ BLUE=${BLUE:-'\033[0;34m'}
 NC=${NC:-'\033[0m'}
 
 usage() {
-    cat << 'EOF'
+    cat <<'EOF'
 DS01 Monitoring Stack Management
 
 Usage:
@@ -64,7 +64,7 @@ EOF
 }
 
 check_compose() {
-    if [[ ! -f "$COMPOSE_FILE" ]]; then
+    if [[ ! -f $COMPOSE_FILE ]]; then
         echo -e "${RED}Error: docker-compose.yaml not found at $COMPOSE_FILE${NC}"
         echo "Please ensure the monitoring stack is installed."
         exit 1
@@ -78,7 +78,7 @@ fix_permissions() {
     local grafana_prov_dir="$INFRA_ROOT/monitoring/grafana/provisioning"
     local fixed=0
 
-    if [[ -d "$grafana_prov_dir" ]]; then
+    if [[ -d $grafana_prov_dir ]]; then
         # Find files that aren't world-readable and fix them
         while IFS= read -r -d '' file; do
             chmod o+r "$file" 2>/dev/null && ((fixed++)) || true
@@ -100,7 +100,7 @@ status() {
     echo ""
 
     # Docker compose status
-    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" ps 2>/dev/null || \
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" ps 2>/dev/null ||
         docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" ps
 
     echo ""
@@ -148,7 +148,7 @@ start() {
     # Fix provisioning file permissions before starting
     fix_permissions
 
-    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d 2>/dev/null || \
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d 2>/dev/null ||
         docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d
 
     echo ""
@@ -159,7 +159,7 @@ start() {
 stop() {
     check_compose
     echo -e "${YELLOW}Stopping DS01 monitoring stack...${NC}"
-    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" down 2>/dev/null || \
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" down 2>/dev/null ||
         docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" down
 
     echo -e "${GREEN}Monitoring stack stopped.${NC}"
@@ -172,7 +172,7 @@ restart() {
     # Fix provisioning file permissions before restarting
     fix_permissions
 
-    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" restart 2>/dev/null || \
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" restart 2>/dev/null ||
         docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" restart
 
     echo -e "${GREEN}Monitoring stack restarted.${NC}"
@@ -182,11 +182,11 @@ logs() {
     check_compose
     local service="${1:-}"
     echo -e "${BLUE}Following monitoring logs (Ctrl+C to exit)...${NC}"
-    if [[ -n "$service" ]]; then
-        docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs -f "$service" 2>/dev/null || \
+    if [[ -n $service ]]; then
+        docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs -f "$service" 2>/dev/null ||
             docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs -f "$service"
     else
-        docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs -f 2>/dev/null || \
+        docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs -f 2>/dev/null ||
             docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" logs -f
     fi
 }
@@ -196,14 +196,14 @@ update() {
     echo -e "${BLUE}Updating DS01 monitoring stack...${NC}"
 
     echo "Pulling latest images..."
-    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" pull 2>/dev/null || \
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" pull 2>/dev/null ||
         docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" pull
 
     # Fix provisioning file permissions before restarting
     fix_permissions
 
     echo "Restarting with updated images..."
-    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d 2>/dev/null || \
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d 2>/dev/null ||
         docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" up -d
 
     echo -e "${GREEN}Monitoring stack updated.${NC}"
@@ -212,7 +212,7 @@ update() {
 build() {
     check_compose
     echo -e "${BLUE}Building DS01 exporter image...${NC}"
-    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" build ds01-exporter 2>/dev/null || \
+    docker compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" build ds01-exporter 2>/dev/null ||
         docker-compose -f "$COMPOSE_FILE" -p "$COMPOSE_PROJECT" build ds01-exporter
 
     echo -e "${GREEN}Exporter image built.${NC}"
@@ -242,7 +242,7 @@ case "${1:-status}" in
     build)
         build
         ;;
-    -h|--help|help)
+    -h | --help | help)
         usage
         ;;
     *)

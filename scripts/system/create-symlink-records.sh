@@ -66,7 +66,7 @@ echo ""
 
 for cmd in "${USER_COMMANDS[@]}"; do
     # Parse command (format: "target:source" or just "name")
-    if [[ "$cmd" == *":"* ]]; then
+    if [[ $cmd == *":"* ]]; then
         TARGET_NAME="${cmd%%:*}"
         SOURCE_FILE="${cmd#*:}"
     else
@@ -83,7 +83,7 @@ for cmd in "${USER_COMMANDS[@]}"; do
         continue
     fi
 
-    cat > "$MIRROR_FILE" << EOF
+    cat >"$MIRROR_FILE" <<EOF
 # Symlink record for: $TARGET_NAME
 # Created: $(date -Iseconds)
 # Source: $SOURCE

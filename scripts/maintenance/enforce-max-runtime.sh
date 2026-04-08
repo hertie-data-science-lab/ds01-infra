@@ -51,7 +51,7 @@ get_max_runtime() {
 # Check if user is exempt from enforcement
 check_exemption() {
     local username="$1"
-    local enforcement_type="$2"  # e.g., "max_runtime_h", "idle_timeout_h"
+    local enforcement_type="$2" # e.g., "max_runtime_h", "idle_timeout_h"
     python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" --check-exemption "$enforcement_type"
 }
 
@@ -97,7 +97,9 @@ get_container_type_max_runtime() {
     local container_type="$1"
 
     # Read from config - container_types section
-    local runtime=$(python3 << PYEOF
+    local runtime
+    runtime=$(
+        python3 <<PYEOF
 import yaml
 import sys
 
@@ -113,7 +115,7 @@ try:
 except Exception:
     print(48)
 PYEOF
-)
+    )
     echo "$runtime"
 }
 
@@ -138,14 +140,14 @@ get_container_owner() {
 
     # Try devcontainer.local_folder path
     local folder=$(docker inspect "$container" --format '{{index .Config.Labels "devcontainer.local_folder"}}' 2>/dev/null)
-    if [[ "$folder" == /home/* ]]; then
+    if [[ $folder == /home/* ]]; then
         echo "$folder" | cut -d'/' -f3
         return
     fi
 
     # Fallback: extract from name._.uid pattern
     local name=$(docker inspect "$container" --format '{{.Name}}' 2>/dev/null | tr -d '/')
-    if [[ "$name" == *._\.* ]]; then
+    if [[ $name == *._\.* ]]; then
         local uid=$(echo "$name" | rev | cut -d'.' -f1 | rev)
         getent passwd "$uid" 2>/dev/null | cut -d: -f1
         return
@@ -335,7 +337,7 @@ monitor_containers() {
         # Core principle: GPU access = ephemeral enforcement, No GPU = permanent OK
         if ! container_has_gpu "$container"; then
             ((skipped_no_gpu += 1))
-            continue  # No GPU = no max_runtime_h limit
+            continue # No GPU = no max_runtime_h limit
         fi
 
         # Skip monitoring infrastructure containers (they need GPU but aren't user workloads)
@@ -376,7 +378,7 @@ process_container_runtime_universal() {
     # Check exemption before enforcement
     local exemption_status
     exemption_status=$(check_exemption "$username" "max_runtime_h")
-    if [[ "$exemption_status" == exempt:* ]]; then
+    if [[ $exemption_status == exempt:* ]]; then
         local exempt_reason="${exemption_status#exempt: }"
         log "Container $container (user: $username) is EXEMPT from max runtime: $exempt_reason"
 
@@ -393,11 +395,11 @@ process_container_runtime_universal() {
     # Get max runtime based on container type
     local runtime_str
     case "$container_type" in
-        orchestration|atomic)
+        orchestration | atomic)
             # DS01 native containers - use user's configured max_runtime_h
             runtime_str=$(get_max_runtime "$username")
             ;;
-        devcontainer|compose|docker|unknown)
+        devcontainer | compose | docker | unknown)
             # External containers - use container_types config
             runtime_str=$(get_container_type_max_runtime "$container_type")
             ;;
@@ -430,8 +432,8 @@ process_container_runtime_universal() {
     # State file for tracking warnings
     local state_file="$STATE_DIR/${container}.state"
     if [ ! -f "$state_file" ]; then
-        echo "WARNED=false" > "$state_file"
-        echo "WARNED_FINAL=false" >> "$state_file"
+        echo "WARNED=false" >"$state_file"
+        echo "WARNED_FINAL=false" >>"$state_file"
     fi
 
     source "$state_file"
@@ -444,7 +446,7 @@ process_container_runtime_universal() {
 
     # First warning at 75% of limit
     if [ "$runtime_seconds_actual" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then
-        local hours_until_stop=$(( (runtime_seconds - runtime_seconds_actual) / 3600 ))
+        local hours_until_stop=$(((runtime_seconds - runtime_seconds_actual) / 3600))
         [ "$hours_until_stop" -lt 1 ] && hours_until_stop=1
         send_warning "$username" "$container" "$hours_until_stop"
         sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"
@@ -452,10 +454,10 @@ process_container_runtime_universal() {
 
     # Final warning at 90% of limit
     if [ "$runtime_seconds_actual" -ge "$final_warning_seconds" ] && [ "${WARNED_FINAL:-false}" != "true" ]; then
-        local hours_until_stop=$(( (runtime_seconds - runtime_seconds_actual) / 3600 ))
+        local hours_until_stop=$(((runtime_seconds - runtime_seconds_actual) / 3600))
         [ "$hours_until_stop" -lt 1 ] && hours_until_stop=1
         send_final_warning "$username" "$container" "$hours_until_stop"
-        grep -q "^WARNED_FINAL=" "$state_file" && sed -i "s/^WARNED_FINAL=.*/WARNED_FINAL=true/" "$state_file" || echo "WARNED_FINAL=true" >> "$state_file"
+        grep -q "^WARNED_FINAL=" "$state_file" && sed -i "s/^WARNED_FINAL=.*/WARNED_FINAL=true/" "$state_file" || echo "WARNED_FINAL=true" >>"$state_file"
     fi
 
     # Check if we should stop
@@ -468,6 +470,6 @@ process_container_runtime_universal() {
 }
 
 # Run monitoring (only when executed directly, not sourced)
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ ${BASH_SOURCE[0]} == "${0}" ]]; then
     monitor_containers
 fi

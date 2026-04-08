@@ -24,7 +24,7 @@ for arg in "$@"; do
         --full)
             SHOW_FULL=true
             ;;
-        --inside-container|--inside)
+        --inside-container | --inside)
             SHOW_INSIDE=true
             ;;
         --admin)
@@ -33,7 +33,7 @@ for arg in "$@"; do
         --symlinks)
             SHOW_SYMLINKS=true
             ;;
-        -h|--help|--info)
+        -h | --help | --info)
             echo "Usage: alias-list [OPTIONS]"
             echo ""
             echo "Show available DS01 commands. Context-aware (inside vs outside containers)."

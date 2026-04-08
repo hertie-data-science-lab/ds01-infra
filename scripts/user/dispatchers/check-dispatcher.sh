@@ -26,7 +26,7 @@ case "$SUBCOMMAND" in
     limits)
         exec "$SCRIPT_DIR/check-limits" "$@"
         ;;
-    -h|--help|help|"")
+    -h | --help | help | "")
         show_usage
         ;;
     *)

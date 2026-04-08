@@ -37,7 +37,7 @@ show_usage() {
     echo ""
 }
 
-if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+if [[ $1 == "-h" || $1 == "--help" ]]; then
     show_usage
     exit 0
 fi
@@ -50,11 +50,11 @@ if [ ! -f "$ALIAS_FILE" ]; then
 fi
 
 if ! grep -q ".bash_aliases" ~/.bashrc 2>/dev/null; then
-    echo "" >> ~/.bashrc
-    echo "# Source custom aliases" >> ~/.bashrc
-    echo "if [ -f ~/.bash_aliases ]; then" >> ~/.bashrc
-    echo "    . ~/.bash_aliases" >> ~/.bashrc
-    echo "fi" >> ~/.bashrc
+    echo "" >>~/.bashrc
+    echo "# Source custom aliases" >>~/.bashrc
+    echo "if [ -f ~/.bash_aliases ]; then" >>~/.bashrc
+    echo "    . ~/.bash_aliases" >>~/.bashrc
+    echo "fi" >>~/.bashrc
 fi
 
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -92,7 +92,7 @@ fi
 if grep -q "^alias ${ALIAS_NAME}=" "$ALIAS_FILE" 2>/dev/null; then
     echo -e "${YELLOW}Warning:${NC} Alias '${ALIAS_NAME}' already exists"
     read -p "Overwrite? [y/N]: " OVERWRITE
-    if [[ ! "$OVERWRITE" =~ ^[Yy]$ ]]; then
+    if [[ ! $OVERWRITE =~ ^[Yy]$ ]]; then
         echo "Cancelled"
         exit 0
     fi
@@ -101,7 +101,7 @@ if grep -q "^alias ${ALIAS_NAME}=" "$ALIAS_FILE" 2>/dev/null; then
 fi
 
 # Add alias
-echo "alias ${ALIAS_NAME}='${ALIAS_COMMAND}'" >> "$ALIAS_FILE"
+echo "alias ${ALIAS_NAME}='${ALIAS_COMMAND}'" >>"$ALIAS_FILE"
 
 echo ""
 echo -e "${GREEN}✓${NC} Alias created: ${BOLD}${ALIAS_NAME}${NC} → ${CYAN}${ALIAS_COMMAND}${NC}"

@@ -85,7 +85,7 @@ verify_gpu_health() {
                 log "WARNING: Failed to kill PID $pid (may have already exited)"
             fi
         fi
-    done <<< "$orphan_output"
+    done <<<"$orphan_output"
 
     # Check if GPU is shared (other containers using it)
     local shared_containers
@@ -164,7 +164,7 @@ verify_all_gpus() {
             fi
             ((checked++))
         fi
-    done <<< "$all_gpus"
+    done <<<"$all_gpus"
 
     log "Health check complete: $checked GPUs checked, $failed issues"
     return 0

@@ -11,11 +11,11 @@ setup_user() {
     local container_name=$(hostname 2>/dev/null || echo "ds01user")
 
     # Check if user exists in /etc/passwd
-    if ! getent passwd $user_id > /dev/null 2>&1; then
+    if ! getent passwd $user_id >/dev/null 2>&1; then
         # Try to add user (requires root or writable /etc/passwd)
         if [ -w /etc/passwd ] 2>/dev/null; then
-            echo "$container_name:x:$user_id:$group_id:DS01 User:/workspace:/bin/bash" >> /etc/passwd 2>/dev/null || true
-            echo "$container_name:x:$group_id:" >> /etc/group 2>/dev/null || true
+            echo "$container_name:x:$user_id:$group_id:DS01 User:/workspace:/bin/bash" >>/etc/passwd 2>/dev/null || true
+            echo "$container_name:x:$group_id:" >>/etc/group 2>/dev/null || true
         else
             # Can't write to /etc/passwd, so we'll set env vars and use custom PS1
             export USER="$container_name"
@@ -41,7 +41,7 @@ setup_aliases() {
     # Also create a copy in workspace for user customization
     local user_bashrc="/workspace/.ds01_bashrc_custom"
     if [ ! -f "$user_bashrc" ]; then
-        cat > "$user_bashrc" << 'BASHRCEOF'
+        cat >"$user_bashrc" <<'BASHRCEOF'
 # Custom User Aliases
 # Add your personal aliases here - they will persist across container restarts
 

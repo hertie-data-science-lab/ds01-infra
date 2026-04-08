@@ -45,9 +45,15 @@ VERBOSE=false
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --dry-run) DRY_RUN=true; shift ;;
-        --verbose) VERBOSE=true; shift ;;
-        --help|-h)
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --verbose)
+            VERBOSE=true
+            shift
+            ;;
+        --help | -h)
             echo "Usage: sync-group-membership.sh [--dry-run] [--verbose]"
             echo ""
             echo "Syncs user group membership from /home/ to config/groups/*.members"
@@ -58,14 +64,17 @@ while [[ $# -gt 0 ]]; do
             echo "  --verbose    Show all processing details"
             exit 0
             ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
     esac
 done
 
 # Logging helper
 log() {
     local msg="$1"
-    if [[ "$VERBOSE" == "true" ]] || [[ "$2" == "always" ]]; then
+    if [[ $VERBOSE == "true" ]] || [[ $2 == "always" ]]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] $msg"
     fi
     logger -t "$LOG_TAG" "$msg" 2>/dev/null || true
@@ -74,7 +83,7 @@ log() {
 # Check if user is in archived.members
 is_archived() {
     local username="$1"
-    if [[ -f "$ARCHIVED_FILE" ]]; then
+    if [[ -f $ARCHIVED_FILE ]]; then
         # Match exact username (not partial)
         # Use || return 1 to handle grep's exit code without triggering set -e
         grep -qE "^${username}(\s|$)" "$ARCHIVED_FILE" 2>/dev/null || return 1
@@ -87,15 +96,15 @@ is_archived() {
 # Get override group from group-overrides.txt
 get_override_group() {
     local username="$1"
-    if [[ -f "$OVERRIDES_FILE" ]]; then
+    if [[ -f $OVERRIDES_FILE ]]; then
         # Format: username:group  # comment
         # Extract group, strip comments and whitespace
         # Use || true to prevent set -e from exiting on no match
         local line=$(grep -E "^${username}:" "$OVERRIDES_FILE" 2>/dev/null | head -1 || true)
-        if [[ -n "$line" ]]; then
+        if [[ -n $line ]]; then
             # Get field after : , remove comments, strip whitespace
             local override=$(echo "$line" | cut -d: -f2 | sed 's/#.*//' | tr -d '[:space:]')
-            if [[ -n "$override" ]]; then
+            if [[ -n $override ]]; then
                 echo "$override"
                 return 0
             fi
@@ -109,13 +118,13 @@ classify_by_pattern() {
     local username="$1"
 
     # Pattern: numeric ID @ domain = student
-    if [[ "$username" =~ ^[0-9]+@ ]]; then
+    if [[ $username =~ ^[0-9]+@ ]]; then
         echo "student"
         return
     fi
 
     # Pattern: firstname.lastname @ domain = researcher (staff-style)
-    if [[ "$username" =~ ^[a-z]+\.[a-z]+@ ]]; then
+    if [[ $username =~ ^[a-z]+\.[a-z]+@ ]]; then
         echo "researcher"
         return
     fi
@@ -142,7 +151,7 @@ classify_user() {
     local override_status=$?
     set -e
 
-    if [[ $override_status -eq 0 ]] && [[ -n "$override_group" ]]; then
+    if [[ $override_status -eq 0 ]] && [[ -n $override_group ]]; then
         echo "$override_group"
         return 0
     fi
@@ -156,7 +165,7 @@ is_in_members() {
     local username="$1"
     local members_file="$2"
 
-    if [[ -f "$members_file" ]]; then
+    if [[ -f $members_file ]]; then
         grep -qE "^${username}(\s|$)" "$members_file" 2>/dev/null || return 1
         return 0
     else
@@ -170,14 +179,14 @@ add_to_members() {
     local group="$2"
     local members_file="${GROUPS_DIR}/${group}.members"
 
-    if [[ "$DRY_RUN" == "true" ]]; then
+    if [[ $DRY_RUN == "true" ]]; then
         echo "[DRY-RUN] Would add: $username -> ${group}.members"
         return
     fi
 
     # Create file if doesn't exist
-    if [[ ! -f "$members_file" ]]; then
-        cat > "$members_file" << EOF
+    if [[ ! -f $members_file ]]; then
+        cat >"$members_file" <<EOF
 # ================================================
 # ${group^} Group Members
 # ================================================
@@ -189,7 +198,7 @@ EOF
     fi
 
     # Add user
-    echo "$username" >> "$members_file"
+    echo "$username" >>"$members_file"
     log "Added $username to ${group}.members" "always"
 }
 
@@ -206,7 +215,7 @@ sync_groups() {
 
     # Scan /home for LDAP users
     for dir in /home/*@hertie-school.lan /home/*@HERTIE-SCHOOL.LAN; do
-        [[ -d "$dir" ]] || continue
+        [[ -d $dir ]] || continue
 
         local username=$(basename "$dir")
         log "Processing: $username"
@@ -215,7 +224,7 @@ sync_groups() {
         local group=$(classify_user "$username")
 
         # Handle archived users
-        if [[ "$group" == "archived" ]]; then
+        if [[ $group == "archived" ]]; then
             log "Skipped (archived): $username"
             archived_count=$((archived_count + 1))
             continue
@@ -232,7 +241,7 @@ sync_groups() {
         # Also check if user is in ANY other group (to avoid duplicates)
         local found_elsewhere=false
         for other_group in student researcher faculty admin; do
-            if [[ "$other_group" != "$group" ]]; then
+            if [[ $other_group != "$group" ]]; then
                 local other_file="${GROUPS_DIR}/${other_group}.members"
                 if is_in_members "$username" "$other_file"; then
                     log "Note: $username found in ${other_group}.members (not moving)"
@@ -242,7 +251,7 @@ sync_groups() {
             fi
         done
 
-        if [[ "$found_elsewhere" == "true" ]]; then
+        if [[ $found_elsewhere == "true" ]]; then
             skipped_count=$((skipped_count + 1))
             continue
         fi
@@ -255,7 +264,7 @@ sync_groups() {
     # Summary
     log "Sync complete: Added=$added_count, Skipped=$skipped_count, Archived=$archived_count" "always"
 
-    if [[ "$DRY_RUN" == "true" ]]; then
+    if [[ $DRY_RUN == "true" ]]; then
         echo ""
         echo "DRY RUN - No changes made"
     fi
@@ -269,11 +278,11 @@ sync_linux_groups() {
         local members_file="${GROUPS_DIR}/${group}.members"
         local linux_group="ds01-${group}"
 
-        [[ -f "$members_file" ]] || continue
+        [[ -f $members_file ]] || continue
 
         # Check if Linux group exists
         if ! getent group "$linux_group" &>/dev/null; then
-            if [[ "$DRY_RUN" == "true" ]]; then
+            if [[ $DRY_RUN == "true" ]]; then
                 echo "[DRY-RUN] Would create Linux group: $linux_group"
             else
                 log "Creating Linux group: $linux_group"
@@ -284,12 +293,12 @@ sync_linux_groups() {
         # Add users to Linux group
         while IFS= read -r line; do
             # Skip comments and empty lines
-            [[ "$line" =~ ^[[:space:]]*# ]] && continue
-            [[ -z "${line// }" ]] && continue
+            [[ $line =~ ^[[:space:]]*# ]] && continue
+            [[ -z ${line// /} ]] && continue
 
             # Extract username (first word)
             local username=$(echo "$line" | awk '{print $1}')
-            [[ -z "$username" ]] && continue
+            [[ -z $username ]] && continue
 
             # Check if user exists
             if ! id "$username" &>/dev/null; then
@@ -304,13 +313,13 @@ sync_linux_groups() {
             fi
 
             # Add to Linux group
-            if [[ "$DRY_RUN" == "true" ]]; then
+            if [[ $DRY_RUN == "true" ]]; then
                 echo "[DRY-RUN] Would add $username to Linux group $linux_group"
             else
                 log "Adding $username to Linux group $linux_group"
                 usermod -aG "$linux_group" "$username" 2>/dev/null || true
             fi
-        done < "$members_file"
+        done <"$members_file"
     done
 }
 

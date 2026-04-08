@@ -16,8 +16,8 @@ NC='\033[0m'
 
 # Get terminal size (updates terminal state for layout)
 get_terminal_size() {
-    tput lines > /dev/null
-    tput cols > /dev/null
+    tput lines >/dev/null
+    tput cols >/dev/null
 }
 
 # Draw header
@@ -52,7 +52,7 @@ get_gpu_allocation() {
 get_idle_time() {
     local container=$1
     local state_file="/var/lib/ds01-infra/container-states/${container}.state"
-    
+
     if [ -f "$state_file" ]; then
         source "$state_file"
         local now
@@ -69,10 +69,10 @@ get_idle_time() {
 usage_color() {
     local usage=$1
     local value="${usage//%/}"
-    
-    if (( $(echo "$value >= 80" | bc -l) )); then
+
+    if (($(echo "$value >= 80" | bc -l))); then
         echo -e "${RED}${usage}${NC}"
-    elif (( $(echo "$value >= 50" | bc -l) )); then
+    elif (($(echo "$value >= 50" | bc -l))); then
         echo -e "${YELLOW}${usage}${NC}"
     else
         echo -e "${GREEN}${usage}${NC}"
@@ -83,23 +83,23 @@ usage_color() {
 draw_containers() {
     echo -e "${BOLD}Your Containers:${NC}"
     echo ""
-    
+
     # Table header
     printf "${BOLD}%-25s %-10s %-8s %-10s %-10s %-8s %-8s %-10s${NC}\n" \
         "CONTAINER" "USER" "STATUS" "CPU" "MEMORY" "GPU" "NET I/O" "IDLE"
     echo "────────────────────────────────────────────────────────────────────────────────────────────────"
-    
+
     # Get current user's containers
     local current_user
     current_user=$(whoami)
     local containers
     containers=$(docker ps -a --filter "label=ds01.user=$current_user" --format "{{.Names}}")
-    
+
     if [ -z "$containers" ]; then
         echo "No containers found"
         return
     fi
-    
+
     for container in $containers; do
         # Get container info
         local short_name
@@ -108,7 +108,7 @@ draw_containers() {
         username=$(docker inspect "$container" --format='{{index .Config.Labels "ds01.user"}}' 2>/dev/null)
         local status
         status=$(docker inspect "$container" --format='{{.State.Status}}' 2>/dev/null)
-        
+
         if [ "$status" = "running" ]; then
             # Get real-time stats
             local stats
@@ -125,11 +125,11 @@ draw_containers() {
             gpu=$(get_gpu_allocation "$container")
             local idle
             idle=$(get_idle_time "$container")
-            
+
             # Color code values
             cpu=$(usage_color "$cpu")
             mem_perc=$(usage_color "$mem_perc")
-            
+
             local status_color="${GREEN}running${NC}"
         else
             local cpu="-"
@@ -139,7 +139,7 @@ draw_containers() {
             local idle="-"
             local status_color="${YELLOW}stopped${NC}"
         fi
-        
+
         printf "%-25s %-10s %-18s %-18s %-18s %-8s %-8s %-10s\n" \
             "$short_name" "$username" "$status_color" "$cpu" "$mem_perc" "$gpu" "$net" "$idle"
     done
@@ -150,17 +150,17 @@ draw_gpu_status() {
     echo ""
     echo -e "${BOLD}GPU Status:${NC}"
     echo ""
-    
+
     # Get GPU info using nvidia-smi
-    if command -v nvidia-smi &> /dev/null; then
+    if command -v nvidia-smi &>/dev/null; then
         nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu \
             --format=csv,noheader,nounits | while IFS=, read -r idx name util mem_used mem_total temp; do
-            
+
             util=$(echo "$util" | xargs)
             mem_used=$(echo "$mem_used" | xargs)
             mem_total=$(echo "$mem_total" | xargs)
             temp=$(echo "$temp" | xargs)
-            
+
             # Calculate memory percentage
             local mem_perc
             mem_perc=$(echo "scale=1; $mem_used * 100 / $mem_total" | bc)
@@ -170,7 +170,7 @@ draw_gpu_status() {
             util_colored=$(usage_color "${util}%")
             local mem_colored
             mem_colored=$(usage_color "${mem_perc}%")
-            
+
             echo -e "  GPU${idx}: ${name}"
             echo -e "    Utilization: ${util_colored}  |  Memory: ${mem_used}MB / ${mem_total}MB (${mem_colored})  |  Temp: ${temp}°C"
             echo ""
@@ -184,7 +184,7 @@ draw_gpu_status() {
 draw_summary() {
     echo -e "${BOLD}System Summary:${NC}"
     echo ""
-    
+
     # Count containers by status
     local current_user
     current_user=$(whoami)
@@ -193,10 +193,10 @@ draw_summary() {
     local running
     running=$(docker ps --filter "label=ds01.user=$current_user" --format "{{.Names}}" | wc -l)
     local stopped=$((total - running))
-    
+
     echo -e "  Containers: $total total  |  ${GREEN}$running running${NC}  |  ${YELLOW}$stopped stopped${NC}"
     echo ""
-    
+
     # Disk usage for workspace
     local workspace_usage
     workspace_usage=$(du -sh ~/workspace 2>/dev/null | cut -f1)
@@ -218,13 +218,13 @@ main() {
         echo "Error: This script must be run in an interactive terminal"
         exit 1
     fi
-    
+
     # Set up trap for clean exit
     trap 'echo -e "\n${GREEN}Dashboard closed${NC}"; tput cnorm; exit 0' INT TERM
-    
+
     # Hide cursor
     tput civis
-    
+
     while true; do
         get_terminal_size
         draw_header
@@ -232,15 +232,15 @@ main() {
         draw_containers
         draw_gpu_status
         draw_footer
-        
+
         # Wait for refresh interval or user input
         read -r -t $REFRESH_INTERVAL -n 1 key 2>/dev/null || true
-        
-        if [[ "$key" == "q" ]] || [[ "$key" == "Q" ]]; then
+
+        if [[ $key == "q" ]] || [[ $key == "Q" ]]; then
             break
         fi
     done
-    
+
     # Show cursor again
     tput cnorm
     echo -e "\n${GREEN}Dashboard closed${NC}"

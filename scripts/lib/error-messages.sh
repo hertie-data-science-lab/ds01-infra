@@ -84,7 +84,7 @@ show_limit_error() {
             show_contact_info
             ;;
 
-        *No\ GPUs\ available*|*all\ allocated*)
+        *No\ GPUs\ available* | *all\ allocated*)
             echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════╗${NC}"
             echo -e "${YELLOW}║${NC}  ${BOLD}No GPUs Currently Available${NC}                                ${YELLOW}║${NC}"
             echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════╝${NC}"
@@ -103,7 +103,7 @@ show_limit_error() {
             show_contact_info
             ;;
 
-        *No\ MIG\ instances*|*only\ full\ GPUs*)
+        *No\ MIG\ instances* | *only\ full\ GPUs*)
             echo -e "${YELLOW}╔══════════════════════════════════════════════════════════════╗${NC}"
             echo -e "${YELLOW}║${NC}  ${BOLD}No MIG Instances Available${NC}                                 ${YELLOW}║${NC}"
             echo -e "${YELLOW}╚══════════════════════════════════════════════════════════════╝${NC}"

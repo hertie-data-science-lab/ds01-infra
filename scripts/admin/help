@@ -13,7 +13,7 @@ NC='\033[0m'
 
 show_main_menu() {
     clear
-    cat << EOF
+    cat <<EOF
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}              DS01 INTERACTIVE HELP${NC}
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -38,7 +38,7 @@ EOF
 }
 
 show_getting_started() {
-    cat << EOF
+    cat <<EOF
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}GETTING STARTED${NC}
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -77,7 +77,7 @@ EOF
 }
 
 show_containers() {
-    cat << EOF
+    cat <<EOF
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}CONTAINER MANAGEMENT${NC}
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -115,7 +115,7 @@ EOF
 }
 
 show_images() {
-    cat << EOF
+    cat <<EOF
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}IMAGE MANAGEMENT${NC}
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -148,7 +148,7 @@ EOF
 }
 
 show_gpu() {
-    cat << EOF
+    cat <<EOF
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}GPU & RESOURCES${NC}
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -184,7 +184,7 @@ EOF
 }
 
 show_projects() {
-    cat << EOF
+    cat <<EOF
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}PROJECT & GITHUB SETUP${NC}
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -221,7 +221,7 @@ EOF
 }
 
 show_vscode() {
-    cat << EOF
+    cat <<EOF
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}VS CODE REMOTE CONNECTION${NC}
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -261,7 +261,7 @@ EOF
 }
 
 show_troubleshooting() {
-    cat << EOF
+    cat <<EOF
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}TROUBLESHOOTING${NC}
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -303,7 +303,7 @@ EOF
 }
 
 show_admin() {
-    cat << EOF
+    cat <<EOF
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}ADMIN COMMANDS${NC}
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -338,7 +338,7 @@ EOF
 }
 
 show_quick_reference() {
-    cat << EOF
+    cat <<EOF
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
 ${BOLD}QUICK REFERENCE${NC}
 ${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
@@ -387,7 +387,15 @@ while true; do
         7) show_troubleshooting ;;
         8) show_admin ;;
         9) show_quick_reference ;;
-        0) echo ""; echo "Goodbye!"; echo ""; exit 0 ;;
-        *) echo -e "${RED}Invalid choice${NC}"; sleep 1 ;;
+        0)
+            echo ""
+            echo "Goodbye!"
+            echo ""
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Invalid choice${NC}"
+            sleep 1
+            ;;
     esac
 done

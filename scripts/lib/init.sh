@@ -218,7 +218,7 @@ ds01_allow_full_gpu() {
     local username="${1:-$(whoami)}"
     local allow
     allow=$(python3 "${DS01_SCRIPTS}/docker/get_resource_limits.py" "$username" --allow-full-gpu 2>/dev/null || echo "false")
-    [[ "$allow" == "true" ]]
+    [[ $allow == "true" ]]
 }
 
 # ============================================================================

@@ -49,7 +49,7 @@ ds01_notify() {
     # Primary: write to each TTY the user has open via who | awk
     while IFS= read -r tty; do
         [ -z "$tty" ] && continue
-        echo "$message" > "/dev/$tty" 2>/dev/null && delivered=true
+        echo "$message" >"/dev/$tty" 2>/dev/null && delivered=true
     done < <(who | awk -v user="$username" '$1 == user {print $2}')
 
     if [ "$delivered" = false ]; then
@@ -183,13 +183,16 @@ if limit > 0:
 
     # ── Assemble summary ──────────────────────────────────────────────────────
     local parts=()
-    [ -n "$gpu_display" ]       && parts+=("$gpu_display")
-    [ -n "$memory_display" ]    && parts+=("$memory_display")
+    [ -n "$gpu_display" ] && parts+=("$gpu_display")
+    [ -n "$memory_display" ] && parts+=("$memory_display")
     [ -n "$container_display" ] && parts+=("$container_display")
 
     local summary=""
     if [ "${#parts[@]}" -gt 0 ]; then
-        summary="  $(IFS=' | '; echo "${parts[*]}")"
+        summary="  $(
+            IFS=' | '
+            echo "${parts[*]}"
+        )"
     fi
 
     # Cache and return

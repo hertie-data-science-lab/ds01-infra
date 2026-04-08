@@ -29,10 +29,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Parse arguments
 DRY_RUN=false
@@ -46,7 +46,7 @@ while [[ $# -gt 0 ]]; do
         --enable-opa)
             ENABLE_OPA=true
             ;;
-        -h|--help)
+        -h | --help)
             echo "Usage: $0 [--dry-run] [--enable-opa]"
             echo ""
             echo "Options:"
@@ -90,7 +90,8 @@ fi
 # Step 2: Build new configuration using Python (reliable JSON manipulation)
 log_info "Building new configuration..."
 
-NEW_CONFIG=$(python3 << 'PYEOF'
+NEW_CONFIG=$(
+    python3 <<'PYEOF'
 import json
 import sys
 import os
@@ -146,7 +147,8 @@ export CURRENT_CONFIG
 export ENABLE_OPA
 
 # Re-run with environment variables
-NEW_CONFIG=$(CURRENT_CONFIG="$CURRENT_CONFIG" ENABLE_OPA="$ENABLE_OPA" python3 << 'PYEOF'
+NEW_CONFIG=$(
+    CURRENT_CONFIG="$CURRENT_CONFIG" ENABLE_OPA="$ENABLE_OPA" python3 <<'PYEOF'
 import json
 import sys
 import os
@@ -222,13 +224,13 @@ if [ -f "$DAEMON_JSON" ]; then
 fi
 
 # Step 4: Write new config
-echo "$NEW_CONFIG" > "$DAEMON_JSON"
+echo "$NEW_CONFIG" >"$DAEMON_JSON"
 log_success "Wrote new configuration to $DAEMON_JSON"
 
 # Step 5: Ensure ds01.slice exists
 if [ ! -f "/etc/systemd/system/ds01.slice" ]; then
     log_info "Creating ds01.slice..."
-    cat > /etc/systemd/system/ds01.slice << 'EOF'
+    cat >/etc/systemd/system/ds01.slice <<'EOF'
 [Unit]
 Description=DS01 Container Slice
 Before=slices.target

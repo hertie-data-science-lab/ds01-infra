@@ -44,18 +44,18 @@ USER_ID=$(id -u)
 # === MODE DETECTION ===
 SCRIPT_NAME=$(basename "$0")
 case "$SCRIPT_NAME" in
-    container-start)   MODE="start" ;;
-    container-run)     MODE="run" ;;
-    container-attach)  MODE="attach" ;;
+    container-start) MODE="start" ;;
+    container-run) MODE="run" ;;
+    container-attach) MODE="attach" ;;
     container-session) MODE="${MODE:-run}" ;;
-    *)                 MODE="run" ;;
+    *) MODE="run" ;;
 esac
 
 # === SHARED FUNCTIONS ===
 
 get_user_lifecycle_limits() {
     local username="$1"
-    if [[ ! -f "$RESOURCE_PARSER" ]]; then
+    if [[ ! -f $RESOURCE_PARSER ]]; then
         echo "None|None|None"
         return
     fi
@@ -81,7 +81,7 @@ container_is_paused() {
     local name="$1"
     local tag="${name}._.${USER_ID}"
     local status=$(docker inspect -f '{{.State.Status}}' "$tag" 2>/dev/null || echo "")
-    [[ "$status" == "paused" ]]
+    [[ $status == "paused" ]]
 }
 
 validate_gpu_available() {
@@ -92,15 +92,15 @@ validate_gpu_available() {
     local gpu_uuids=$(docker inspect -f '{{index .Config.Labels "ds01.gpu.uuids"}}' "$tag" 2>/dev/null || echo "")
 
     # Fall back to single GPU label if multi-GPU label not set
-    if [[ -z "$gpu_uuids" || "$gpu_uuids" == "<no value>" ]]; then
+    if [[ -z $gpu_uuids || $gpu_uuids == "<no value>" ]]; then
         gpu_uuids=$(docker inspect -f '{{index .Config.Labels "ds01.gpu.uuid"}}' "$tag" 2>/dev/null || echo "")
     fi
 
-    if [[ -n "$gpu_uuids" && "$gpu_uuids" != "<no value>" && "$gpu_uuids" != "null" ]]; then
+    if [[ -n $gpu_uuids && $gpu_uuids != "<no value>" && $gpu_uuids != "null" ]]; then
         # Validate each GPU UUID still exists in hardware
-        IFS=',' read -ra UUID_ARRAY <<< "$gpu_uuids"
+        IFS=',' read -ra UUID_ARRAY <<<"$gpu_uuids"
         for gpu_uuid in "${UUID_ARRAY[@]}"; do
-            if [[ -n "$gpu_uuid" ]] && ! nvidia-smi -L 2>/dev/null | grep -q "$gpu_uuid"; then
+            if [[ -n $gpu_uuid ]] && ! nvidia-smi -L 2>/dev/null | grep -q "$gpu_uuid"; then
                 echo -e "${RED}GPU $gpu_uuid is no longer available${NC}"
                 echo ""
                 echo -e "Recreate container: ${GREEN}container-remove $name && container-create $name${NC}"
@@ -130,7 +130,7 @@ start_container_impl() {
 
     # Start container
     echo -e "${CYAN}Starting container...${NC}"
-    if [[ -f "$MLC_START" ]]; then
+    if [[ -f $MLC_START ]]; then
         if bash "$MLC_START" "$name" -s >/dev/null 2>&1; then
             echo -e "${GREEN}✓${NC} Container started"
             return 0
@@ -158,8 +158,8 @@ attach_to_container() {
     echo ""
 
     # Attach via mlc-open or docker exec
-    if [[ -f "$MLC_OPEN" && -x "$MLC_OPEN" ]]; then
-        if [[ -n "$DS01_ORCHESTRATOR" ]]; then
+    if [[ -f $MLC_OPEN && -x $MLC_OPEN ]]; then
+        if [[ -n $DS01_ORCHESTRATOR ]]; then
             bash "$MLC_OPEN" "$name" 2>/dev/null
         else
             bash "$MLC_OPEN" "$name"
@@ -177,7 +177,7 @@ show_post_exit_menu() {
     local tag="${name}._.${USER_ID}"
 
     # Skip if called from orchestrator
-    if [[ -n "$DS01_ORCHESTRATOR" ]]; then
+    if [[ -n $DS01_ORCHESTRATOR ]]; then
         return 0
     fi
 
@@ -189,21 +189,21 @@ show_post_exit_menu() {
 
     local status=$(docker inspect -f '{{.State.Status}}' "$tag" 2>/dev/null || echo "missing")
 
-    if [[ "$status" == "running" ]]; then
+    if [[ $status == "running" ]]; then
         echo -e "${GREEN}✓${NC} Container is still running with resources allocated"
         echo ""
 
-        IFS='|' read -r idle_timeout max_runtime gpu_hold <<< "$(get_user_lifecycle_limits "$USERNAME")"
+        IFS='|' read -r idle_timeout max_runtime gpu_hold <<<"$(get_user_lifecycle_limits "$USERNAME")"
 
         echo -e "${BOLD}What would you like to do?${NC}"
         echo ""
         echo -e "${CYAN}1)${NC} ${BOLD}Keep running${NC} (exit session, container stays active)"
         echo "   - You can reconnect anytime"
         echo "   - GPU remains allocated to this container"
-        if [[ "$idle_timeout" != "None" && "$idle_timeout" != "null" ]]; then
+        if [[ $idle_timeout != "None" && $idle_timeout != "null" ]]; then
             echo -e "   - Will auto-stop after ${CYAN}${idle_timeout}h${NC} of GPU inactivity"
         fi
-        if [[ "$max_runtime" != "None" && "$max_runtime" != "null" ]]; then
+        if [[ $max_runtime != "None" && $max_runtime != "null" ]]; then
             echo -e "   - Max runtime: ${CYAN}${max_runtime}h${NC}"
         fi
         echo ""
@@ -226,7 +226,7 @@ show_post_exit_menu() {
                 echo -e "  Reconnect: ${GREEN}container-run $name${NC}"
                 echo -e "  Status:    ${GREEN}container-list${NC}"
                 echo ""
-                if [[ "$max_runtime" != "None" && "$max_runtime" != "null" ]]; then
+                if [[ $max_runtime != "None" && $max_runtime != "null" ]]; then
                     echo -e "${CYAN}i${NC} ${DIM}Container will auto-retire at max runtime (${max_runtime}h)${NC}"
                     echo ""
                 fi
@@ -271,7 +271,7 @@ show_start_success_message() {
     local name="$1"
 
     # Skip if called from orchestrator
-    if [[ -n "$DS01_ORCHESTRATOR" ]]; then
+    if [[ -n $DS01_ORCHESTRATOR ]]; then
         return 0
     fi
 
@@ -281,16 +281,16 @@ show_start_success_message() {
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
-    IFS='|' read -r idle_timeout max_runtime gpu_hold <<< "$(get_user_lifecycle_limits "$USERNAME")"
+    IFS='|' read -r idle_timeout max_runtime gpu_hold <<<"$(get_user_lifecycle_limits "$USERNAME")"
 
     echo -e "${CYAN}i${NC} ${BOLD}Your resource limits:${NC}"
-    if [[ "$max_runtime" != "None" && "$max_runtime" != "null" ]]; then
+    if [[ $max_runtime != "None" && $max_runtime != "null" ]]; then
         echo -e "  - Max runtime: ${CYAN}${max_runtime}h${NC}"
     fi
-    if [[ "$idle_timeout" != "None" && "$idle_timeout" != "null" ]]; then
+    if [[ $idle_timeout != "None" && $idle_timeout != "null" ]]; then
         echo -e "  - Idle timeout: ${CYAN}${idle_timeout}h${NC} ${DIM}(auto-stop after GPU idle)${NC}"
     fi
-    if [[ "$gpu_hold" != "None" && "$gpu_hold" != "null" && "$gpu_hold" != "indefinite" ]]; then
+    if [[ $gpu_hold != "None" && $gpu_hold != "null" && $gpu_hold != "indefinite" ]]; then
         echo -e "  - GPU hold after stop: ${CYAN}${gpu_hold}h${NC}"
     fi
     echo ""
@@ -356,7 +356,7 @@ while [[ $# -gt 0 ]]; do
             GUIDED=true
             shift
             ;;
-        -h|--help|--info)
+        -h | --help | --info)
             usage
             exit 0
             ;;
@@ -366,7 +366,7 @@ while [[ $# -gt 0 ]]; do
             exit 1
             ;;
         *)
-            if [[ -z "$CONTAINER_NAME" ]]; then
+            if [[ -z $CONTAINER_NAME ]]; then
                 CONTAINER_NAME="$1"
             else
                 echo -e "${RED}Too many arguments${NC}"
@@ -379,7 +379,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # === HEADER (only in atomic context) ===
-if is_atomic_context && [[ -z "$DS01_ORCHESTRATOR" ]]; then
+if is_atomic_context && [[ -z $DS01_ORCHESTRATOR ]]; then
     echo -e ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${BOLD}Container ${MODE^}${NC}"
@@ -388,7 +388,7 @@ if is_atomic_context && [[ -z "$DS01_ORCHESTRATOR" ]]; then
 fi
 
 # === GUIDED INTRO ===
-if [[ "$GUIDED" == true && -z "$CONTAINER_NAME" ]]; then
+if [[ $GUIDED == true && -z $CONTAINER_NAME ]]; then
     case "$MODE" in
         start)
             echo -e "${CYAN}i${NC} ${BOLD}What does 'start' mean?${NC}"
@@ -415,7 +415,7 @@ if [[ "$GUIDED" == true && -z "$CONTAINER_NAME" ]]; then
 fi
 
 # === CONTAINER SELECTION ===
-if [[ -z "$CONTAINER_NAME" ]]; then
+if [[ -z $CONTAINER_NAME ]]; then
     case "$MODE" in
         start)
             CONTAINER_NAME=$(select_container "stopped")
@@ -428,7 +428,7 @@ if [[ -z "$CONTAINER_NAME" ]]; then
             ;;
     esac
 
-    if [[ -z "$CONTAINER_NAME" ]]; then
+    if [[ -z $CONTAINER_NAME ]]; then
         echo "No selection made. Exiting."
         exit 0
     fi
@@ -469,7 +469,7 @@ case "$MODE" in
 
     attach)
         if ! container_is_running "$CONTAINER_NAME"; then
-            local status=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_TAG" 2>/dev/null || echo "unknown")
+            status=$(docker inspect -f '{{.State.Status}}' "$CONTAINER_TAG" 2>/dev/null || echo "unknown")
             echo -e "${YELLOW}Container '$CONTAINER_NAME' is not running${NC} (status: $status)"
             echo ""
             echo -e "Start and attach: ${GREEN}container-run $CONTAINER_NAME${NC}"

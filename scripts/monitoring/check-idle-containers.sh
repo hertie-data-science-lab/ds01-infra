@@ -5,7 +5,7 @@
 # This script must be run as root (via cron or sudo)
 
 # Check if running as root when executed directly
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ ${BASH_SOURCE[0]} == "${0}" ]]; then
     if [ "$EUID" -ne 0 ]; then
         echo "Error: This script must be run as root (for log/state access)"
         echo "Usage: sudo $0"
@@ -66,7 +66,7 @@ is_high_demand() {
     allocation_percent=$(echo "scale=2; $allocated_containers / $total_gpus" | bc)
 
     # Compare with threshold
-    if (( $(echo "$allocation_percent >= $threshold" | bc -l) )); then
+    if (($(echo "$allocation_percent >= $threshold" | bc -l))); then
         echo "true"
     else
         echo "false"
@@ -105,7 +105,7 @@ check_exemption() {
 
 # Get grace period from config
 get_grace_period() {
-    python3 << PYEOF
+    python3 <<PYEOF
 import yaml
 try:
     with open("$CONFIG_FILE") as f:
@@ -162,7 +162,8 @@ get_container_type_idle_timeout() {
 
     # Read from config - container_types section
     local timeout
-    timeout=$(python3 << PYEOF
+    timeout=$(
+        python3 <<PYEOF
 import yaml
 import sys
 
@@ -178,7 +179,7 @@ try:
 except Exception:
     print(0.5)
 PYEOF
-)
+    )
     echo "$timeout"
 }
 
@@ -205,7 +206,7 @@ get_container_owner() {
     # Try devcontainer.local_folder path
     local folder
     folder=$(docker inspect "$container" --format '{{index .Config.Labels "devcontainer.local_folder"}}' 2>/dev/null)
-    if [[ "$folder" == /home/* ]]; then
+    if [[ $folder == /home/* ]]; then
         echo "$folder" | cut -d'/' -f3
         return
     fi
@@ -213,7 +214,7 @@ get_container_owner() {
     # Fallback: extract from name._.uid pattern
     local name
     name=$(docker inspect "$container" --format '{{.Name}}' 2>/dev/null | tr -d '/')
-    if [[ "$name" == *._\.* ]]; then
+    if [[ $name == *._\.* ]]; then
         local uid
         uid=$(echo "$name" | rev | cut -d'.' -f1 | rev)
         getent passwd "$uid" 2>/dev/null | cut -d: -f1
@@ -274,10 +275,10 @@ check_gpu_idle() {
     fi
 
     # Compare with threshold
-    if (( $(echo "$gpu_util < $threshold" | bc -l) )); then
-        echo "idle"  # GPU is idle (< threshold)
+    if (($(echo "$gpu_util < $threshold" | bc -l))); then
+        echo "idle" # GPU is idle (< threshold)
     else
-        echo "active"  # GPU is active
+        echo "active" # GPU is active
     fi
 }
 
@@ -292,7 +293,7 @@ is_container_active_secondary() {
     cpu=$(docker stats "$container" --no-stream --format "{{.CPUPerc}}" 2>/dev/null | sed 's/%//' || echo "0")
 
     # Consider active if CPU > threshold
-    if (( $(echo "$cpu > $cpu_threshold" | bc -l) )); then
+    if (($(echo "$cpu > $cpu_threshold" | bc -l))); then
         echo "true"
         return
     fi
@@ -350,7 +351,7 @@ get_last_activity() {
             echo "WARNED=false"
             echo "WARNED_FINAL=false"
             echo "IDLE_STREAK=0"
-        } > "$state_file"
+        } >"$state_file"
         echo "$start_epoch"
     fi
 }
@@ -371,7 +372,7 @@ update_activity() {
         # Reset activity timestamp and idle streak
         sed -i "s/^LAST_ACTIVITY=.*/LAST_ACTIVITY=$(date +%s)/" "$state_file"
         sed -i "s/^WARNED=.*/WARNED=false/" "$state_file"
-        grep -q "^WARNED_FINAL=" "$state_file" && sed -i "s/^WARNED_FINAL=.*/WARNED_FINAL=false/" "$state_file" || echo "WARNED_FINAL=false" >> "$state_file"
+        grep -q "^WARNED_FINAL=" "$state_file" && sed -i "s/^WARNED_FINAL=.*/WARNED_FINAL=false/" "$state_file" || echo "WARNED_FINAL=false" >>"$state_file"
         sed -i "s/^IDLE_STREAK=.*/IDLE_STREAK=0/" "$state_file"
     fi
 }
@@ -467,7 +468,7 @@ To stop and retire now (frees GPU immediately):
 # Get SIGTERM grace period for container type
 get_sigterm_grace() {
     local container_type="$1"
-    python3 << PYEOF
+    python3 <<PYEOF
 import yaml
 try:
     with open("$CONFIG_FILE") as f:
@@ -630,7 +631,7 @@ monitor_containers() {
         # Core principle: GPU access = ephemeral enforcement, No GPU = permanent OK
         if ! container_has_gpu "$container"; then
             ((skipped_no_gpu += 1))
-            continue  # No GPU = no idle timeout
+            continue # No GPU = no idle timeout
         fi
 
         # Skip monitoring infrastructure containers (they need GPU but aren't user workloads)
@@ -712,7 +713,7 @@ process_container_universal() {
     exemption_status=$(check_exemption "$username" "idle_timeout_h")
     local is_exempt=false
     local exempt_reason=""
-    if [[ "$exemption_status" == exempt:* ]]; then
+    if [[ $exemption_status == exempt:* ]]; then
         is_exempt=true
         exempt_reason="${exemption_status#exempt: }"
         log "Container $container (user: $username) is EXEMPT from idle timeout: $exempt_reason"
@@ -721,11 +722,11 @@ process_container_universal() {
     # Get timeout based on container type
     local timeout_str
     case "$container_type" in
-        orchestration|atomic)
+        orchestration | atomic)
             # DS01 native containers - use user's configured idle_timeout
             timeout_str=$(get_idle_timeout "$username")
             ;;
-        devcontainer|compose|docker|unknown)
+        devcontainer | compose | docker | unknown)
             # External containers - use container_types config
             timeout_str=$(get_container_type_idle_timeout "$container_type")
             ;;
@@ -813,7 +814,7 @@ process_container_universal() {
                 echo "WARNED=false"
                 echo "WARNED_FINAL=false"
                 echo "IDLE_STREAK=0"
-            } > "$state_file"
+            } >"$state_file"
         fi
 
         source "$state_file"
@@ -856,16 +857,16 @@ process_container_universal() {
 
         # First warning at 80% of timeout
         if [ "$idle_seconds" -ge "$warning_seconds" ] && [ "$WARNED" != "true" ]; then
-            local minutes_until_stop=$(( (timeout_seconds - idle_seconds) / 60 ))
+            local minutes_until_stop=$(((timeout_seconds - idle_seconds) / 60))
             send_warning "$username" "$container" "$minutes_until_stop"
             sed -i "s/^WARNED=.*/WARNED=true/" "$state_file"
         fi
 
         # Final warning at 95% of timeout
         if [ "$idle_seconds" -ge "$final_warning_seconds" ] && [ "${WARNED_FINAL:-false}" != "true" ]; then
-            local minutes_until_stop=$(( (timeout_seconds - idle_seconds) / 60 ))
+            local minutes_until_stop=$(((timeout_seconds - idle_seconds) / 60))
             send_final_warning "$username" "$container" "$minutes_until_stop"
-            grep -q "^WARNED_FINAL=" "$state_file" && sed -i "s/^WARNED_FINAL=.*/WARNED_FINAL=true/" "$state_file" || echo "WARNED_FINAL=true" >> "$state_file"
+            grep -q "^WARNED_FINAL=" "$state_file" && sed -i "s/^WARNED_FINAL=.*/WARNED_FINAL=true/" "$state_file" || echo "WARNED_FINAL=true" >>"$state_file"
         fi
 
         # Check if we should stop
@@ -893,6 +894,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Only run when executed, not sourced
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ ${BASH_SOURCE[0]} == "${0}" ]]; then
     monitor_containers
 fi

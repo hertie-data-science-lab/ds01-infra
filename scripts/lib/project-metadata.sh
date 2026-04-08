@@ -54,9 +54,9 @@ create_project_pyproject() {
     created_date=$(date -I)
 
     # If pyproject.toml exists, update it; otherwise create new
-    if [[ -f "$pyproject_path" ]]; then
+    if [[ -f $pyproject_path ]]; then
         # Update existing - use Python for TOML manipulation
-        python3 << PYEOF
+        python3 <<PYEOF
 import sys
 try:
     import tomllib
@@ -127,7 +127,7 @@ except ImportError:
 PYEOF
     else
         # Create new pyproject.toml
-        cat > "$pyproject_path" << TOMLEOF
+        cat >"$pyproject_path" <<TOMLEOF
 [project]
 name = "$project_name"
 $([ -n "$description" ] && echo "description = \"$description\"")
@@ -149,11 +149,11 @@ read_project_metadata() {
     local key="$2"
     local pyproject_path="$project_dir/pyproject.toml"
 
-    if [[ ! -f "$pyproject_path" ]]; then
+    if [[ ! -f $pyproject_path ]]; then
         return 1
     fi
 
-    python3 << PYEOF
+    python3 <<PYEOF
 import sys
 try:
     import tomllib
@@ -180,11 +180,11 @@ read_project_name() {
     local project_dir="$1"
     local pyproject_path="$project_dir/pyproject.toml"
 
-    if [[ ! -f "$pyproject_path" ]]; then
+    if [[ ! -f $pyproject_path ]]; then
         return 1
     fi
 
-    python3 << PYEOF
+    python3 <<PYEOF
 import sys
 try:
     import tomllib
@@ -211,14 +211,14 @@ has_project_metadata() {
     local project_dir="$1"
     local pyproject_path="$project_dir/pyproject.toml"
 
-    if [[ ! -f "$pyproject_path" ]]; then
+    if [[ ! -f $pyproject_path ]]; then
         return 1
     fi
 
     # Check if [tool.ds01] section exists with type field
     local project_type
     project_type=$(read_project_metadata "$project_dir" "type" 2>/dev/null)
-    [[ -n "$project_type" ]]
+    [[ -n $project_type ]]
 }
 
 # List all projects in workspace directory
@@ -227,17 +227,17 @@ has_project_metadata() {
 list_projects() {
     local workspace_dir="${1:-$HOME/workspace}"
 
-    if [[ ! -d "$workspace_dir" ]]; then
+    if [[ ! -d $workspace_dir ]]; then
         return 0
     fi
 
     for project_dir in "$workspace_dir"/*/; do
-        [[ -d "$project_dir" ]] || continue
+        [[ -d $project_dir ]] || continue
         local project_name
         project_name=$(basename "$project_dir")
 
         # Skip hidden directories
-        [[ "$project_name" == .* ]] && continue
+        [[ $project_name == .* ]] && continue
 
         local project_type="unknown"
         local has_meta="no"
@@ -327,17 +327,17 @@ create_project_requirements() {
     # Human-readable type name
     local type_name
     case "$project_type" in
-        ml)    type_name="General ML" ;;
-        cv)    type_name="Computer Vision" ;;
-        nlp)   type_name="NLP" ;;
-        rl)    type_name="Reinforcement Learning" ;;
+        ml) type_name="General ML" ;;
+        cv) type_name="Computer Vision" ;;
+        nlp) type_name="NLP" ;;
+        rl) type_name="Reinforcement Learning" ;;
         audio) type_name="Audio/Speech" ;;
-        ts)    type_name="Time Series" ;;
-        llm)   type_name="LLM/GenAI" ;;
-        *)     type_name="Custom" ;;
+        ts) type_name="Time Series" ;;
+        llm) type_name="LLM/GenAI" ;;
+        *) type_name="Custom" ;;
     esac
 
-    cat > "$req_file" << EOF
+    cat >"$req_file" <<EOF
 # DS01 Project Requirements
 # Generated for project type: $type_name
 # Modify as needed - this file is read by image-create
@@ -357,20 +357,20 @@ ipywidgets
 EOF
 
     # Add use-case specific packages
-    if [[ -n "$usecase_packages" ]]; then
-        echo "" >> "$req_file"
-        echo "# $type_name specific packages" >> "$req_file"
+    if [[ -n $usecase_packages ]]; then
+        echo "" >>"$req_file"
+        echo "# $type_name specific packages" >>"$req_file"
         for pkg in $usecase_packages; do
-            echo "$pkg" >> "$req_file"
+            echo "$pkg" >>"$req_file"
         done
     fi
 
     # Add custom packages if provided
-    if [[ -n "$custom_packages" ]]; then
-        echo "" >> "$req_file"
-        echo "# Custom packages" >> "$req_file"
+    if [[ -n $custom_packages ]]; then
+        echo "" >>"$req_file"
+        echo "# Custom packages" >>"$req_file"
         for pkg in $custom_packages; do
-            echo "$pkg" >> "$req_file"
+            echo "$pkg" >>"$req_file"
         done
     fi
 }

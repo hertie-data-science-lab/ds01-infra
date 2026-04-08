@@ -51,7 +51,7 @@ fi
 
 # Create user slice
 # Note: Description includes original username for identification
-cat > "$SLICE_FILE" << EOF
+cat >"$SLICE_FILE" <<EOF
 [Unit]
 Description=DS01 ${GROUP^} - ${USERNAME} (${SANITIZED_USERNAME})
 Before=slices.target

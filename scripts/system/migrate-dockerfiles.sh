@@ -67,7 +67,7 @@ echo ""
 read -p "Continue with migration? [Y/n]: " CONFIRM
 CONFIRM=${CONFIRM:-Y}
 
-if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+if [[ ! $CONFIRM =~ ^[Yy]$ ]]; then
     echo "Migration cancelled."
     exit 0
 fi

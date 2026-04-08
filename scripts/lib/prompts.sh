@@ -74,7 +74,7 @@ ds01_prompt() {
     read -p "$prompt" input </dev/tty
 
     # Use default if empty
-    if [[ -z "$input" ]]; then
+    if [[ -z $input ]]; then
         input="$default"
     fi
 
@@ -103,11 +103,11 @@ ds01_prompt_required() {
     local error_msg="${3:-Input required. Please try again.}"
     local input=""
 
-    while [[ -z "$input" ]]; do
+    while [[ -z $input ]]; do
         ds01_flush_stdin
         read -p "$prompt" input </dev/tty
 
-        if [[ -z "$input" ]]; then
+        if [[ -z $input ]]; then
             echo -e "${YELLOW}${error_msg}${NC}"
         fi
     done
@@ -141,7 +141,7 @@ ds01_confirm() {
     local response
 
     # Build prompt with appropriate hint
-    if [[ "$default" == "y" ]]; then
+    if [[ $default == "y" ]]; then
         prompt="$question [Y/n]: "
     else
         prompt="$question [y/N]: "
@@ -151,13 +151,13 @@ ds01_confirm() {
     read -p "$prompt" response </dev/tty
 
     # Use default if empty
-    if [[ -z "$response" ]]; then
+    if [[ -z $response ]]; then
         response="$default"
     fi
 
     # Check response
     case "${response,,}" in
-        y|yes)
+        y | yes)
             return 0
             ;;
         *)
@@ -247,7 +247,7 @@ ds01_select() {
     # Display options
     for i in "${!options[@]}"; do
         local num=$((i + 1))
-        if [[ "$num" == "$default" ]]; then
+        if [[ $num == "$default" ]]; then
             echo -e "  ${BOLD}${num})${NC} ${options[$i]} ${GREEN}(default)${NC}"
         else
             echo -e "  ${BOLD}${num})${NC} ${options[$i]}"
@@ -259,12 +259,12 @@ ds01_select() {
     read -p "Choice [1-$count, default: $default]: " input </dev/tty
 
     # Use default if empty
-    if [[ -z "$input" ]]; then
+    if [[ -z $input ]]; then
         input="$default"
     fi
 
     # Validate and set
-    if [[ "$input" =~ ^[0-9]+$ ]] && [[ "$input" -ge 1 ]] && [[ "$input" -le "$count" ]]; then
+    if [[ $input =~ ^[0-9]+$ ]] && [[ $input -ge 1 ]] && [[ $input -le $count ]]; then
         eval "$varname=\"\$input\""
     else
         # Invalid input, use default
@@ -302,11 +302,11 @@ ds01_select_or_loop() {
     done
     echo ""
 
-    while [[ "$valid" == false ]]; do
+    while [[ $valid == false ]]; do
         ds01_flush_stdin
         read -p "Choice [1-$count]: " input </dev/tty
 
-        if [[ "$input" =~ ^[0-9]+$ ]] && [[ "$input" -ge 1 ]] && [[ "$input" -le "$count" ]]; then
+        if [[ $input =~ ^[0-9]+$ ]] && [[ $input -ge 1 ]] && [[ $input -le $count ]]; then
             valid=true
             eval "$varname=\"\$input\""
         else

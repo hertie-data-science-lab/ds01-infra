@@ -79,7 +79,7 @@ echo ""
 
 for cmd in "${USER_COMMANDS[@]}"; do
     # Parse command (format: "target:source" or just "name")
-    if [[ "$cmd" == *":"* ]]; then
+    if [[ $cmd == *":"* ]]; then
         TARGET_NAME="${cmd%%:*}"
         SOURCE_FILE="${cmd#*:}"
     else

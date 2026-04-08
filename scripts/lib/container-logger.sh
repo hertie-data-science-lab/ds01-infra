@@ -25,29 +25,29 @@ log_event() {
 
 # Legacy function - maps to new event types for backwards compatibility
 log_container_operation() {
-    local operation="$1"    # create, start, stop, remove, failed_create, etc.
-    local user="$2"         # username
-    local container="$3"    # container name with ._.uid
-    local gpu_id="$4"       # GPU ID or "none"
-    local status="$5"       # success, failed, warning
-    local details="$6"      # Additional details/error message
+    local operation="$1" # create, start, stop, remove, failed_create, etc.
+    local user="$2"      # username
+    local container="$3" # container name with ._.uid
+    local gpu_id="$4"    # GPU ID or "none"
+    local status="$5"    # success, failed, warning
+    local details="$6"   # Additional details/error message
 
     # Map old operations to new event types
     local event_type
     case "$operation" in
-        create|created)
+        create | created)
             event_type="container.created"
             ;;
-        start|started)
+        start | started)
             event_type="container.started"
             ;;
-        stop|stopped)
+        stop | stopped)
             event_type="container.stopped"
             ;;
-        remove|removed)
+        remove | removed)
             event_type="container.removed"
             ;;
-        failed_create|create_failed)
+        failed_create | create_failed)
             event_type="container.create_failed"
             ;;
         *)
@@ -57,11 +57,11 @@ log_container_operation() {
 
     # Build arguments
     local args=()
-    [[ -n "$user" ]] && args+=("user=$user")
-    [[ -n "$container" ]] && args+=("container=$container")
-    [[ -n "$gpu_id" && "$gpu_id" != "none" ]] && args+=("gpu=$gpu_id")
-    [[ -n "$status" ]] && args+=("status=$status")
-    [[ -n "$details" ]] && args+=("details=$details")
+    [[ -n $user ]] && args+=("user=$user")
+    [[ -n $container ]] && args+=("container=$container")
+    [[ -n $gpu_id && $gpu_id != "none" ]] && args+=("gpu=$gpu_id")
+    [[ -n $status ]] && args+=("status=$status")
+    [[ -n $details ]] && args+=("details=$details")
 
     log_event "$event_type" "${args[@]}"
 }

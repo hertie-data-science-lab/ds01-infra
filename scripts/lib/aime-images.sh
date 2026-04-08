@@ -23,7 +23,7 @@ detect_cuda_arch() {
 get_base_image() {
     local framework="$1"
     local custom_image="$2"
-    local version="$3"  # Optional version parameter
+    local version="$3" # Optional version parameter
 
     # Handle custom base image (bypass catalog)
     if [ "$framework" = "custom" ]; then
@@ -67,7 +67,7 @@ get_base_image() {
     [ -n "$VERBOSE" ] && echo -e "${YELLOW}⚠${NC} AIME catalog not available, using Docker Hub fallback" >&2
 
     case $framework in
-        tensorflow|tf)
+        tensorflow | tf)
             echo "tensorflow/tensorflow:2.14.0-gpu"
             ;;
         jax)

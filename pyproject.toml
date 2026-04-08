@@ -1,6 +1,6 @@
 # DS01 Infrastructure - Project Configuration
 # This is NOT a Python package - just configuration for development tools.
-# Versioning handled by semantic-release (see .releaserc.json + .github/workflows/release.yml)
+# Versioning: manual — update VERSION file, then tag (see .github/workflows/release.yml)
 
 [tool.ruff]
 line-length = 100

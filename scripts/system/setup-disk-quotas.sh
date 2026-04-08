@@ -19,7 +19,7 @@ set -e
 
 INFRA_ROOT="/opt/ds01-infra"
 CONFIG_FILE="$INFRA_ROOT/config/runtime/resource-limits.yaml"
-WORKSPACE_ROOT="/home"  # Where user workspaces live
+WORKSPACE_ROOT="/home" # Where user workspaces live
 
 # Colors
 RED='\033[0;31m'
@@ -96,7 +96,7 @@ enable_quotas() {
     log_info "Enabling quotas on root filesystem..."
 
     # Backup fstab
-    cp /etc/fstab /etc/fstab.backup.$(date +%Y%m%d_%H%M%S)
+    cp /etc/fstab "/etc/fstab.backup.$(date +%Y%m%d_%H%M%S)"
     log_info "Backed up /etc/fstab"
 
     # Check if usrquota already in fstab
@@ -134,7 +134,7 @@ get_user_storage_limit() {
     local username="$1"
 
     # Use Python to parse YAML and get merged limits
-    python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" 2>/dev/null | \
+    python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" "$username" 2>/dev/null |
         grep -oP 'storage_workspace:\s*\K[0-9]+[GMTK]?' || echo "100G"
 }
 
@@ -145,10 +145,10 @@ size_to_kb() {
     local unit="${size##*[0-9]}"
 
     case "$unit" in
-        G|g) echo $((num * 1024 * 1024)) ;;
-        M|m) echo $((num * 1024)) ;;
-        T|t) echo $((num * 1024 * 1024 * 1024)) ;;
-        K|k|'') echo "$num" ;;
+        G | g) echo $((num * 1024 * 1024)) ;;
+        M | m) echo $((num * 1024)) ;;
+        T | t) echo $((num * 1024 * 1024 * 1024)) ;;
+        K | k | '') echo "$num" ;;
         *) echo "$num" ;;
     esac
 }
@@ -166,9 +166,9 @@ set_user_quota() {
     # Get storage limit
     local storage_limit=$(get_user_storage_limit "$username")
     local soft_limit_kb=$(size_to_kb "$storage_limit")
-    local hard_limit_kb=$((soft_limit_kb * 110 / 100))  # Hard limit = soft + 10%
+    local hard_limit_kb=$((soft_limit_kb * 110 / 100)) # Hard limit = soft + 10%
 
-    log_info "Setting quota for $username: soft=${storage_limit} hard=$((hard_limit_kb/1024/1024))G"
+    log_info "Setting quota for $username: soft=${storage_limit} hard=$((hard_limit_kb / 1024 / 1024))G"
 
     # Set quota (soft block, hard block, soft inode, hard inode)
     # Inode limit = approximate files based on average 100KB file size
@@ -191,7 +191,7 @@ set_all_quotas() {
         if [[ $uid -ge 1000 ]] && [[ $uid -lt 65534 ]]; then
             set_user_quota "$username" && ((count++)) || true
         fi
-    done < /etc/passwd
+    done </etc/passwd
 
     log_info "Set quotas for $count users"
 
@@ -222,7 +222,7 @@ case "${1:-}" in
         ;;
     --set-user)
         check_root
-        if [[ -z "${2:-}" ]]; then
+        if [[ -z ${2:-} ]]; then
             log_error "Usage: $0 --set-user USERNAME"
             exit 1
         fi

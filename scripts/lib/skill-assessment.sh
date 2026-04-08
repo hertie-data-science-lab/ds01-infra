@@ -4,9 +4,9 @@
 # File: /opt/ds01-infra/scripts/lib/skill-assessment.sh
 
 # Skill levels: 0=beginner (unchecked), 2=expert (checked)
-export DS01_SKILL_REMOTE=0   # Remote servers (SSH + VS Code)
-export DS01_SKILL_GIT=0      # Version control (Git)
-export DS01_SKILL_HPC=0      # Containerized ML/HPC (Docker + GPUs + resources)
+export DS01_SKILL_REMOTE=0 # Remote servers (SSH + VS Code)
+export DS01_SKILL_GIT=0    # Version control (Git)
+export DS01_SKILL_HPC=0    # Containerized ML/HPC (Docker + GPUs + resources)
 
 # Colors (may already be defined by calling script)
 _SA_GREEN=${GREEN:-'\033[0;32m'}
@@ -43,7 +43,7 @@ ask_skill_levels() {
     # Ask about each skill area
     echo -ne "  [ ] Remote servers (SSH, VS Code Remote) - comfortable? [y/N]: "
     read -r answer </dev/tty
-    if [[ "$answer" =~ ^[Yy] ]]; then
+    if [[ $answer =~ ^[Yy] ]]; then
         export DS01_SKILL_REMOTE=2
         # Move up and rewrite with checkmark
         echo -ne "\033[1A\033[2K"
@@ -55,7 +55,7 @@ ask_skill_levels() {
 
     echo -ne "  [ ] Version control (Git) - comfortable? [y/N]: "
     read -r answer </dev/tty
-    if [[ "$answer" =~ ^[Yy] ]]; then
+    if [[ $answer =~ ^[Yy] ]]; then
         export DS01_SKILL_GIT=2
         echo -ne "\033[1A\033[2K"
         echo -e "  ${_SA_GREEN}[✓] Version control (Git)${_SA_NC}"
@@ -66,7 +66,7 @@ ask_skill_levels() {
 
     echo -ne "  [ ] Containerized ML/HPC (Docker, GPUs) - comfortable? [y/N]: "
     read -r answer </dev/tty
-    if [[ "$answer" =~ ^[Yy] ]]; then
+    if [[ $answer =~ ^[Yy] ]]; then
         export DS01_SKILL_HPC=2
         echo -ne "\033[1A\033[2K"
         echo -e "  ${_SA_GREEN}[✓] Containerized ML/HPC (Docker, GPUs)${_SA_NC}"
@@ -83,7 +83,7 @@ ask_skill_levels() {
 needs_guidance() {
     local skill_var="$1"
     local skill_value="${!skill_var}"
-    [[ "$skill_value" -eq 0 ]]
+    [[ $skill_value -eq 0 ]]
 }
 
 # Check if user is expert in a skill area
@@ -91,7 +91,7 @@ needs_guidance() {
 is_expert() {
     local skill_var="$1"
     local skill_value="${!skill_var}"
-    [[ "$skill_value" -eq 2 ]]
+    [[ $skill_value -eq 2 ]]
 }
 
 # Show a chunked explanation with pause (for beginners)

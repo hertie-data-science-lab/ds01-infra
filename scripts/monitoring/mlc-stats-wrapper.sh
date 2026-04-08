@@ -1,4 +1,3 @@
-# File: /opt/ds01-infra/scripts/monitoring/mlc-stats-wrapper.sh
 #!/bin/bash
 # Enhanced stats command with more detail
 
@@ -25,32 +24,32 @@ for container in $containers; do
     status=$(docker inspect "$container" --format='{{.State.Status}}' 2>/dev/null)
     image=$(docker inspect "$container" --format='{{index .Config.Labels "ds01.image"}}' 2>/dev/null)
     created=$(docker inspect "$container" --format='{{.Created}}' 2>/dev/null | cut -d'T' -f1)
-    
+
     echo -e "${BOLD}Container: ${CYAN}$short_name${NC}"
     echo "  Status: $status"
     echo "  Image: $image"
     echo "  Created: $created"
-    
+
     if [ "$status" = "running" ]; then
         # Get resource usage
         stats=$(docker stats "$container" --no-stream --format "CPU: {{.CPUPerc}}, Memory: {{.MemUsage}} ({{.MemPerc}}), Network: {{.NetIO}}, Block I/O: {{.BlockIO}}" 2>/dev/null)
         echo "  $stats"
-        
+
         # Get GPU info if available
-        gpu_info=$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>/dev/null | \
+        gpu_info=$(nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv,noheader 2>/dev/null |
             while read line; do
                 pid=$(echo "$line" | cut -d',' -f1 | xargs)
                 if docker exec "$container" test -d /proc/$pid 2>/dev/null; then
                     echo "$line"
                 fi
             done)
-        
+
         if [ -n "$gpu_info" ]; then
             echo "  GPU Processes:"
             echo "$gpu_info" | sed 's/^/    /'
         fi
     fi
-    
+
     echo ""
 done
 

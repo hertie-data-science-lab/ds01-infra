@@ -1,11 +1,10 @@
-# File: /opt/ds01-infra/scripts/docker/enforce-containers.sh
 #!/bin/bash
 # Comprehensive container enforcement system
 
 # ONLY RUN THIS WHEN CONTAINER SET UP IS ROBUST!  sudo /opt/ds01-infra/scripts/docker/enforce-containers.sh
-# 
+#
 # MAKE SURE TO DOCUMENT ANY CONFIG UPDATES IN ETC-MIRRORS
-# MAKE SURE TO ALLOW EXCEPTIONS FOR ADMINS in 
+# MAKE SURE TO ALLOW EXCEPTIONS FOR ADMINS in
 
 set -e
 
@@ -28,10 +27,10 @@ WRAPPED_COMMANDS="python python3 pip pip3 jupyter jupyter-lab jupyter-notebook c
 
 for cmd in $WRAPPED_COMMANDS; do
     REAL_PATH=$(which "$cmd" 2>/dev/null || echo "")
-    
+
     if [ -n "$REAL_PATH" ]; then
         # Create wrapper
-        cat > "$WRAPPER_DIR/$cmd" << WRAPEOF
+        cat >"$WRAPPER_DIR/$cmd" <<WRAPEOF
 #!/bin/bash
 # DS01 Container Enforcement Wrapper for $cmd
 
@@ -82,7 +81,7 @@ MSGEOF
 
 exit 1
 WRAPEOF
-        
+
         chmod +x "$WRAPPER_DIR/$cmd"
         echo "  ✓ Created wrapper for $cmd"
     fi
@@ -92,7 +91,7 @@ done
 echo ""
 echo "2. Creating user environment setup..."
 
-cat > /opt/ds01-infra/scripts/user/enable-container-enforcement.sh << 'ENABLEEOF'
+cat >/opt/ds01-infra/scripts/user/enable-container-enforcement.sh <<'ENABLEEOF'
 #!/bin/bash
 # Enable container enforcement for a user
 
@@ -168,7 +167,7 @@ chmod +x /opt/ds01-infra/scripts/user/enable-container-enforcement.sh
 echo ""
 echo "3. Creating container init script..."
 
-cat > /opt/ds01-infra/scripts/docker/container-init.sh << 'INITEOF'
+cat >/opt/ds01-infra/scripts/docker/container-init.sh <<'INITEOF'
 #!/bin/bash
 # Script to run when container starts - marks it as a container
 

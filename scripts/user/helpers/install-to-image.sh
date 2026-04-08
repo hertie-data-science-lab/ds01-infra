@@ -41,7 +41,7 @@ if docker exec "$CONTAINER_TAG" pip install --no-cache-dir "$PACKAGES"; then
     echo ""
     read -r -p "Commit changes to image? (creates new image version) [y/N]: " COMMIT
 
-    if [[ "$COMMIT" =~ ^[Yy] ]]; then
+    if [[ $COMMIT =~ ^[Yy] ]]; then
         NEW_TAG="${IMAGE_NAME}-$(date +%Y%m%d-%H%M)"
         # CRITICAL: Truncate lastlog/faillog before commit to prevent huge sparse files
         # High UIDs cause these files to grow to 300GB+ which breaks docker commit

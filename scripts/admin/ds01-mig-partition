@@ -53,7 +53,7 @@ while [[ $# -gt 0 ]]; do
             RESET=true
             shift
             ;;
-        -h|--help)
+        -h | --help)
             echo "DS01 MIG Partition Manager"
             echo ""
             echo "Usage: sudo ds01-mig-partition [OPTIONS]"
@@ -97,7 +97,7 @@ if [ "$RESET" = true ]; then
     # Get list of GPUs
     GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
 
-    for ((i=0; i<GPU_COUNT; i++)); do
+    for ((i = 0; i < GPU_COUNT; i++)); do
         MIG_MODE=$(nvidia-smi --query-gpu=mig.mode.current --format=csv,noheader -i $i)
 
         if [ "$MIG_MODE" = "Enabled" ]; then
@@ -134,7 +134,7 @@ if [ ! -f "$PARSER_SCRIPT" ]; then
     echo -e "${YELLOW}Creating MIG config parser...${NC}"
     mkdir -p "$(dirname "$PARSER_SCRIPT")"
 
-    cat > "$PARSER_SCRIPT" << 'PYTHON_SCRIPT'
+    cat >"$PARSER_SCRIPT" <<'PYTHON_SCRIPT'
 #!/usr/bin/env python3
 """Parse MIG configuration from resource-limits.yaml"""
 
@@ -225,7 +225,7 @@ declare -A PROFILE_MAP
 GPU_COUNT=$(nvidia-smi --query-gpu=count --format=csv,noheader | head -1)
 
 # Query profiles from first MIG-enabled GPU
-for ((i=0; i<GPU_COUNT; i++)); do
+for ((i = 0; i < GPU_COUNT; i++)); do
     MIG_MODE=$(nvidia-smi --query-gpu=mig.mode.current --format=csv,noheader -i $i)
 
     if [ "$MIG_MODE" = "Enabled" ]; then
@@ -233,7 +233,7 @@ for ((i=0; i<GPU_COUNT; i++)); do
         while IFS= read -r line; do
             # Extract profile name and ID from lines like:
             # |   1  MIG 1g.10gb       15     1/4        9.62       No     14     1     0   |
-            if [[ "$line" =~ MIG[[:space:]]+([0-9]+g\.[0-9]+gb[+a-z]*)[[:space:]]+([0-9]+)[[:space:]] ]]; then
+            if [[ $line =~ MIG[[:space:]]+([0-9]+g\.[0-9]+gb[+a-z]*)[[:space:]]+([0-9]+)[[:space:]] ]]; then
                 PROFILE_NAME="${BASH_REMATCH[1]}"
                 PROFILE_ID="${BASH_REMATCH[2]}"
                 PROFILE_MAP["$PROFILE_NAME"]="$PROFILE_ID"
@@ -317,7 +317,7 @@ for gpu in config:
 
             # Build comma-separated list of profile IDs
             PROFILE_LIST=""
-            for ((j=0; j<INSTANCES; j++)); do
+            for ((j = 0; j < INSTANCES; j++)); do
                 if [ $j -eq 0 ]; then
                     PROFILE_LIST="$PROFILE_ID"
                 else
