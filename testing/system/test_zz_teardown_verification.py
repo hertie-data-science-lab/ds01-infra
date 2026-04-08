@@ -14,7 +14,7 @@ import yaml
 
 from .conftest import CONFIG_FILE, CRON_FILE
 
-pytestmark = [pytest.mark.runtime]
+pytestmark = [pytest.mark.system]
 
 # Expected production values (must match resource-limits.yaml defaults)
 EXPECTED = {

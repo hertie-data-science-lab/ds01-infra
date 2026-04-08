@@ -31,7 +31,7 @@ jobs:
 
       - name: Run unit tests
         working-directory: /opt/ds01-infra/testing
-        run: pytest . -m "not runtime" -v --tb=short
+        run: pytest . -m "not system" -v --tb=short
 
   shellcheck:
     name: Shellcheck (differential)

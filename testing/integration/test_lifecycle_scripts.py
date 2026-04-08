@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Component Tests: Phase 6 — Lifecycle Script Validation
+Integration Tests: Phase 6 — Lifecycle Script Validation
 
 Tests that check-idle-containers.sh and enforce-max-runtime.sh have the correct
 structure and logic patterns after Phase 6 modifications. These tests validate
@@ -26,7 +26,7 @@ ENFORCE_RUNTIME = INFRA_ROOT / "scripts" / "maintenance" / "enforce-max-runtime.
 class TestScriptSyntax:
     """Validate bash scripts parse without errors."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_check_idle_containers_syntax(self):
         """check-idle-containers.sh passes bash -n syntax check."""
         result = subprocess.run(
@@ -37,7 +37,7 @@ class TestScriptSyntax:
         )
         assert result.returncode == 0, f"Syntax error: {result.stderr}"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_enforce_max_runtime_syntax(self):
         """enforce-max-runtime.sh passes bash -n syntax check."""
         result = subprocess.run(
@@ -61,65 +61,65 @@ class TestCheckIdleStructure:
     def load_script(self):
         self.content = CHECK_IDLE.read_text()
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_has_get_lifecycle_policies_function(self):
         """Script defines get_lifecycle_policies() function."""
         assert "get_lifecycle_policies()" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_has_check_exemption_function(self):
         """Script defines check_exemption() function."""
         assert "check_exemption()" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_has_get_sigterm_grace_function(self):
         """Script defines get_sigterm_grace() function."""
         assert "get_sigterm_grace()" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_has_send_informational_warning_function(self):
         """Script defines send_informational_warning() function."""
         assert "send_informational_warning()" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_calls_lifecycle_policies_cli(self):
         """Script calls get_resource_limits.py --lifecycle-policies."""
         assert "--lifecycle-policies" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_calls_check_exemption_cli(self):
         """Script calls get_resource_limits.py --check-exemption."""
         assert "--check-exemption" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_uses_idle_streak_tracking(self):
         """Script tracks IDLE_STREAK for detection window."""
         assert "IDLE_STREAK" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_parameterized_cpu_threshold(self):
         """is_container_active_secondary uses parameterized cpu threshold."""
         # Should NOT have hardcoded 1.0 for CPU threshold
         assert "cpu_threshold" in self.content or "CPU_THRESHOLD" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_parameterized_network_threshold(self):
         """is_container_active_secondary uses parameterized network threshold."""
         assert "network_threshold" in self.content or "NET_THRESHOLD" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_multi_signal_and_logic(self):
         """Idle detection uses AND logic across multiple signals."""
         # Script checks gpu_status then secondary_active (CPU+network)
         assert "gpu_status" in self.content
         assert "secondary_active" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_exempt_containers_get_warnings(self):
         """Exempt containers receive informational warnings, not enforcement."""
         assert "send_informational_warning" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_no_hardcoded_1_percent_cpu(self):
         """CPU idle threshold is not hardcoded to 1.0 (old value)."""
         # The old hardcoded value was 1.0 in is_container_active_secondary
@@ -153,17 +153,17 @@ class TestEnforceRuntimeStructure:
     def load_script(self):
         self.content = ENFORCE_RUNTIME.read_text()
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_has_check_exemption_function(self):
         """Script defines check_exemption() function."""
         assert "check_exemption()" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_calls_check_exemption_cli(self):
         """Script calls get_resource_limits.py --check-exemption max_runtime_h."""
         assert "--check-exemption" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_checks_exemption_before_enforcement(self):
         """Exemption check happens before stop action."""
         # check_exemption should appear before the stop logic
@@ -171,17 +171,17 @@ class TestEnforceRuntimeStructure:
         stop_pos = self.content.find("stop_runtime_exceeded")
         assert exemption_pos < stop_pos, "Exemption check should come before stop logic"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_logs_audit_events_for_exemption(self):
         """Script logs audit events when exemption is applied."""
         assert "runtime_exempt" in self.content or "exempt" in self.content.lower()
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_variable_sigterm_grace(self):
         """Script uses variable SIGTERM grace by container type."""
         assert "sigterm_grace" in self.content.lower() or "SIGTERM_GRACE" in self.content
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_uses_container_type_for_grace(self):
         """SIGTERM grace resolution checks container type."""
         assert "container_type" in self.content or "CONTAINER_TYPE" in self.content
@@ -195,7 +195,7 @@ class TestEnforceRuntimeStructure:
 class TestConfigFileStructure:
     """Validate Phase 6 config file structures."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_resource_limits_has_per_group_policies(self):
         """resource-limits.yaml has policies subsection in each group."""
         import yaml
@@ -219,7 +219,7 @@ class TestConfigFileStructure:
                 f"Group '{group_name}' missing idle_detection_window"
             )
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_global_policies_has_all_thresholds(self):
         """Global policies section has all Phase 6 threshold fields."""
         import yaml
@@ -242,7 +242,7 @@ class TestConfigFileStructure:
         for field in required:
             assert field in policies, f"Global policies missing '{field}'"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_container_types_sigterm_grace(self):
         """All container types have sigterm_grace_s."""
         import yaml
@@ -262,7 +262,7 @@ class TestConfigFileStructure:
                 f"container_types.{ct_name}.sigterm_grace_s should be numeric"
             )
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_lifecycle_exemptions_schema(self):
         """lifecycle-exemptions.yaml follows expected schema."""
         import yaml

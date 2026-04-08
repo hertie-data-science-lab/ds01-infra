@@ -30,11 +30,9 @@ Usage: $0 [OPTIONS] [CATEGORY]
 
 Categories:
   unit          Run unit tests only (fast, no external deps)
-  component     Run component tests (single components, may need Docker)
-  integration   Run integration tests (multiple components)
-  e2e           Run end-to-end tests (full workflows, slow)
-  runtime       Run runtime tests (real system, sudo required, ~15 min)
-  all           Run all tests except runtime (default)
+  integration   Run integration tests (real scripts via subprocess, may need Docker)
+  system        Run system tests (real Docker, GPU, containers — requires sudo)
+  all           Run all tests except system (default)
 
 Options:
   -v, --verbose     Verbose output
@@ -47,7 +45,7 @@ Options:
   -h, --help        Show this help
 
 Markers available:
-  unit, component, integration, e2e, runtime
+  unit, integration, system
   slow, requires_docker, requires_gpu, requires_root
 
 Examples:
@@ -56,7 +54,7 @@ Examples:
   $0 -v integration         # Verbose integration tests
   $0 --no-docker            # Skip Docker-dependent tests
   $0 -m "not slow"          # Skip slow tests
-  sudo $0 runtime            # Run runtime tests (~15 min, needs root)
+  sudo $0 system             # Run system tests (~15 min, needs root)
 
 EOF
     exit 0
@@ -65,7 +63,7 @@ EOF
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        unit|component|integration|e2e|runtime|all)
+        unit|integration|system|all)
             CATEGORY="$1"
             shift
             ;;
@@ -123,27 +121,19 @@ case $CATEGORY in
         TEST_PATH="unit/"
         echo -e "${BLUE}Running: Unit Tests${NC}"
         ;;
-    component)
-        TEST_PATH="component/"
-        echo -e "${BLUE}Running: Component Tests${NC}"
-        ;;
     integration)
         TEST_PATH="integration/"
         echo -e "${BLUE}Running: Integration Tests${NC}"
         ;;
-    e2e)
-        TEST_PATH="e2e/"
-        echo -e "${BLUE}Running: End-to-End Tests${NC}"
-        ;;
-    runtime)
-        TEST_PATH="runtime/"
-        MARKERS="$MARKERS -m runtime"
-        echo -e "${BLUE}Running: Runtime Tests (real system, ~15 min)${NC}"
+    system)
+        TEST_PATH="system/"
+        MARKERS="$MARKERS -m system"
+        echo -e "${BLUE}Running: System Tests (real system, ~15 min)${NC}"
         echo -e "${YELLOW}  Requires: sudo, GPU, Docker${NC}"
         ;;
     all)
         TEST_PATH=""
-        echo -e "${BLUE}Running: All Tests (excluding runtime)${NC}"
+        echo -e "${BLUE}Running: All Tests (excluding system)${NC}"
         ;;
 esac
 
