@@ -95,7 +95,7 @@ INFRA_ROOT=/opt/ds01-infra
 # ============================================================================
 
 # Monthly report - 1st of each month at 06:00
-0 6 1 * * root /opt/ds01-infra/scripts/monitoring/ds01-monthly-report >> /var/log/ds01/monthly-report.log 2>&1
+0 6 1 * * root $INFRA_ROOT/scripts/monitoring/ds01-monthly-report >> /var/log/ds01/monthly-report.log 2>&1
 
 # Note: Standard logrotate handles daily rotation via /etc/logrotate.d/ds01
 # Install logrotate config: sudo cp $INFRA_ROOT/config/logrotate.d/ds01 /etc/logrotate.d/

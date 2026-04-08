@@ -34,9 +34,6 @@ EVENTS_FILE = Path("/var/log/ds01/events.jsonl")
 REPORTS_DIR = Path("/var/log/ds01-infra/reports/monthly")
 GITHUB_REPO = "hertie-data-science-lab/ds01-hub"
 
-# Teams webhook URL: env var or config file
-TEAMS_WEBHOOK_URL = None
-
 
 def _load_teams_webhook_url() -> str | None:
     """Load Teams webhook URL from environment or config file."""
@@ -46,11 +43,12 @@ def _load_teams_webhook_url() -> str | None:
     if url:
         return url
 
-    config_file = INFRA_ROOT / "config/runtime/teams-webhook-url.txt"
-    if config_file.exists():
-        text = config_file.read_text().strip()
+    try:
+        text = (INFRA_ROOT / "config/runtime/teams-webhook-url.txt").read_text().strip()
         if text and not text.startswith("PLACEHOLDER"):
             return text
+    except OSError:
+        pass
 
     return None
 
@@ -133,91 +131,65 @@ def load_group_membership() -> dict[str, list[str]]:
     Returns dict of group -> list of usernames.
     """
     groups: dict[str, list[str]] = {}
-    for group in ("student", "researcher", "faculty", "admin"):
-        members_file = GROUPS_DIR / f"{group}.members"
+    for members_file in sorted(GROUPS_DIR.glob("*.members")):
+        group = members_file.stem
+        if group == "archived":
+            continue
         members: list[str] = []
-        if members_file.exists():
+        try:
             for line in members_file.read_text().splitlines():
                 line = line.split("#")[0].strip()
                 if line:
                     members.append(line)
+        except OSError:
+            continue
         groups[group] = members
     return groups
 
 
-def count_events_in_range(event_type: str, start_ts: float, end_ts: float) -> int:
-    """Count events of a given type in a timestamp range from events.jsonl."""
-    count = 0
-    files = [EVENTS_FILE]
-    # Also check rotated/archived files
-    events_dir = EVENTS_FILE.parent
-    for gz_file in sorted(events_dir.glob("events.jsonl-*.gz")):
-        files.append(gz_file)
-
-    for f in files:
-        try:
-            if str(f).endswith(".gz"):
-                import gzip
-
-                opener = gzip.open(f, "rt")
-            else:
-                opener = open(f)
-
-            with opener as fh:
-                for line in fh:
-                    try:
-                        event = json.loads(line.strip())
-                        if event.get("event_type") != event_type:
-                            continue
-                        ts_str = event.get("timestamp", "")
-                        if ts_str:
-                            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
-                            if start_ts <= ts.timestamp() <= end_ts:
-                                count += 1
-                    except (json.JSONDecodeError, ValueError):
-                        continue
-        except OSError:
-            continue
-
-    return count
+# Lifecycle event types to track in monthly reports
+LIFECYCLE_EVENT_TYPES = {
+    "maintenance.idle_kill": "idle_kill",
+    "maintenance.runtime_kill": "runtime_kill",
+    "resource.oom_kill": "oom_kill",
+}
 
 
-def count_lifecycle_events_in_range(start_ts: float, end_ts: float) -> dict[str, int]:
-    """Count lifecycle events by action type in a timestamp range."""
+def count_events_in_range(start_ts: float, end_ts: float, match_types: set[str]) -> dict[str, int]:
+    """Single-pass event log scan: count events by type within a time range.
+
+    Scans events.jsonl and rotated archives once, counting all matching event types.
+    """
+    import gzip
+
     counts: dict[str, int] = {}
-    target_types = {
-        "maintenance.idle_kill": "idle_kill",
-        "maintenance.runtime_kill": "runtime_kill",
-        "resource.oom_kill": "oom_kill",
-    }
+    files: list[Path] = []
 
-    files = [EVENTS_FILE]
+    # Collect all event log files
     events_dir = EVENTS_FILE.parent
     for gz_file in sorted(events_dir.glob("events.jsonl-*.gz")):
         files.append(gz_file)
+    # Also non-gzipped rotated files
+    for f in sorted(events_dir.glob("events.jsonl-*[0-9]")):
+        files.append(f)
+    if EVENTS_FILE.exists():
+        files.append(EVENTS_FILE)
 
     for f in files:
         try:
-            if str(f).endswith(".gz"):
-                import gzip
-
-                opener = gzip.open(f, "rt")
-            else:
-                opener = open(f)
-
+            opener = gzip.open(f, "rt") if f.suffix == ".gz" else open(f)
             with opener as fh:
                 for line in fh:
                     try:
                         event = json.loads(line.strip())
                         etype = event.get("event_type", "")
-                        if etype not in target_types:
+                        if etype not in match_types:
                             continue
                         ts_str = event.get("timestamp", "")
                         if ts_str:
                             ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
                             if start_ts <= ts.timestamp() <= end_ts:
-                                action = target_types[etype]
-                                counts[action] = counts.get(action, 0) + 1
+                                counts[etype] = counts.get(etype, 0) + 1
                     except (json.JSONDecodeError, ValueError):
                         continue
         except OSError:
@@ -322,8 +294,12 @@ def query_github_issues(month_start: str, month_end: str) -> dict[str, Any] | No
 # ============================================================================
 
 
-def generate_report(year: int, month: int) -> str:
-    """Generate the full monthly report as Markdown."""
+def generate_report(year: int, month: int) -> tuple[str, dict[str, str]]:
+    """Generate the full monthly report as Markdown.
+
+    Returns (report_text, summary_metrics) where summary_metrics is a dict
+    of key metric names to display values for the Teams card.
+    """
     days_in_month = calendar.monthrange(year, month)[1]
     month_name = calendar.month_name[month]
 
@@ -345,7 +321,22 @@ def generate_report(year: int, month: int) -> str:
     groups = load_group_membership()
     total_members = sum(len(m) for m in groups.values())
 
+    # Single-pass event log scan for all needed event types
+    event_types_needed = {"user.added"} | set(LIFECYCLE_EVENT_TYPES.keys())
+    event_counts = count_events_in_range(start_ts, end_ts, event_types_needed)
+
+    # Query user-group mapping once for table lookups
+    user_group_map: dict[str, str] = {}
+    for r in prom_query("ds01_user_group_info", query_time):
+        m = r.get("metric", {})
+        user_group_map[m.get("user", "")] = m.get("group", "")
+
+    def display_user(user: str) -> str:
+        """Strip domain for table display."""
+        return user.split("@")[0] if "@" in user else user
+
     lines: list[str] = []
+    summary: dict[str, str] = {}  # key metrics for Teams card
 
     def section(title: str) -> None:
         lines.append(f"\n## {title}\n")
@@ -395,6 +386,7 @@ def generate_report(year: int, month: int) -> str:
 
     lines.append(f"- **Total registered users:** {total_members}")
     lines.append(f"- **Active GPU users:** {active_gpu_users}")
+    summary["Active GPU users"] = str(active_gpu_users)
     if peak_users is not None:
         lines.append(f"- **Peak concurrent GPU users:** {int(peak_users)}")
     lines.append(f"- **Unique SSH users:** {len(ssh_users)}")
@@ -418,7 +410,7 @@ def generate_report(year: int, month: int) -> str:
         lines.append(f"| {group} | {member_count} | {active} |")
 
     # User growth
-    new_users = count_events_in_range("user.added", start_ts, end_ts)
+    new_users = event_counts.get("user.added", 0)
     if new_users > 0:
         lines.append(f"\n**New users this month:** {new_users}")
     else:
@@ -440,11 +432,13 @@ def generate_report(year: int, month: int) -> str:
 
     if total_gpu_hours is not None:
         lines.append(f"- **Total GPU-hours (allocated):** {total_gpu_hours:,.1f}")
+        summary["Total GPU-hours (allocated)"] = f"{total_gpu_hours:,.1f}"
     if weighted_gpu_hours is not None:
         lines.append(f"- **Total GPU-hours (utilisation-weighted):** {weighted_gpu_hours:,.1f}")
     if total_gpu_hours and weighted_gpu_hours and total_gpu_hours > 0:
         efficiency = (weighted_gpu_hours / total_gpu_hours) * 100
         lines.append(f"- **GPU efficiency:** {efficiency:.1f}%")
+        summary["GPU efficiency"] = f"{efficiency:.1f}%"
 
     # Average waste
     avg_waste = prom_scalar(f"avg_over_time(ds01:gpu_waste_percent[{range_str}])", query_time)
@@ -459,18 +453,11 @@ def generate_report(year: int, month: int) -> str:
 
     if user_gpu_hours:
         subsection("GPU-Hours by User (Top 15)")
-        user_groups_prom: dict[str, str] = {}
-        for r in prom_query("ds01_user_group_info", query_time):
-            m = r.get("metric", {})
-            user_groups_prom[m.get("user", "")] = m.get("group", "")
-
         lines.append("| User | Group | GPU-Hours |")
         lines.append("|------|-------|-----------|")
         for user, hours in sorted(user_gpu_hours.items(), key=lambda x: x[1], reverse=True):
-            group = user_groups_prom.get(user, "-")
-            # Truncate username for readability
-            display = user.split("@")[0] if "@" in user else user
-            lines.append(f"| {display} | {group} | {hours:,.1f} |")
+            group = user_group_map.get(user, "-")
+            lines.append(f"| {display_user(user)} | {group} | {hours:,.1f} |")
 
     # ========================================================================
     # Section 3: CPU Resource Usage
@@ -493,6 +480,7 @@ def generate_report(year: int, month: int) -> str:
 
     if avg_cpu is not None:
         lines.append(f"- **Average system CPU utilisation:** {avg_cpu:.1f}%")
+        summary["Average system CPU utilisation"] = f"{avg_cpu:.1f}%"
     if peak_cpu is not None:
         lines.append(f"- **Peak system CPU utilisation:** {peak_cpu:.1f}%")
 
@@ -504,17 +492,11 @@ def generate_report(year: int, month: int) -> str:
 
     if user_cpu_hours:
         subsection("CPU-Hours by User (Top 15)")
-        user_groups_prom_2: dict[str, str] = {}
-        for r in prom_query("ds01_user_group_info", query_time):
-            m = r.get("metric", {})
-            user_groups_prom_2[m.get("user", "")] = m.get("group", "")
-
         lines.append("| User | Group | CPU-Hours |")
         lines.append("|------|-------|-----------|")
         for user, hours in sorted(user_cpu_hours.items(), key=lambda x: x[1], reverse=True):
-            group = user_groups_prom_2.get(user, "-")
-            display = user.split("@")[0] if "@" in user else user
-            lines.append(f"| {display} | {group} | {hours:,.1f} |")
+            group = user_group_map.get(user, "-")
+            lines.append(f"| {display_user(user)} | {group} | {hours:,.1f} |")
     else:
         lines.append("*Per-user CPU data not yet available (requires ds01-exporter v2.3.0+).*")
 
@@ -598,8 +580,10 @@ def generate_report(year: int, month: int) -> str:
     if peak_temp is not None:
         lines.append(f"- **Peak GPU temperature:** {peak_temp:.0f} C")
 
-    # Lifecycle events from event log
-    lifecycle = count_lifecycle_events_in_range(start_ts, end_ts)
+    # Lifecycle events from event log (already scanned above)
+    lifecycle = {
+        LIFECYCLE_EVENT_TYPES[k]: v for k, v in event_counts.items() if k in LIFECYCLE_EVENT_TYPES
+    }
     if lifecycle:
         event_parts = [f"{k}: {v}" for k, v in sorted(lifecycle.items())]
         lines.append(f"- **Lifecycle events:** {', '.join(event_parts)}")
@@ -614,6 +598,7 @@ def generate_report(year: int, month: int) -> str:
     tickets = query_github_issues(month_start, month_end)
     if tickets:
         lines.append(f"- **Issues opened:** {tickets['opened']}")
+        summary["Issues opened"] = str(tickets["opened"])
         lines.append(f"- **Issues closed:** {tickets['closed']}")
         if tickets["resolution_days"] is not None:
             lines.append(f"- **Average resolution time:** {tickets['resolution_days']:.1f} days")
@@ -638,7 +623,7 @@ def generate_report(year: int, month: int) -> str:
         f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*"
     )
 
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines) + "\n", summary
 
 
 # ============================================================================
@@ -646,21 +631,9 @@ def generate_report(year: int, month: int) -> str:
 # ============================================================================
 
 
-def build_teams_summary(report: str, year: int, month: int) -> str:
-    """Extract key metrics from the report for a Teams summary card."""
+def build_teams_summary(summary: dict[str, str], year: int, month: int) -> str:
+    """Build a Teams Adaptive Card from structured summary metrics."""
     month_name = calendar.month_name[month]
-
-    # Parse key numbers from the report
-    metrics: dict[str, str] = {}
-    for line in report.splitlines():
-        if line.startswith("- **"):
-            # Extract "Key: Value" from "- **Key:** Value"
-            try:
-                key = line.split("**")[1].rstrip(":")
-                value = line.split("**")[-1].strip()
-                metrics[key] = value
-            except IndexError:
-                pass
 
     summary_parts = []
     for key in [
@@ -670,8 +643,8 @@ def build_teams_summary(report: str, year: int, month: int) -> str:
         "Average system CPU utilisation",
         "Issues opened",
     ]:
-        if key in metrics:
-            summary_parts.append(f"{key}: {metrics[key]}")
+        if key in summary:
+            summary_parts.append(f"{key}: {summary[key]}")
 
     summary_text = " | ".join(summary_parts) if summary_parts else "Report generated"
 
@@ -781,7 +754,7 @@ def main() -> None:
     print(f"Generating report for {month_name} {year}...")
 
     # Generate
-    report = generate_report(year, month)
+    report, summary = generate_report(year, month)
 
     if args.dry_run:
         print(report)
@@ -799,7 +772,7 @@ def main() -> None:
     # Post to Teams
     if not args.no_teams:
         print("Posting summary to Teams...")
-        payload = build_teams_summary(report, year, month)
+        payload = build_teams_summary(summary, year, month)
         if post_to_teams(payload):
             print("Teams notification sent.")
         else:
