@@ -1,0 +1,812 @@
+#!/usr/bin/env python3
+"""
+DS01 Monthly Report Generator
+
+Queries Prometheus, GitHub Issues, group membership files, and the event log
+to produce a monthly summary report. Optionally posts a summary to Teams.
+
+Usage:
+    ds01-monthly-report                    # Previous month, save + post
+    ds01-monthly-report --month 2026-03    # Specific month
+    ds01-monthly-report --dry-run          # Print to stdout only
+    ds01-monthly-report --no-teams         # Save but don't post
+"""
+
+import argparse
+import calendar
+import json
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+PROMETHEUS_URL = "http://localhost:9090"
+INFRA_ROOT = Path("/opt/ds01-infra")
+GROUPS_DIR = INFRA_ROOT / "config/runtime/groups"
+EVENTS_FILE = Path("/var/log/ds01/events.jsonl")
+REPORTS_DIR = Path("/var/log/ds01-infra/reports/monthly")
+GITHUB_REPO = "hertie-data-science-lab/ds01-hub"
+
+# Teams webhook URL: env var or config file
+TEAMS_WEBHOOK_URL = None
+
+
+def _load_teams_webhook_url() -> str | None:
+    """Load Teams webhook URL from environment or config file."""
+    import os
+
+    url = os.environ.get("DS01_TEAMS_WEBHOOK_URL")
+    if url:
+        return url
+
+    config_file = INFRA_ROOT / "config/runtime/teams-webhook-url.txt"
+    if config_file.exists():
+        text = config_file.read_text().strip()
+        if text and not text.startswith("PLACEHOLDER"):
+            return text
+
+    return None
+
+
+# ============================================================================
+# Prometheus Client
+# ============================================================================
+
+
+def prom_query(expr: str, time: str | None = None) -> list[dict]:
+    """Execute an instant query against Prometheus."""
+    params = f"query={urllib.request.quote(expr)}"
+    if time:
+        params += f"&time={urllib.request.quote(time)}"
+
+    url = f"{PROMETHEUS_URL}/api/v1/query?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            data = json.loads(resp.read())
+            if data.get("status") == "success":
+                return data["data"]["result"]
+    except (urllib.error.URLError, json.JSONDecodeError, KeyError, OSError):
+        pass
+    return []
+
+
+def prom_query_range(expr: str, start: str, end: str, step: str = "1h") -> list[dict]:
+    """Execute a range query against Prometheus."""
+    params = (
+        f"query={urllib.request.quote(expr)}"
+        f"&start={urllib.request.quote(start)}"
+        f"&end={urllib.request.quote(end)}"
+        f"&step={urllib.request.quote(step)}"
+    )
+    url = f"{PROMETHEUS_URL}/api/v1/query_range?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            data = json.loads(resp.read())
+            if data.get("status") == "success":
+                return data["data"]["result"]
+    except (urllib.error.URLError, json.JSONDecodeError, KeyError, OSError):
+        pass
+    return []
+
+
+def prom_scalar(expr: str, time: str | None = None) -> float | None:
+    """Get a single scalar value from Prometheus."""
+    results = prom_query(expr, time)
+    if results:
+        try:
+            return float(results[0]["value"][1])
+        except (IndexError, KeyError, ValueError):
+            pass
+    return None
+
+
+def prom_vector(expr: str, time: str | None = None) -> dict[str, float]:
+    """Get a label->value mapping from Prometheus."""
+    results = prom_query(expr, time)
+    out: dict[str, float] = {}
+    for r in results:
+        # Use the first non-__name__ label as key, or "user" if present
+        metric = r.get("metric", {})
+        key = metric.get("user") or metric.get("group") or str(metric)
+        try:
+            out[key] = float(r["value"][1])
+        except (KeyError, ValueError):
+            pass
+    return out
+
+
+# ============================================================================
+# Data Sources
+# ============================================================================
+
+
+def load_group_membership() -> dict[str, list[str]]:
+    """Load group membership from .members files.
+
+    Returns dict of group -> list of usernames.
+    """
+    groups: dict[str, list[str]] = {}
+    for group in ("student", "researcher", "faculty", "admin"):
+        members_file = GROUPS_DIR / f"{group}.members"
+        members: list[str] = []
+        if members_file.exists():
+            for line in members_file.read_text().splitlines():
+                line = line.split("#")[0].strip()
+                if line:
+                    members.append(line)
+        groups[group] = members
+    return groups
+
+
+def count_events_in_range(event_type: str, start_ts: float, end_ts: float) -> int:
+    """Count events of a given type in a timestamp range from events.jsonl."""
+    count = 0
+    files = [EVENTS_FILE]
+    # Also check rotated/archived files
+    events_dir = EVENTS_FILE.parent
+    for gz_file in sorted(events_dir.glob("events.jsonl-*.gz")):
+        files.append(gz_file)
+
+    for f in files:
+        try:
+            if str(f).endswith(".gz"):
+                import gzip
+
+                opener = gzip.open(f, "rt")
+            else:
+                opener = open(f)
+
+            with opener as fh:
+                for line in fh:
+                    try:
+                        event = json.loads(line.strip())
+                        if event.get("event_type") != event_type:
+                            continue
+                        ts_str = event.get("timestamp", "")
+                        if ts_str:
+                            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                            if start_ts <= ts.timestamp() <= end_ts:
+                                count += 1
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+        except OSError:
+            continue
+
+    return count
+
+
+def count_lifecycle_events_in_range(start_ts: float, end_ts: float) -> dict[str, int]:
+    """Count lifecycle events by action type in a timestamp range."""
+    counts: dict[str, int] = {}
+    target_types = {
+        "maintenance.idle_kill": "idle_kill",
+        "maintenance.runtime_kill": "runtime_kill",
+        "resource.oom_kill": "oom_kill",
+    }
+
+    files = [EVENTS_FILE]
+    events_dir = EVENTS_FILE.parent
+    for gz_file in sorted(events_dir.glob("events.jsonl-*.gz")):
+        files.append(gz_file)
+
+    for f in files:
+        try:
+            if str(f).endswith(".gz"):
+                import gzip
+
+                opener = gzip.open(f, "rt")
+            else:
+                opener = open(f)
+
+            with opener as fh:
+                for line in fh:
+                    try:
+                        event = json.loads(line.strip())
+                        etype = event.get("event_type", "")
+                        if etype not in target_types:
+                            continue
+                        ts_str = event.get("timestamp", "")
+                        if ts_str:
+                            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                            if start_ts <= ts.timestamp() <= end_ts:
+                                action = target_types[etype]
+                                counts[action] = counts.get(action, 0) + 1
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+        except OSError:
+            continue
+
+    return counts
+
+
+def query_github_issues(month_start: str, month_end: str) -> dict[str, Any] | None:
+    """Query GitHub Issues for the given month via gh CLI.
+
+    Args:
+        month_start: ISO date string (e.g., "2026-03-01")
+        month_end: ISO date string (e.g., "2026-03-31")
+
+    Returns dict with keys: opened, closed, resolution_days, by_label, or None on failure.
+    """
+    try:
+        # Get all issues created or updated in the period
+        result = subprocess.run(
+            [
+                "gh",
+                "issue",
+                "list",
+                "--repo",
+                GITHUB_REPO,
+                "--state",
+                "all",
+                "--json",
+                "number,title,state,createdAt,closedAt,labels",
+                "--limit",
+                "500",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+
+        issues = json.loads(result.stdout)
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+        return None
+
+    start_dt = datetime.fromisoformat(f"{month_start}T00:00:00+00:00")
+    end_dt = datetime.fromisoformat(f"{month_end}T23:59:59+00:00")
+
+    opened = 0
+    closed = 0
+    resolution_times: list[float] = []
+    by_label: dict[str, dict[str, int]] = {}  # label -> {opened, closed}
+
+    for issue in issues:
+        created_str = issue.get("createdAt", "")
+        closed_str = issue.get("closedAt")
+
+        try:
+            created = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            continue
+
+        # Count opened in month
+        if start_dt <= created <= end_dt:
+            opened += 1
+            for label in issue.get("labels", []):
+                name = label.get("name", "unlabelled")
+                if name not in by_label:
+                    by_label[name] = {"opened": 0, "closed": 0}
+                by_label[name]["opened"] += 1
+
+        # Count closed in month
+        if closed_str:
+            try:
+                closed_dt = datetime.fromisoformat(closed_str.replace("Z", "+00:00"))
+                if start_dt <= closed_dt <= end_dt:
+                    closed += 1
+                    for label in issue.get("labels", []):
+                        name = label.get("name", "unlabelled")
+                        if name not in by_label:
+                            by_label[name] = {"opened": 0, "closed": 0}
+                        by_label[name]["closed"] += 1
+
+                    # Resolution time
+                    delta = (closed_dt - created).total_seconds() / 86400
+                    if delta >= 0:
+                        resolution_times.append(delta)
+            except (ValueError, AttributeError):
+                pass
+
+    avg_resolution = sum(resolution_times) / len(resolution_times) if resolution_times else None
+
+    return {
+        "opened": opened,
+        "closed": closed,
+        "resolution_days": avg_resolution,
+        "by_label": by_label,
+    }
+
+
+# ============================================================================
+# Report Generation
+# ============================================================================
+
+
+def generate_report(year: int, month: int) -> str:
+    """Generate the full monthly report as Markdown."""
+    days_in_month = calendar.monthrange(year, month)[1]
+    month_name = calendar.month_name[month]
+
+    # Time boundaries
+    month_start = f"{year}-{month:02d}-01"
+    month_end = f"{year}-{month:02d}-{days_in_month:02d}"
+    # Prometheus query time: end of month (or now if current month)
+    query_time = f"{year}-{month:02d}-{days_in_month:02d}T23:59:59Z"
+    range_str = f"{days_in_month}d"
+
+    # Timestamps for event log queries
+    start_ts = datetime(year, month, 1, tzinfo=timezone.utc).timestamp()
+    if month == 12:
+        end_ts = datetime(year + 1, 1, 1, tzinfo=timezone.utc).timestamp()
+    else:
+        end_ts = datetime(year, month + 1, 1, tzinfo=timezone.utc).timestamp()
+
+    # Load group membership
+    groups = load_group_membership()
+    total_members = sum(len(m) for m in groups.values())
+
+    lines: list[str] = []
+
+    def section(title: str) -> None:
+        lines.append(f"\n## {title}\n")
+
+    def subsection(title: str) -> None:
+        lines.append(f"\n### {title}\n")
+
+    # Header
+    lines.append(f"# DS01 Monthly Report -- {month_name} {year}")
+    lines.append("")
+    lines.append(f"**Period:** {month_start} to {month_end}")
+    lines.append(f"**Generated:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    lines.append("")
+    lines.append("---")
+
+    # ========================================================================
+    # Section 1: User Activity
+    # ========================================================================
+    section("User Activity")
+
+    # Active GPU users (distinct users with allocations during the month)
+    gpu_users = prom_vector(
+        f"count by (user)(count_over_time(ds01_gpu_allocated[{range_str}]))",
+        query_time,
+    )
+    active_gpu_users = len(gpu_users)
+
+    # Peak concurrent GPU users
+    peak_users = prom_scalar(f"max_over_time(ds01:system_active_users[{range_str}])", query_time)
+
+    # SSH users (distinct users with sessions during the month)
+    ssh_range = prom_query_range(
+        "ds01_ssh_sessions_active",
+        f"{month_start}T00:00:00Z",
+        f"{month_end}T23:59:59Z",
+        "15m",
+    )
+    ssh_users = set()
+    for series in ssh_range:
+        user = series.get("metric", {}).get("user", "")
+        if user:
+            # Check if any value > 0
+            for _, val in series.get("values", []):
+                if float(val) > 0:
+                    ssh_users.add(user)
+                    break
+
+    lines.append(f"- **Total registered users:** {total_members}")
+    lines.append(f"- **Active GPU users:** {active_gpu_users}")
+    if peak_users is not None:
+        lines.append(f"- **Peak concurrent GPU users:** {int(peak_users)}")
+    lines.append(f"- **Unique SSH users:** {len(ssh_users)}")
+
+    # By group
+    subsection("By Group")
+
+    # Get active GPU users per group from Prometheus
+    gpu_by_group = prom_vector(
+        f"count by (group)(count_over_time("
+        f"(ds01_gpu_allocated * on(user) group_left(group) ds01_user_group_info)"
+        f"[{range_str}]))",
+        query_time,
+    )
+
+    lines.append("| Group | Members | Active (GPU) |")
+    lines.append("|-------|---------|--------------|")
+    for group in ("student", "researcher", "faculty", "admin"):
+        member_count = len(groups.get(group, []))
+        active = int(gpu_by_group.get(group, 0))
+        lines.append(f"| {group} | {member_count} | {active} |")
+
+    # User growth
+    new_users = count_events_in_range("user.added", start_ts, end_ts)
+    if new_users > 0:
+        lines.append(f"\n**New users this month:** {new_users}")
+    else:
+        lines.append("\n*User growth tracking enabled -- data available from next sync cycle.*")
+
+    # ========================================================================
+    # Section 2: GPU Resource Usage
+    # ========================================================================
+    section("GPU Resource Usage")
+
+    # Total GPU-hours
+    total_gpu_hours = prom_scalar(
+        f"sum(increase(ds01:user_gpu_seconds[{range_str}])) / 3600", query_time
+    )
+    weighted_gpu_hours = prom_scalar(
+        f"sum(increase(ds01:user_gpu_seconds_weighted[{range_str}])) / 3600",
+        query_time,
+    )
+
+    if total_gpu_hours is not None:
+        lines.append(f"- **Total GPU-hours (allocated):** {total_gpu_hours:,.1f}")
+    if weighted_gpu_hours is not None:
+        lines.append(f"- **Total GPU-hours (utilisation-weighted):** {weighted_gpu_hours:,.1f}")
+    if total_gpu_hours and weighted_gpu_hours and total_gpu_hours > 0:
+        efficiency = (weighted_gpu_hours / total_gpu_hours) * 100
+        lines.append(f"- **GPU efficiency:** {efficiency:.1f}%")
+
+    # Average waste
+    avg_waste = prom_scalar(f"avg_over_time(ds01:gpu_waste_percent[{range_str}])", query_time)
+    if avg_waste is not None:
+        lines.append(f"- **Average GPU waste:** {avg_waste:.1f}%")
+
+    # Per-user GPU-hours (top 15)
+    user_gpu_hours = prom_vector(
+        f"topk(15, increase(ds01:user_gpu_seconds[{range_str}]) / 3600)",
+        query_time,
+    )
+
+    if user_gpu_hours:
+        subsection("GPU-Hours by User (Top 15)")
+        user_groups_prom: dict[str, str] = {}
+        for r in prom_query("ds01_user_group_info", query_time):
+            m = r.get("metric", {})
+            user_groups_prom[m.get("user", "")] = m.get("group", "")
+
+        lines.append("| User | Group | GPU-Hours |")
+        lines.append("|------|-------|-----------|")
+        for user, hours in sorted(user_gpu_hours.items(), key=lambda x: x[1], reverse=True):
+            group = user_groups_prom.get(user, "-")
+            # Truncate username for readability
+            display = user.split("@")[0] if "@" in user else user
+            lines.append(f"| {display} | {group} | {hours:,.1f} |")
+
+    # ========================================================================
+    # Section 3: CPU Resource Usage
+    # ========================================================================
+    section("CPU Resource Usage")
+
+    # System CPU
+    avg_cpu = prom_scalar(
+        f"100 - (avg_over_time("
+        f'(avg(rate(node_cpu_seconds_total{{mode="idle"}}[5m])) * 100)'
+        f"[{range_str}:1h]))",
+        query_time,
+    )
+    peak_cpu = prom_scalar(
+        f"100 - (min_over_time("
+        f'(avg(rate(node_cpu_seconds_total{{mode="idle"}}[5m])) * 100)'
+        f"[{range_str}:1h]))",
+        query_time,
+    )
+
+    if avg_cpu is not None:
+        lines.append(f"- **Average system CPU utilisation:** {avg_cpu:.1f}%")
+    if peak_cpu is not None:
+        lines.append(f"- **Peak system CPU utilisation:** {peak_cpu:.1f}%")
+
+    # Per-user CPU-hours
+    user_cpu_hours = prom_vector(
+        f"topk(15, increase(ds01_user_cpu_usage_seconds_total[{range_str}]) / 3600)",
+        query_time,
+    )
+
+    if user_cpu_hours:
+        subsection("CPU-Hours by User (Top 15)")
+        user_groups_prom_2: dict[str, str] = {}
+        for r in prom_query("ds01_user_group_info", query_time):
+            m = r.get("metric", {})
+            user_groups_prom_2[m.get("user", "")] = m.get("group", "")
+
+        lines.append("| User | Group | CPU-Hours |")
+        lines.append("|------|-------|-----------|")
+        for user, hours in sorted(user_cpu_hours.items(), key=lambda x: x[1], reverse=True):
+            group = user_groups_prom_2.get(user, "-")
+            display = user.split("@")[0] if "@" in user else user
+            lines.append(f"| {display} | {group} | {hours:,.1f} |")
+    else:
+        lines.append("*Per-user CPU data not yet available (requires ds01-exporter v2.3.0+).*")
+
+    # ========================================================================
+    # Section 4: System Load & Capacity
+    # ========================================================================
+    section("System Load & Capacity")
+
+    subsection("GPU Capacity")
+
+    avg_allocated = prom_scalar(
+        f"avg_over_time(ds01:system_mig_allocated[{range_str}])", query_time
+    )
+    peak_allocated = prom_scalar(
+        f"max_over_time(ds01:system_mig_allocated[{range_str}])", query_time
+    )
+    avg_free = prom_scalar(f"avg_over_time(ds01:system_mig_free[{range_str}])", query_time)
+    total_slots = prom_scalar("ds01:system_mig_total", query_time)
+
+    if total_slots is not None:
+        lines.append(f"- **Total GPU/MIG slots:** {int(total_slots)}")
+    if avg_allocated is not None:
+        lines.append(f"- **Average allocated:** {avg_allocated:.1f}")
+    if peak_allocated is not None:
+        lines.append(f"- **Peak allocated:** {int(peak_allocated)}")
+    if avg_free is not None:
+        lines.append(f"- **Average free:** {avg_free:.1f}")
+
+    # Peak usage patterns
+    subsection("Peak Usage Patterns")
+
+    hourly_data = prom_query_range(
+        "ds01:hourly_mig_allocated_avg",
+        f"{month_start}T00:00:00Z",
+        f"{month_end}T23:59:59Z",
+        "1h",
+    )
+
+    if hourly_data:
+        # Aggregate by day-of-week and hour
+        hourly_buckets: dict[str, list[float]] = {}
+        day_names = [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+        ]
+
+        for series in hourly_data:
+            for ts_str, val_str in series.get("values", []):
+                try:
+                    ts = datetime.fromtimestamp(float(ts_str), tz=timezone.utc)
+                    val = float(val_str)
+                    key = f"{day_names[ts.weekday()]} {ts.hour:02d}:00"
+                    if key not in hourly_buckets:
+                        hourly_buckets[key] = []
+                    hourly_buckets[key].append(val)
+                except (ValueError, IndexError):
+                    continue
+
+        if hourly_buckets:
+            avg_by_slot = {k: sum(v) / len(v) for k, v in hourly_buckets.items()}
+            busiest = max(avg_by_slot, key=avg_by_slot.get)
+            quietest = min(avg_by_slot, key=avg_by_slot.get)
+            lines.append(f"- **Busiest period:** {busiest} (avg {avg_by_slot[busiest]:.1f} slots)")
+            lines.append(
+                f"- **Quietest period:** {quietest} (avg {avg_by_slot[quietest]:.1f} slots)"
+            )
+
+    # Temperature & health
+    subsection("Temperature & Health")
+
+    avg_temp = prom_scalar(f"avg_over_time(ds01:system_gpu_temp_avg[{range_str}])", query_time)
+    peak_temp = prom_scalar(f"max_over_time(ds01:system_gpu_temp_max[{range_str}])", query_time)
+
+    if avg_temp is not None:
+        lines.append(f"- **Average GPU temperature:** {avg_temp:.0f} C")
+    if peak_temp is not None:
+        lines.append(f"- **Peak GPU temperature:** {peak_temp:.0f} C")
+
+    # Lifecycle events from event log
+    lifecycle = count_lifecycle_events_in_range(start_ts, end_ts)
+    if lifecycle:
+        event_parts = [f"{k}: {v}" for k, v in sorted(lifecycle.items())]
+        lines.append(f"- **Lifecycle events:** {', '.join(event_parts)}")
+    else:
+        lines.append("- **Lifecycle events:** none")
+
+    # ========================================================================
+    # Section 5: Support Tickets
+    # ========================================================================
+    section("Support Tickets")
+
+    tickets = query_github_issues(month_start, month_end)
+    if tickets:
+        lines.append(f"- **Issues opened:** {tickets['opened']}")
+        lines.append(f"- **Issues closed:** {tickets['closed']}")
+        if tickets["resolution_days"] is not None:
+            lines.append(f"- **Average resolution time:** {tickets['resolution_days']:.1f} days")
+
+        if tickets["by_label"]:
+            subsection("By Category")
+            lines.append("| Category | Opened | Closed |")
+            lines.append("|----------|--------|--------|")
+            for label, counts in sorted(
+                tickets["by_label"].items(),
+                key=lambda x: x[1]["opened"],
+                reverse=True,
+            ):
+                lines.append(f"| {label} | {counts['opened']} | {counts['closed']} |")
+    else:
+        lines.append("*GitHub Issues data not available (ensure `gh` CLI is authenticated).*")
+
+    # Footer
+    lines.append("\n---")
+    lines.append(
+        f"\n*Generated by ds01-monthly-report on "
+        f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*"
+    )
+
+    return "\n".join(lines) + "\n"
+
+
+# ============================================================================
+# Teams Posting
+# ============================================================================
+
+
+def build_teams_summary(report: str, year: int, month: int) -> str:
+    """Extract key metrics from the report for a Teams summary card."""
+    month_name = calendar.month_name[month]
+
+    # Parse key numbers from the report
+    metrics: dict[str, str] = {}
+    for line in report.splitlines():
+        if line.startswith("- **"):
+            # Extract "Key: Value" from "- **Key:** Value"
+            try:
+                key = line.split("**")[1].rstrip(":")
+                value = line.split("**")[-1].strip()
+                metrics[key] = value
+            except IndexError:
+                pass
+
+    summary_parts = []
+    for key in [
+        "Active GPU users",
+        "Total GPU-hours (allocated)",
+        "GPU efficiency",
+        "Average system CPU utilisation",
+        "Issues opened",
+    ]:
+        if key in metrics:
+            summary_parts.append(f"{key}: {metrics[key]}")
+
+    summary_text = " | ".join(summary_parts) if summary_parts else "Report generated"
+
+    card = {
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "contentVersion": "1.4",
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": [
+                        {
+                            "type": "TextBlock",
+                            "text": f"DS01 Monthly Report -- {month_name} {year}",
+                            "weight": "Bolder",
+                            "size": "Medium",
+                        },
+                        {
+                            "type": "TextBlock",
+                            "text": summary_text,
+                            "wrap": True,
+                        },
+                        {
+                            "type": "TextBlock",
+                            "text": (
+                                f"Full report: "
+                                f"/var/log/ds01-infra/reports/monthly/"
+                                f"{year}-{month:02d}.md"
+                            ),
+                            "size": "Small",
+                            "isSubtle": True,
+                        },
+                    ],
+                },
+            }
+        ],
+    }
+    return json.dumps(card)
+
+
+def post_to_teams(payload: str) -> bool:
+    """Post an Adaptive Card payload to Teams via webhook."""
+    url = _load_teams_webhook_url()
+    if not url:
+        print("  Teams webhook URL not configured -- skipping", file=sys.stderr)
+        return False
+
+    try:
+        req = urllib.request.Request(
+            url,
+            data=payload.encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status in (200, 202)
+    except (urllib.error.URLError, OSError) as e:
+        print(f"  Teams post failed: {e}", file=sys.stderr)
+        return False
+
+
+# ============================================================================
+# Main
+# ============================================================================
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="DS01 Monthly Report Generator")
+    parser.add_argument(
+        "--month",
+        help="Month to report on (YYYY-MM). Defaults to previous month.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print report to stdout without saving or posting.",
+    )
+    parser.add_argument(
+        "--no-teams",
+        action="store_true",
+        help="Save report but don't post to Teams.",
+    )
+    args = parser.parse_args()
+
+    # Determine target month
+    if args.month:
+        try:
+            parts = args.month.split("-")
+            year, month = int(parts[0]), int(parts[1])
+            if not (1 <= month <= 12):
+                raise ValueError
+        except (ValueError, IndexError):
+            print(f"Invalid month format: {args.month} (expected YYYY-MM)")
+            sys.exit(1)
+    else:
+        # Previous month
+        now = datetime.now(timezone.utc)
+        if now.month == 1:
+            year, month = now.year - 1, 12
+        else:
+            year, month = now.year, now.month - 1
+
+    month_name = calendar.month_name[month]
+    print(f"Generating report for {month_name} {year}...")
+
+    # Generate
+    report = generate_report(year, month)
+
+    if args.dry_run:
+        print(report)
+        return
+
+    # Save to file
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    report_file = REPORTS_DIR / f"{year}-{month:02d}.md"
+    report_file.write_text(report)
+    latest_link = REPORTS_DIR / "_latest.md"
+    latest_link.unlink(missing_ok=True)
+    latest_link.symlink_to(report_file.name)
+    print(f"Report saved: {report_file}")
+
+    # Post to Teams
+    if not args.no_teams:
+        print("Posting summary to Teams...")
+        payload = build_teams_summary(report, year, month)
+        if post_to_teams(payload):
+            print("Teams notification sent.")
+        else:
+            print("Teams notification skipped or failed.")
+
+    print("Done.")
+
+
+if __name__ == "__main__":
+    main()
