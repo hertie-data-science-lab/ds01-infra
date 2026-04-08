@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Runtime Tests: Phase 6 — Lifecycle Enforcement on Live System
+System Tests: Phase 6 — Lifecycle Enforcement on Live System
 
 These tests require:
 - Root privileges (sudo)
@@ -11,7 +11,7 @@ These tests require:
 They create real containers, run lifecycle scripts, and verify enforcement
 behaviour with exemptions, multi-signal idle detection, and variable SIGTERM.
 
-Run with: sudo pytest testing/runtime/test_lifecycle_enforcement.py -m runtime -v
+Run with: sudo pytest testing/system/test_lifecycle_enforcement.py -m system -v
 """
 
 import json
@@ -113,7 +113,7 @@ def test_container(request):
 # =============================================================================
 
 
-@pytest.mark.runtime
+@pytest.mark.system
 @pytest.mark.requires_root
 class TestLivePolicyResolution:
     """Test policy resolution against live config."""
@@ -156,7 +156,7 @@ class TestLivePolicyResolution:
 # =============================================================================
 
 
-@pytest.mark.runtime
+@pytest.mark.system
 @pytest.mark.requires_root
 class TestLiveExemptionEnforcement:
     """Test that exempt containers are not stopped by lifecycle scripts."""
@@ -194,7 +194,7 @@ class TestLiveExemptionEnforcement:
 # =============================================================================
 
 
-@pytest.mark.runtime
+@pytest.mark.system
 @pytest.mark.requires_root
 class TestLiveScriptExecution:
     """Test that lifecycle scripts execute without errors on live system."""

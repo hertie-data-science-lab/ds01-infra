@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-E2E Tests: Container Workflow
+System Tests: Container Workflow
 Full end-to-end tests for container deploy/retire workflows
 """
 
@@ -12,7 +12,7 @@ import pytest
 
 
 class TestContainerDeployRetire:
-    """E2E tests for container-deploy and container-retire."""
+    """System tests for container-deploy and container-retire."""
 
     @pytest.fixture
     def test_project_name(self):
@@ -30,7 +30,7 @@ class TestContainerDeployRetire:
         container_name = f"{test_project_name}._.{os.getuid()}"
         subprocess.run(["docker", "rm", "-f", container_name], capture_output=True)
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     @pytest.mark.requires_docker
     @pytest.mark.requires_gpu
     @pytest.mark.slow
@@ -44,7 +44,7 @@ class TestContainerDeployRetire:
         # Script should at least run
         assert result.returncode in [0, 1]
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     def test_deploy_retire_output_consistency(self):
         """Deploy and retire produce consistent output for users."""
         deploy = Path("/opt/ds01-infra/scripts/user/orchestrators/container-deploy")
@@ -64,9 +64,9 @@ class TestContainerDeployRetire:
 
 
 class TestWizardWorkflows:
-    """E2E tests for wizard commands (project-init, user-setup)."""
+    """System tests for wizard commands (project-init, user-setup)."""
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     def test_project_init_help(self):
         """project-init shows help without errors."""
         project_init = Path("/opt/ds01-infra/scripts/user/project-init")
@@ -78,7 +78,7 @@ class TestWizardWorkflows:
         )
         assert result.returncode in [0, 1]
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     def test_user_setup_help(self):
         """user-setup shows help without errors."""
         user_setup = Path("/opt/ds01-infra/scripts/user/user-setup")
@@ -90,7 +90,7 @@ class TestWizardWorkflows:
         )
         assert result.returncode in [0, 1]
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     def test_wizard_sets_orchestration_context(self):
         """Wizards set orchestration context."""
         for script_name in ["project-init", "user-setup"]:
@@ -103,15 +103,15 @@ class TestWizardWorkflows:
 
 
 class TestDashboardE2E:
-    """E2E tests for dashboard command."""
+    """System tests for dashboard command."""
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     def test_dashboard_exists(self):
         """Dashboard command exists."""
         dashboard = Path("/opt/ds01-infra/scripts/admin/dashboard")
         assert dashboard.exists()
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     @pytest.mark.requires_docker
     def test_dashboard_default_view(self):
         """Dashboard default view executes and produces output."""
@@ -123,7 +123,7 @@ class TestDashboardE2E:
         assert len(result.stdout) > 100, "Dashboard should produce substantial output"
         assert "GPU" in result.stdout or "CONTAINER" in result.stdout
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     @pytest.mark.requires_docker
     @pytest.mark.xfail(reason="dashboard 'interfaces' subcommand removed — argument not recognised")
     def test_dashboard_interfaces_view(self):
@@ -138,9 +138,9 @@ class TestDashboardE2E:
 
 
 class TestHealthCheckE2E:
-    """E2E tests for health check system."""
+    """System tests for health check system."""
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     @pytest.mark.requires_docker
     def test_health_check_full_run(self):
         """Health check runs all checks."""
@@ -153,7 +153,7 @@ class TestHealthCheckE2E:
         # 0 = all pass, 1 = warnings, 2 = failures
         assert result.returncode in [0, 1, 2]
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     def test_health_check_components(self):
         """Health check validates critical components."""
         health_check = Path("/opt/ds01-infra/scripts/monitoring/ds01-health-check")
@@ -169,9 +169,9 @@ class TestHealthCheckE2E:
 
 
 class TestCommandDiscovery:
-    """E2E tests for command availability."""
+    """System tests for command availability."""
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     @pytest.mark.xfail(reason="container-deploy script not yet implemented (v1.1 Phase 14)")
     def test_user_commands_in_path(self):
         """User commands are accessible."""
@@ -188,7 +188,7 @@ class TestCommandDiscovery:
             assert path.exists(), f"Command not found: {cmd}"
             assert path.stat().st_mode & 0o111, f"Not executable: {cmd}"
 
-    @pytest.mark.e2e
+    @pytest.mark.system
     def test_admin_commands_exist(self):
         """Admin commands exist."""
         commands = ["dashboard"]

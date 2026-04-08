@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Component Tests: GPU State Reader
+Integration Tests: GPU State Reader
 Tests gpu-state-reader.py with real Docker (when available)
 """
 
@@ -18,12 +18,12 @@ class TestGPUStateReaderExecution:
 
     GPU_STATE_READER = Path("/opt/ds01-infra/scripts/docker/gpu-state-reader.py")
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_exists(self):
         """GPU state reader script exists."""
         assert self.GPU_STATE_READER.exists()
 
-    @pytest.mark.component
+    @pytest.mark.integration
     @pytest.mark.xfail(
         reason="py_compile fails due to read-only __pycache__ permissions in test environment"
     )
@@ -36,7 +36,7 @@ class TestGPUStateReaderExecution:
         )
         assert result.returncode == 0, f"Syntax error: {result.stderr}"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     @pytest.mark.requires_docker
     def test_all_command(self):
         """GPU state reader 'all' command executes."""
@@ -49,7 +49,7 @@ class TestGPUStateReaderExecution:
         # Should not crash (may have no containers)
         assert result.returncode == 0
 
-    @pytest.mark.component
+    @pytest.mark.integration
     @pytest.mark.requires_docker
     def test_by_interface_command(self):
         """GPU state reader 'by-interface' command executes."""
@@ -61,7 +61,7 @@ class TestGPUStateReaderExecution:
         )
         assert result.returncode == 0
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_usage_shown(self):
         """GPU state reader shows usage when called with no args."""
         result = subprocess.run(
@@ -88,17 +88,17 @@ class TestGPUStateReaderClass:
         except Exception as e:
             pytest.skip(f"Could not import GPUStateReader: {e}")
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_interface_detection_method_exists(self, reader):
         """GPUStateReader has _detect_interface method."""
         assert hasattr(reader, "_detect_interface")
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_mig_mapping_method_exists(self, reader):
         """GPUStateReader has _get_mig_uuid_to_slot_mapping method."""
         assert hasattr(reader, "_get_mig_uuid_to_slot_mapping")
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_cgroup_user_extraction_method_exists(self, reader):
         """GPUStateReader has _extract_user_from_cgroup method."""
         assert hasattr(reader, "_extract_user_from_cgroup")
@@ -112,7 +112,7 @@ class TestGPUStateReaderWithMockDocker:
         """Use sample container data from conftest."""
         return sample_docker_container
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_detect_orchestration_interface(self, mock_container_data):
         """Detect orchestration interface from labels."""
         mock_container_data["Config"]["Labels"]["ds01.interface"] = "orchestration"
@@ -128,7 +128,7 @@ class TestGPUStateReaderWithMockDocker:
 
         assert interface == "orchestration"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_detect_atomic_interface(self, mock_container_data):
         """Detect atomic interface from AIME naming."""
         mock_container_data["Config"]["Labels"].pop("ds01.interface", None)
@@ -144,7 +144,7 @@ class TestGPUStateReaderWithMockDocker:
 
         assert interface == "atomic"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_extract_gpu_from_device_requests(self, mock_container_data):
         """Extract GPU ID from DeviceRequests."""
         device_requests = mock_container_data["HostConfig"]["DeviceRequests"]
@@ -156,7 +156,7 @@ class TestGPUStateReaderWithMockDocker:
 
         assert "0" in gpu_ids
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_extract_user_from_cgroup_path(self, mock_container_data):
         """Extract user from cgroup parent path."""
         import re
@@ -176,7 +176,7 @@ class TestGPUStateReaderWithMockDocker:
 class TestGPUStateReaderInterfaceCategories:
     """Tests for interface category grouping."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_interface_categories_complete(self):
         """All four interface categories defined."""
         expected = {"orchestration", "atomic", "docker", "other"}

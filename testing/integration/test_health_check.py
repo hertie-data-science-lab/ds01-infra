@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Component Tests: Health Check Script
+Integration Tests: Health Check Script
 Tests ds01-health-check functionality
 """
 
@@ -15,17 +15,17 @@ class TestHealthCheckScript:
 
     HEALTH_CHECK = Path("/opt/ds01-infra/scripts/monitoring/ds01-health-check")
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_exists(self):
         """Health check script exists."""
         assert self.HEALTH_CHECK.exists()
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_executable(self):
         """Health check script is executable."""
         assert self.HEALTH_CHECK.stat().st_mode & 0o111
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_help_flag(self):
         """Health check shows help with --help."""
         result = subprocess.run(
@@ -34,7 +34,7 @@ class TestHealthCheckScript:
         # Should show help or at least not crash
         assert result.returncode == 0 or "usage" in result.stdout.lower() + result.stderr.lower()
 
-    @pytest.mark.component
+    @pytest.mark.integration
     @pytest.mark.requires_docker
     def test_basic_execution(self):
         """Health check executes without critical failure."""
@@ -44,19 +44,19 @@ class TestHealthCheckScript:
         # Exit code 0 = all pass, 1 = some warnings, 2 = failures
         assert result.returncode in [0, 1, 2]
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_has_docker_check(self):
         """Health check includes Docker daemon check."""
         content = self.HEALTH_CHECK.read_text()
         assert "docker" in content.lower()
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_has_nvidia_check(self):
         """Health check includes NVIDIA/GPU check."""
         content = self.HEALTH_CHECK.read_text()
         assert "nvidia" in content.lower() or "gpu" in content.lower()
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_has_cgroup_check(self):
         """Health check includes cgroup check."""
         content = self.HEALTH_CHECK.read_text()
@@ -68,7 +68,7 @@ class TestHealthCheckOutput:
 
     HEALTH_CHECK = Path("/opt/ds01-infra/scripts/monitoring/ds01-health-check")
 
-    @pytest.mark.component
+    @pytest.mark.integration
     @pytest.mark.requires_docker
     def test_output_has_status_indicators(self):
         """Health check output includes pass/fail indicators."""
@@ -82,7 +82,7 @@ class TestHealthCheckOutput:
         )
         assert has_indicators or result.returncode == 0
 
-    @pytest.mark.component
+    @pytest.mark.integration
     @pytest.mark.requires_docker
     def test_json_output_option(self):
         """Health check supports --json output."""

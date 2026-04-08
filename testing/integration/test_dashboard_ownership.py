@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Component Tests: Dashboard Ownership Integration
+Integration Tests: Dashboard Ownership Integration
 
 Tests for the dashboard's integration with the container ownership tracking file.
 Focuses on the _load_ownership_file() method and extract_owner() fallback.
@@ -91,7 +91,7 @@ def sample_ownership_data():
 class TestOwnershipFileLoading:
     """Tests for _load_ownership_file() method."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_loads_valid_ownership_file(self, temp_ownership_file, sample_ownership_data):
         """Successfully loads valid ownership JSON file."""
         with open(temp_ownership_file, "w") as f:
@@ -107,7 +107,7 @@ class TestOwnershipFileLoading:
         assert "labeled-container" in result["containers"]
         assert result["containers"]["labeled-container"]["owner"] == "labeled-user"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_returns_empty_for_missing_file(self, temp_dir):
         """Returns empty structure when file doesn't exist."""
         missing_file = temp_dir / "nonexistent-ownership-file-12345.json"
@@ -120,7 +120,7 @@ class TestOwnershipFileLoading:
 
         assert result == {"containers": {}}
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_returns_empty_for_corrupt_file(self, temp_ownership_file):
         """Returns empty structure for corrupt JSON file."""
         with open(temp_ownership_file, "w") as f:
@@ -134,7 +134,7 @@ class TestOwnershipFileLoading:
 
         assert result == {"containers": {}}
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_caches_ownership_data(self, temp_ownership_file, sample_ownership_data):
         """Caches ownership data to avoid repeated file reads."""
         with open(temp_ownership_file, "w") as f:
@@ -155,7 +155,7 @@ class TestOwnershipFileLoading:
         assert module.DashboardData._ownership_cache_time == cache_time
         assert module.DashboardData._ownership_cache is not None
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_cache_expires_after_timeout(self, temp_ownership_file, sample_ownership_data):
         """Cache expires after 5 seconds."""
         with open(temp_ownership_file, "w") as f:
@@ -190,7 +190,7 @@ class TestOwnershipFileLoading:
 class TestExtractOwnerFallback:
     """Tests for extract_owner() ownership file fallback."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_ds01_label_takes_priority(self, temp_ownership_file, sample_ownership_data):
         """ds01.user label takes priority over ownership file."""
         with open(temp_ownership_file, "w") as f:
@@ -210,7 +210,7 @@ class TestExtractOwnerFallback:
 
         assert result == "explicit-ds01-user"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_aime_label_takes_priority(self, temp_ownership_file, sample_ownership_data):
         """aime.mlc.USER label takes priority over ownership file."""
         with open(temp_ownership_file, "w") as f:
@@ -230,7 +230,7 @@ class TestExtractOwnerFallback:
 
         assert result == "aime-user"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_devcontainer_path_takes_priority(self, temp_ownership_file, sample_ownership_data):
         """devcontainer.local_folder path takes priority over ownership file."""
         with open(temp_ownership_file, "w") as f:
@@ -250,7 +250,7 @@ class TestExtractOwnerFallback:
 
         assert result == "devcontainer-user"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_falls_back_to_ownership_file(self, temp_ownership_file, sample_ownership_data):
         """Falls back to ownership file when no labels present."""
         with open(temp_ownership_file, "w") as f:
@@ -270,7 +270,7 @@ class TestExtractOwnerFallback:
 
         assert result == "mount-user"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_returns_other_when_not_found(self, temp_ownership_file, sample_ownership_data):
         """Returns '(other)' when container not in ownership file."""
         with open(temp_ownership_file, "w") as f:
@@ -290,7 +290,7 @@ class TestExtractOwnerFallback:
 
         assert result == "(other)"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_handles_empty_container_name(self, temp_ownership_file, sample_ownership_data):
         """Handles empty container name gracefully."""
         with open(temp_ownership_file, "w") as f:
@@ -319,7 +319,7 @@ class TestExtractOwnerFallback:
 class TestDashboardOwnershipEdgeCases:
     """Edge case tests for dashboard ownership integration."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_handles_domain_username(self, temp_ownership_file):
         """Handles domain usernames with @ symbol."""
         data = {
@@ -348,7 +348,7 @@ class TestDashboardOwnershipEdgeCases:
 
         assert result == "h.baker@hertie-school.lan"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_handles_unicode_in_container_name(self, temp_ownership_file):
         """Handles unicode characters in container names."""
         data = {
@@ -377,7 +377,7 @@ class TestDashboardOwnershipEdgeCases:
 
         assert result == "test-user"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_handles_missing_owner_field(self, temp_ownership_file):
         """Handles container entry with missing owner field."""
         data = {
@@ -407,7 +407,7 @@ class TestDashboardOwnershipEdgeCases:
         # Should return (other) since owner is None/missing
         assert result == "(other)"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_handles_null_owner_value(self, temp_ownership_file):
         """Handles container entry with null owner value."""
         data = {

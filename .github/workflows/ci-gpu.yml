@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Run runtime tests against live system
         working-directory: /opt/ds01-infra/testing
-        run: sudo /home/datasciencelab/anaconda3/bin/python -m pytest . -m "runtime" -v --tb=short
+        run: sudo /home/datasciencelab/anaconda3/bin/python -m pytest . -v --tb=short
 
       - name: Create issue on failure
         if: failure()
