@@ -9,3 +9,6 @@ disable=SC1091
 
 # Variable referenced but not assigned (variables set via sourced init scripts)
 disable=SC2154
+
+# Declare and assign separately (pervasive local var=$(cmd) pattern throughout codebase)
+disable=SC2155

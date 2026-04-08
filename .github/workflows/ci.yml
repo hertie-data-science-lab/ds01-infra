@@ -61,7 +61,7 @@ jobs:
       - uses: mfinelli/setup-shfmt@v2
         with:
           shfmt-version: 3.10.0
-      - run: find scripts/ -name '*.sh' -not -path '*/aime-ml-containers/*' | xargs shfmt -d -i 4 -ci -s
+      - run: find scripts/ -name '*.sh' -not -path '*/aime-ml-containers/*' -exec shfmt -d -i 4 -ci -s {} +
 
   shellcheck:
     name: Shellcheck
