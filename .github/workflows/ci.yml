@@ -9,6 +9,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Branch protection should require the single "CI" gate job, not individual jobs.
+# Individual jobs are skipped by path filtering; the gate job handles the rollup.
+
 jobs:
   changes:
     name: Detect changes
@@ -34,9 +37,8 @@ jobs:
             workflows:
               - '.github/workflows/**'
 
-  # Job name must match branch protection rule exactly
   ruff:
-    name: Ruff Lint & Format Check
+    name: Ruff
     needs: changes
     if: needs.changes.outputs.python == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -50,7 +52,7 @@ jobs:
           args: check
 
   shfmt:
-    name: Shell format check
+    name: Shell format
     needs: changes
     if: needs.changes.outputs.shell == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -61,9 +63,8 @@ jobs:
           shfmt-version: 3.10.0
       - run: find scripts/ -name '*.sh' -not -path '*/aime-ml-containers/*' | xargs shfmt -d -i 4 -ci -s
 
-  # Job name must match branch protection rule exactly
   shellcheck:
-    name: Shellcheck (differential)
+    name: Shellcheck
     needs: changes
     if: needs.changes.outputs.shell == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -79,9 +80,8 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # Job name must match branch protection rule exactly
   pytest:
-    name: pytest (unit tests)
+    name: Tests
     needs: changes
     if: needs.changes.outputs.python == 'true' || needs.changes.outputs.shell == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -102,8 +102,25 @@ jobs:
   actionlint:
     name: Lint workflows
     needs: changes
-    if: needs.changes.outputs.workflows == 'true'
+    if: needs.changes.outputs.workflows == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: raven-actions/actionlint@v2
+
+  # Gate job — branch protection requires this single check.
+  # Passes if all checks pass or are skipped; fails if any check fails.
+  ci:
+    name: CI
+    if: always()
+    needs: [ruff, shfmt, shellcheck, pytest, actionlint]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          results=("${{ needs.ruff.result }}" "${{ needs.shfmt.result }}" "${{ needs.shellcheck.result }}" "${{ needs.pytest.result }}" "${{ needs.actionlint.result }}")
+          for r in "${results[@]}"; do
+            if [[ "$r" == "failure" || "$r" == "cancelled" ]]; then
+              echo "::error::Job failed with result: $r"
+              exit 1
+            fi
+          done

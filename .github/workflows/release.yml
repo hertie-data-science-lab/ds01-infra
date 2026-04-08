@@ -26,6 +26,10 @@ jobs:
           else
             TAG="${GITHUB_REF#refs/tags/}"
           fi
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid tag format: $TAG (expected vX.Y.Z)"
+            exit 1
+          fi
           VERSION="${TAG#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -54,4 +58,5 @@ jobs:
         run: |
           gh release create "v${{ needs.validate.outputs.version }}" \
             --title "v${{ needs.validate.outputs.version }}" \
+            --target "${{ github.sha }}" \
             --generate-notes
