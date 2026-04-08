@@ -97,7 +97,8 @@ get_container_type_max_runtime() {
     local container_type="$1"
 
     # Read from config - container_types section
-    local runtime=$(
+    local runtime
+    runtime=$(
         python3 <<PYEOF
 import yaml
 import sys

@@ -116,7 +116,8 @@ get_container_type_hold_timeout() {
     local container_type="$1"
 
     # Read from config - container_types section (values are bare hours)
-    local timeout=$(
+    local timeout
+    timeout=$(
         python3 <<PYEOF
 import yaml
 import sys
@@ -148,7 +149,8 @@ cleanup_created_containers() {
     log "Checking for created-never-started containers..."
 
     # Get created container timeout from policies (bare minutes)
-    local created_timeout=$(
+    local created_timeout
+    created_timeout=$(
         python3 <<PYEOF
 import yaml
 try:

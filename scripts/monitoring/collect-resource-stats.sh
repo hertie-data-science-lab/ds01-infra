@@ -266,7 +266,8 @@ collect_slice_stats() {
     fi
 
     # Build JSON log entry
-    local json_entry=$(
+    local json_entry
+    json_entry=$(
         cat <<JSONEOF
 {"timestamp":"$timestamp","user":"$user","group":"$group","memory_current_bytes":${memory_current:-0},"memory_max_bytes":"${memory_max:-max}","memory_pct":${memory_pct:-0},"pids_current":${pids_current:-0},"pids_max":"${pids_max:-max}","psi_memory_some_avg10":${psi_memory_some_avg10},"psi_memory_full_avg10":${psi_memory_full_avg10},"psi_cpu_some_avg10":${psi_cpu_some_avg10},"psi_cpu_full_avg10":${psi_cpu_full_avg10},"oom_count":${oom_count},"oom_kill_count":${oom_kill_count}}
 JSONEOF

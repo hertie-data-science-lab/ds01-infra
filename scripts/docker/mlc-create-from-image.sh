@@ -108,34 +108,26 @@ docker run -dit \
     --network host \
     --ipc host \
     --restart unless-stopped \
-    \
     --label "ds01.managed=true" \
     --label "ds01.user=$USERNAME" \
     --label "ds01.user_id=$USER_ID" \
     --label "ds01.group_id=$GROUP_ID" \
     --label "ds01.container_name=$CONTAINER_NAME" \
     --label "ds01.image=$IMAGE_NAME" \
-    --label "ds01.created_at=$(
-        date -Iseconds # ===== IDENTIFICATION LABELS ===== \
-    )" \
+    --label "ds01.created_at=$(date -Iseconds)" \
     --label "ds01.container_type=custom" \
     --label "ds01.project=$PROJECT_NAME" \
     --label "ds01.workspace=$WORKSPACE_DIR" \
-    \
     --security-opt=no-new-privileges:true \
     --cap-drop=ALL \
     --cap-add=SYS_PTRACE \
     --cap-add=NET_BIND_SERVICE \
-    \
     --pids-limit=4096 \
-    \
     --cgroup-parent="ds01.slice/user-${USER_ID}.slice" \
-    \
     -e "DS01_CONTAINER=1" \
     -e "DS01_USER=$USERNAME" \
     -e "DS01_USER_ID=$USER_ID" \
     -e "HOME=/workspace" \
-    \
     "$IMAGE_NAME" \
     bash
 
