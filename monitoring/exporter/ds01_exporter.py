@@ -630,12 +630,15 @@ def collect_mig_slot_mapping() -> List[str]:
 
 # Cache for group membership (refreshed periodically)
 _group_membership_cache: Dict[str, Dict[str, str]] = {}  # sanitized -> {user, group}
+_group_counts_cache: Dict[str, int] = {}
 _group_membership_cache_timestamp: float = 0
 GROUP_MEMBERSHIP_CACHE_TTL = 300  # Refresh every 5 minutes
 
 
 def _load_group_membership() -> Tuple[Dict[str, Dict[str, str]], Dict[str, int]]:
     """Load group membership from .members files.
+
+    Discovers groups dynamically by globbing *.members (excludes archived.members).
 
     Returns:
         Tuple of:
@@ -650,21 +653,20 @@ def _load_group_membership() -> Tuple[Dict[str, Dict[str, str]], Dict[str, int]]
     except Exception:
         return sanitized_to_full, group_counts
 
-    for group in ("student", "researcher", "faculty", "admin"):
-        members_file = GROUPS_DIR / f"{group}.members"
-        if not members_file.exists():
+    for members_file in sorted(GROUPS_DIR.glob("*.members")):
+        group = members_file.stem
+        if group == "archived":
             continue
 
         count = 0
         try:
-            with open(members_file) as f:
-                for line in f:
-                    line = line.split("#")[0].strip()
-                    if not line:
-                        continue
-                    count += 1
-                    sanitized = utils.sanitize_username_for_slice(line)
-                    sanitized_to_full[sanitized] = {"user": line, "group": group}
+            for line in members_file.read_text().splitlines():
+                line = line.split("#")[0].strip()
+                if not line:
+                    continue
+                count += 1
+                sanitized = utils.sanitize_username_for_slice(line)
+                sanitized_to_full[sanitized] = {"user": line, "group": group}
         except OSError:
             continue
         group_counts[group] = count
@@ -674,21 +676,16 @@ def _load_group_membership() -> Tuple[Dict[str, Dict[str, str]], Dict[str, int]]
 
 def _get_group_membership() -> Tuple[Dict[str, Dict[str, str]], Dict[str, int]]:
     """Get cached group membership data."""
-    global _group_membership_cache, _group_membership_cache_timestamp
+    global _group_membership_cache, _group_counts_cache, _group_membership_cache_timestamp
 
     now = time.time()
     if now - _group_membership_cache_timestamp > GROUP_MEMBERSHIP_CACHE_TTL:
         mapping, counts = _load_group_membership()
         _group_membership_cache = mapping
+        _group_counts_cache = counts
         _group_membership_cache_timestamp = now
-        return mapping, counts
 
-    # Recompute counts from cache
-    counts: Dict[str, int] = {}
-    for info in _group_membership_cache.values():
-        g = info["group"]
-        counts[g] = counts.get(g, 0) + 1
-    return _group_membership_cache, counts
+    return _group_membership_cache, _group_counts_cache
 
 
 def collect_user_group_info() -> List[str]:
@@ -718,36 +715,47 @@ def collect_user_group_info() -> List[str]:
     return lines
 
 
-def _detect_cgroup_root() -> str:
+def _detect_cgroup_root() -> Tuple[str, str]:
     """Detect cgroup hierarchy root for ds01.slice.
 
     Mirrors logic from collect-resource-stats.sh.
+
+    Returns:
+        Tuple of (root_path, version) where version is "v2" or "v1".
+        Returns ("", "") if no cgroup hierarchy found.
     """
-    candidates = [
-        Path("/sys/fs/cgroup/ds01.slice"),  # pure v2
-        Path("/sys/fs/cgroup/unified/ds01.slice"),  # v1 hybrid
-        Path("/sys/fs/cgroup/cpu/ds01.slice"),  # v1 cpu controller
-    ]
-    for path in candidates:
-        if path.is_dir():
-            return str(path)
-    return ""
+    # Pure v2: requires cgroup.controllers to distinguish from v1
+    v2_path = Path("/sys/fs/cgroup/ds01.slice")
+    if v2_path.is_dir() and Path("/sys/fs/cgroup/cgroup.controllers").is_file():
+        return str(v2_path), "v2"
+
+    # v1 hybrid unified
+    hybrid_path = Path("/sys/fs/cgroup/unified/ds01.slice")
+    if hybrid_path.is_dir():
+        return str(hybrid_path), "v1"
+
+    # v1 memory controller (for memory.usage_in_bytes)
+    memory_path = Path("/sys/fs/cgroup/memory/ds01.slice")
+    if memory_path.is_dir():
+        return str(memory_path), "v1"
+
+    return "", ""
 
 
-def collect_cpu_per_user() -> List[str]:
+def collect_cgroup_per_user() -> List[str]:
     """Collect per-user CPU and memory usage from cgroup stats.
 
     Reads cpu.stat and memory.current from each user slice under ds01.slice.
     Reverse-maps sanitized slice names to full usernames via group membership files.
     """
     lines = []
-    cgroup_root = _detect_cgroup_root()
+    cgroup_root, cgroup_version = _detect_cgroup_root()
     if not cgroup_root:
         return lines
 
     mapping, _ = _get_group_membership()
     root_path = Path(cgroup_root)
-    is_v1 = "/cpu/" in cgroup_root
+    is_v1 = cgroup_version == "v1"
 
     lines.append(
         "# HELP ds01_user_cpu_usage_seconds_total Total CPU seconds consumed by user (from cgroup)"
@@ -875,7 +883,7 @@ def collect_all_metrics() -> str:
     lines.append("")
     lines.extend(collect_user_group_info())
     lines.append("")
-    lines.extend(collect_cpu_per_user())
+    lines.extend(collect_cgroup_per_user())
 
     return "\n".join(lines) + "\n"
 
