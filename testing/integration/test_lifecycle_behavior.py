@@ -428,7 +428,7 @@ class TestMultiSignalAndLogic:
     """Test AND-logic idle detection: GPU active = not idle, GPU idle + CPU active
     = not idle, all idle = idle, GPU unknown = fallback."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_gpu_active_means_not_idle(self, mock_env):
         """When GPU utilisation is above threshold, check_gpu_idle returns 'active'."""
         mock_env.set_mock_data("gpu_util_GPU-UUID-123", "80")
@@ -438,7 +438,7 @@ class TestMultiSignalAndLogic:
         result = mock_env.run(code)
         assert "gpu:active" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_gpu_idle_cpu_active_means_not_idle(self, mock_env):
         """GPU idle but CPU active = NOT idle (data loading / preprocessing)."""
         mock_env.set_mock_data("gpu_util_GPU-UUID-123", "2")
@@ -453,7 +453,7 @@ class TestMultiSignalAndLogic:
         assert "gpu:idle" in result.stdout
         assert "sec:true" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_all_signals_idle(self, mock_env):
         """GPU idle + CPU idle + network idle = container is idle."""
         mock_env.set_mock_data("gpu_util_GPU-UUID-123", "1")
@@ -468,7 +468,7 @@ class TestMultiSignalAndLogic:
         assert "gpu:idle" in result.stdout
         assert "sec:false" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_gpu_unknown_falls_back_to_secondary(self, mock_env):
         """No GPU UUID found → check_gpu_idle returns 'unknown'."""
         mock_env.set_docker_inspect("test-ctr", "gpu_uuid", "<no value>")
@@ -478,7 +478,7 @@ class TestMultiSignalAndLogic:
         result = mock_env.run(code)
         assert "gpu:unknown" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_gpu_at_threshold_boundary(self, mock_env):
         """GPU at exactly the threshold (5%) is still considered active (not < 5)."""
         mock_env.set_mock_data("gpu_util_GPU-UUID-AAA", "5")
@@ -501,7 +501,7 @@ class TestIdleDetectionWindow:
     """Test idle streak / detection window: streak below window = no action,
     streak reaches window = triggers, activity resets streak."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_streak_below_window_no_action(self, mock_env):
         """Idle streak < detection_window → waiting."""
         mock_env.set_state_file(
@@ -524,7 +524,7 @@ class TestIdleDetectionWindow:
         assert "result:waiting" in result.stdout
         assert mock_env.read_state_file("test-ctr")["IDLE_STREAK"] == "2"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_streak_reaches_window_triggers(self, mock_env):
         """Idle streak == detection_window → triggered."""
         mock_env.set_state_file(
@@ -547,7 +547,7 @@ class TestIdleDetectionWindow:
         assert "result:triggered" in result.stdout
         assert mock_env.read_state_file("test-ctr")["IDLE_STREAK"] == "3"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_activity_resets_streak(self, mock_env):
         """Activity detection resets IDLE_STREAK to 0 and WARNED to false."""
         mock_env.set_state_file(
@@ -563,7 +563,7 @@ class TestIdleDetectionWindow:
         assert "streak:0" in result.stdout
         assert "warned:false" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_group_specific_detection_window(self, mock_env):
         """Different groups return different idle_detection_window values."""
         mock_env.set_mock_data(
@@ -598,7 +598,7 @@ class TestExemptUserIdleHandling:
     """Test exemption logic: exempt not stopped, FYI warning sent,
     non-exempt stopped, FYI sent only once."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_exempt_user_detected(self, mock_env):
         """check_exemption returns 'exempt:...' for exempt users."""
         mock_env.set_mock_data("exemption_testuser_idle_timeout_h", "exempt: research waiver")
@@ -612,7 +612,7 @@ class TestExemptUserIdleHandling:
         result = mock_env.run(code)
         assert "result:exempt" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_non_exempt_user_enforced(self, mock_env):
         """check_exemption returns 'not_exempt' for non-exempt users."""
         mock_env.set_mock_data("exemption_normaluser_idle_timeout_h", "not_exempt")
@@ -626,7 +626,7 @@ class TestExemptUserIdleHandling:
         result = mock_env.run(code)
         assert "result:enforced" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_fyi_warning_sent_once(self, mock_env):
         """FYI warning for exempt users fires once, then suppressed by WARNED flag."""
         mock_env.set_state_file(
@@ -665,7 +665,7 @@ class TestExemptUserIdleHandling:
         assert "action:send_fyi" in result.stdout
         assert "second:suppressed" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_exempt_user_never_stopped(self, mock_env):
         """Even when idle exceeds timeout, exempt user is not stopped."""
         mock_env.set_mock_data("exemption_exemptuser_idle_timeout_h", "exempt: PhD thesis")
@@ -693,7 +693,7 @@ class TestExemptUserIdleHandling:
 class TestVariableSigtermGrace:
     """Test container-type-specific SIGTERM grace periods."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_devcontainer_grace_30s(self, mock_env):
         code = mock_env.harness_idle(
             'grace=$(get_sigterm_grace "devcontainer"); echo "grace:$grace"'
@@ -701,25 +701,25 @@ class TestVariableSigtermGrace:
         result = mock_env.run(code)
         assert "grace:30" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_compose_grace_45s(self, mock_env):
         code = mock_env.harness_idle('grace=$(get_sigterm_grace "compose"); echo "grace:$grace"')
         result = mock_env.run(code)
         assert "grace:45" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_docker_grace_60s(self, mock_env):
         code = mock_env.harness_idle('grace=$(get_sigterm_grace "docker"); echo "grace:$grace"')
         result = mock_env.run(code)
         assert "grace:60" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_unknown_grace_30s(self, mock_env):
         code = mock_env.harness_idle('grace=$(get_sigterm_grace "unknown"); echo "grace:$grace"')
         result = mock_env.run(code)
         assert "grace:30" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_stop_passes_correct_grace_to_docker(self, mock_env):
         """stop_idle_container calls docker stop -t <grace> with type-specific value."""
         mock_env.set_mock_data("docker_ps", "compose-ctr\n")
@@ -745,7 +745,7 @@ class TestVariableSigtermGrace:
 class TestMaxRuntimeExemption:
     """Test max_runtime exemption in enforce-max-runtime.sh."""
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_exempt_user_skips_enforcement(self, mock_env):
         """Exempt user detected via check_exemption."""
         mock_env.set_mock_data("exemption_exemptuser_max_runtime_h", "exempt: faculty override")
@@ -759,7 +759,7 @@ class TestMaxRuntimeExemption:
         result = mock_env.run(code)
         assert "result:exempt" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_non_exempt_user_stopped_when_exceeded(self, mock_env):
         """Non-exempt user's container stopped when runtime > max_runtime."""
         mock_env.set_mock_data("exemption_normaluser_max_runtime_h", "not_exempt")
@@ -778,7 +778,7 @@ class TestMaxRuntimeExemption:
         result = mock_env.run(code)
         assert "result:would_stop" in result.stdout
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_warning_at_90_percent(self, mock_env):
         """Warning sent when runtime reaches 90% of limit."""
         mock_env.set_state_file("warn-ctr", warned="false")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Component Tests: Bare Metal Process Detector
+Integration Tests: Bare Metal Process Detector
 Tests detect-bare-metal.py functionality
 """
 
@@ -16,12 +16,12 @@ class TestBaremetalDetectorScript:
 
     DETECTOR = Path("/opt/ds01-infra/scripts/monitoring/detect-bare-metal.py")
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_exists(self):
         """Bare metal detector script exists."""
         assert self.DETECTOR.exists()
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_syntax(self):
         """Bare metal detector has valid Python syntax."""
         result = subprocess.run(
@@ -29,7 +29,7 @@ class TestBaremetalDetectorScript:
         )
         assert result.returncode == 0, f"Syntax error: {result.stderr}"
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_basic_execution(self):
         """Bare metal detector executes without crash."""
         result = subprocess.run(
@@ -38,7 +38,7 @@ class TestBaremetalDetectorScript:
         # Should complete successfully
         assert result.returncode == 0
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_json_output(self):
         """Bare metal detector outputs valid JSON with --json."""
         result = subprocess.run(
@@ -50,7 +50,7 @@ class TestBaremetalDetectorScript:
         data = json.loads(result.stdout)
         assert isinstance(data, dict)
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_json_has_expected_fields(self):
         """JSON output has expected fields."""
         result = subprocess.run(
@@ -70,13 +70,13 @@ class TestBaremetalDetectorLogic:
 
     DETECTOR = Path("/opt/ds01-infra/scripts/monitoring/detect-bare-metal.py")
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_has_compute_detection(self):
         """Script has compute workload detection."""
         content = self.DETECTOR.read_text()
         assert "is_compute" in content or "compute" in content.lower()
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_excludes_system_processes(self):
         """Script excludes system processes."""
         content = self.DETECTOR.read_text()
@@ -85,7 +85,7 @@ class TestBaremetalDetectorLogic:
         has_exclusion = any(ind in content.lower() for ind in system_indicators)
         assert has_exclusion
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_script_identifies_gpu_processes(self):
         """Script identifies GPU-using processes."""
         content = self.DETECTOR.read_text()
@@ -99,7 +99,7 @@ class TestBaremetalDetectorIntegration:
 
     DETECTOR = Path("/opt/ds01-infra/scripts/monitoring/detect-bare-metal.py")
 
-    @pytest.mark.component
+    @pytest.mark.integration
     @pytest.mark.requires_docker
     def test_excludes_container_processes(self):
         """Detector excludes processes inside containers."""
@@ -114,7 +114,7 @@ class TestBaremetalDetectorIntegration:
             # Should not be flagged as in container
             assert proc.get("in_container", False) is False
 
-    @pytest.mark.component
+    @pytest.mark.integration
     def test_current_python_process_not_detected(self):
         """The test's own Python process is not detected as bare metal."""
         import os

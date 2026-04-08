@@ -31,7 +31,7 @@ from .conftest import (
 
 # All tests in this module are runtime tests; individual tests add
 # requires_root/requires_gpu/requires_docker as needed.
-pytestmark = [pytest.mark.runtime]
+pytestmark = [pytest.mark.system]
 
 # Test container names (all prefixed ds01-e2e- for easy cleanup)
 CONTAINERS = {

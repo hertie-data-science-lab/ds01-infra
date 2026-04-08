@@ -1,5 +1,5 @@
 """
-Runtime test fixtures for DS01 lifecycle testing.
+System test fixtures for DS01 lifecycle testing.
 
 These fixtures operate on the live system with real Docker containers and GPUs.
 They back up and restore config, create real containers, and run lifecycle scripts.
