@@ -27,11 +27,11 @@ log "DCGM exporter not responding at $DCGM_URL"
 CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' ds01-dcgm-exporter 2>/dev/null || echo "missing")
 log "Container status: $CONTAINER_STATUS"
 
-if [[ "$CONTAINER_STATUS" == "missing" ]]; then
+if [[ $CONTAINER_STATUS == "missing" ]]; then
     log "Container missing - starting via docker compose"
     cd "$COMPOSE_DIR"
     docker compose up -d dcgm-exporter
-elif [[ "$CONTAINER_STATUS" == "running" ]]; then
+elif [[ $CONTAINER_STATUS == "running" ]]; then
     log "Container running but unresponsive - restarting"
     docker restart ds01-dcgm-exporter
 else

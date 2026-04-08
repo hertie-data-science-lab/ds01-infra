@@ -29,7 +29,7 @@ DEFAULT_PROFILE="1g.10gb"
 # ============================================================================
 
 show_help() {
-    cat << 'EOF'
+    cat <<'EOF'
 DS01 MIG Configuration
 
 Interactively configure MIG partitions for each GPU.
@@ -72,11 +72,11 @@ DRY_RUN=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -p|--profile)
+        -p | --profile)
             PROFILE="$2"
             shift 2
             ;;
-        -y|--yes)
+        -y | --yes)
             SKIP_CONFIRM=true
             shift
             ;;
@@ -84,7 +84,7 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
-        -h|--help)
+        -h | --help)
             show_help
             exit 0
             ;;
@@ -176,10 +176,10 @@ get_containers_using_gpu() {
 
     for container in $(docker ps -q 2>/dev/null); do
         local gpu_devices
-        gpu_devices=$(docker inspect "$container" 2>/dev/null | \
+        gpu_devices=$(docker inspect "$container" 2>/dev/null |
             python3 -c "import sys,json; d=json.load(sys.stdin)[0]; reqs=d.get('HostConfig',{}).get('DeviceRequests') or []; print(' '.join(r.get('DeviceIDs') or [] for r in reqs))" 2>/dev/null || echo "")
 
-        if [[ "$gpu_devices" == *"$gpu_id"* ]] || [[ "$gpu_devices" == *"GPU-"* ]]; then
+        if [[ $gpu_devices == *"$gpu_id"* ]] || [[ $gpu_devices == *"GPU-"* ]]; then
             local name
             name=$(docker inspect --format '{{.Name}}' "$container" | sed 's/^\///')
             containers="$containers $name"
@@ -195,8 +195,8 @@ get_profile_id() {
     local gpu_id=${2:-0}
 
     # Query available profiles and find the ID
-    nvidia-smi mig -lgip -i "$gpu_id" 2>/dev/null | \
-        grep -E "MIG\s+${profile_name}" | \
+    nvidia-smi mig -lgip -i "$gpu_id" 2>/dev/null |
+        grep -E "MIG\s+${profile_name}" |
         awk '{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+$/ && $(i-1) ~ /gb/) print $i}' | head -1
 }
 
@@ -228,7 +228,7 @@ create_mig_instances() {
 
     # Build comma-separated profile list
     local profile_list=""
-    for ((i=0; i<count; i++)); do
+    for ((i = 0; i < count; i++)); do
         [ -n "$profile_list" ] && profile_list="$profile_list,"
         profile_list="$profile_list$profile_id"
     done
@@ -304,7 +304,7 @@ declare -A GPU_BLOCKED
 echo -e "${BOLD}Current State & Configuration:${NC}"
 echo ""
 
-for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
+for ((gpu = 0; gpu < GPU_COUNT; gpu++)); do
     CURRENT_MODE[$gpu]=$(get_mig_mode "$gpu")
     CURRENT_COUNT[$gpu]=$(get_mig_instance_count "$gpu")
     CURRENT_PROFILE[$gpu]=$(get_current_profile "$gpu")
@@ -353,7 +353,7 @@ for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
 
         if [ -z "$input" ]; then
             DESIRED_COUNT[$gpu]="skip"
-        elif [[ "$input" =~ ^[0-9]+$ ]] && [ "$input" -ge 0 ] && [ "$input" -le "$MAX_INSTANCES" ]; then
+        elif [[ $input =~ ^[0-9]+$ ]] && [ "$input" -ge 0 ] && [ "$input" -le "$MAX_INSTANCES" ]; then
             DESIRED_COUNT[$gpu]="$input"
         else
             echo -e "       ${YELLOW}Invalid input, skipping${NC}"
@@ -365,7 +365,7 @@ done
 
 # Check if any changes requested
 CHANGES_REQUESTED=false
-for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
+for ((gpu = 0; gpu < GPU_COUNT; gpu++)); do
     if [ "${DESIRED_COUNT[$gpu]}" != "skip" ]; then
         CHANGES_REQUESTED=true
         break
@@ -385,7 +385,7 @@ echo ""
 
 REBOOT_REQUIRED=false
 
-for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
+for ((gpu = 0; gpu < GPU_COUNT; gpu++)); do
     if [ "${DESIRED_COUNT[$gpu]}" = "skip" ]; then
         continue
     fi
@@ -427,7 +427,7 @@ if [ "$SKIP_CONFIRM" = false ] && [ "$DRY_RUN" = false ]; then
     read -r -p "Apply these changes? (yes/no): " confirm
     # Normalize input (y/Y/yes/YES -> yes)
     confirm=$(echo "$confirm" | tr '[:upper:]' '[:lower:]')
-    [[ "$confirm" == "y" ]] && confirm="yes"
+    [[ $confirm == "y" ]] && confirm="yes"
     if [ "$confirm" != "yes" ]; then
         echo "Aborted."
         exit 0
@@ -447,7 +447,7 @@ echo ""
 
 ERRORS=0
 
-for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
+for ((gpu = 0; gpu < GPU_COUNT; gpu++)); do
     if [ "${DESIRED_COUNT[$gpu]}" = "skip" ]; then
         continue
     fi
@@ -500,7 +500,7 @@ for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
             if enable_mig "$gpu"; then
                 # Try to reset and create instances
                 if reset_gpu "$gpu"; then
-                    sleep 2  # Give driver time to settle
+                    sleep 2 # Give driver time to settle
 
                     if create_mig_instances "$gpu" "$desired" "$PROFILE"; then
                         echo -e "  ${GREEN}✓${NC} MIG enabled with $desired instances"
@@ -533,7 +533,7 @@ PENDING_GPUS=()
 printf "  %-6s %-12s %-12s %s\n" "GPU" "Current" "Pending" "Status"
 printf "  %-6s %-12s %-12s %s\n" "---" "-------" "-------" "------"
 
-for ((gpu=0; gpu<GPU_COUNT; gpu++)); do
+for ((gpu = 0; gpu < GPU_COUNT; gpu++)); do
     current=$(get_mig_mode "$gpu")
     pending=$(get_mig_mode_pending "$gpu")
     instances=$(get_mig_instance_count "$gpu")
@@ -571,7 +571,7 @@ if [ ${#PENDING_GPUS[@]} -gt 0 ]; then
         read -r -p "Reset GPU(s) ${PENDING_GPUS[*]} now to complete changes? (yes/no): " do_reset
         # Normalize input (y/Y/yes/YES -> yes)
         do_reset=$(echo "$do_reset" | tr '[:upper:]' '[:lower:]')
-        [[ "$do_reset" == "y" ]] && do_reset="yes"
+        [[ $do_reset == "y" ]] && do_reset="yes"
     fi
 
     if [ "$do_reset" = "yes" ]; then
@@ -594,9 +594,9 @@ if [ ${#PENDING_GPUS[@]} -gt 0 ]; then
             # Get containers using this GPU
             gpu_containers=""
             for container in $(docker ps -q 2>/dev/null); do
-                container_gpus=$(docker inspect "$container" 2>/dev/null | \
+                container_gpus=$(docker inspect "$container" 2>/dev/null |
                     python3 -c "import sys,json; d=json.load(sys.stdin)[0]; reqs=d.get('HostConfig',{}).get('DeviceRequests') or []; ids=sum((r.get('DeviceIDs') or [] for r in reqs), []); print(' '.join(ids))" 2>/dev/null || echo "")
-                if [[ "$container_gpus" == *"$gpu"* ]] || [[ "$container_gpus" == *"MIG-"* && "$container_gpus" != "" ]]; then
+                if [[ $container_gpus == *"$gpu"* ]] || [[ $container_gpus == *"MIG-"* && $container_gpus != "" ]]; then
                     name=$(docker inspect --format '{{.Name}}' "$container" 2>/dev/null | sed 's/^\///')
                     gpu_containers="$gpu_containers $name"
                 fi
@@ -638,7 +638,7 @@ if [ ${#PENDING_GPUS[@]} -gt 0 ]; then
                 read -r -p "  Force reset GPU $gpu? (yes/no): " force_reset
                 # Normalize input
                 force_reset=$(echo "$force_reset" | tr '[:upper:]' '[:lower:]')
-                [[ "$force_reset" == "y" ]] && force_reset="yes"
+                [[ $force_reset == "y" ]] && force_reset="yes"
             fi
 
             if [ "$force_reset" = "yes" ]; then

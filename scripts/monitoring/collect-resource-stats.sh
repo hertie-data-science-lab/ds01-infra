@@ -28,11 +28,11 @@ fi
 # Detect cgroup hierarchy — v2, unified, or v1 memory
 detect_cgroup_root() {
     if [[ -d "/sys/fs/cgroup/ds01.slice" ]] && [[ -f "/sys/fs/cgroup/cgroup.controllers" ]]; then
-        echo "/sys/fs/cgroup/ds01.slice"  # pure v2
+        echo "/sys/fs/cgroup/ds01.slice" # pure v2
     elif [[ -d "/sys/fs/cgroup/unified/ds01.slice" ]]; then
-        echo "/sys/fs/cgroup/unified/ds01.slice"  # v1 hybrid unified
+        echo "/sys/fs/cgroup/unified/ds01.slice" # v1 hybrid unified
     elif [[ -d "/sys/fs/cgroup/memory/ds01.slice" ]]; then
-        echo "/sys/fs/cgroup/memory/ds01.slice"  # v1 memory controller
+        echo "/sys/fs/cgroup/memory/ds01.slice" # v1 memory controller
     else
         echo ""
     fi
@@ -41,14 +41,14 @@ detect_cgroup_root() {
 # Configuration
 CGROUP_ROOT="$(detect_cgroup_root)"
 CGROUP_VERSION="v2"
-[[ "$CGROUP_ROOT" == */memory/* ]] && CGROUP_VERSION="v1"
+[[ $CGROUP_ROOT == */memory/* ]] && CGROUP_VERSION="v1"
 STATS_LOG="/var/log/ds01/resource-stats.log"
 STATE_DIR="/var/lib/ds01/resource-stats"
 OOM_STATE_FILE="$STATE_DIR/oom-counts.json"
 
 # Parse arguments
 VERBOSE=false
-if [[ "$1" == "--verbose" ]]; then
+if [[ $1 == "--verbose" ]]; then
     VERBOSE=true
 fi
 
@@ -58,7 +58,7 @@ mkdir -p "$STATE_DIR"
 
 # Initialize OOM state file if missing
 if [ ! -f "$OOM_STATE_FILE" ]; then
-    echo "{}" > "$OOM_STATE_FILE"
+    echo "{}" >"$OOM_STATE_FILE"
     chmod 644 "$OOM_STATE_FILE"
 fi
 
@@ -99,7 +99,7 @@ read_cgroup_file() {
 # Returns avg10 value for specified type (some/full)
 parse_psi_avg10() {
     local psi_content="$1"
-    local type="$2"  # "some" or "full"
+    local type="$2" # "some" or "full"
 
     # Extract the line starting with the type
     local line=$(echo "$psi_content" | grep "^${type} " || echo "")
@@ -120,7 +120,7 @@ parse_psi_avg10() {
 # Parse memory.events for OOM counters
 parse_memory_events() {
     local events_content="$1"
-    local counter="$2"  # "oom" or "oom_kill"
+    local counter="$2" # "oom" or "oom_kill"
 
     local value=$(echo "$events_content" | grep "^${counter} " | awk '{print $2}')
     if [ -z "$value" ]; then
@@ -210,7 +210,7 @@ collect_slice_stats() {
     local oom_kill_count=0
 
     # Read memory metrics (v2: memory.current/memory.max, v1: memory.usage_in_bytes/memory.limit_in_bytes)
-    if [[ "$CGROUP_VERSION" == "v1" ]]; then
+    if [[ $CGROUP_VERSION == "v1" ]]; then
         memory_current=$(read_cgroup_file "$slice_dir/memory.usage_in_bytes")
         memory_max=$(read_cgroup_file "$slice_dir/memory.limit_in_bytes")
     else
@@ -226,7 +226,7 @@ collect_slice_stats() {
     fi
 
     # Read pids metrics (v1: separate pids hierarchy)
-    if [[ "$CGROUP_VERSION" == "v1" ]]; then
+    if [[ $CGROUP_VERSION == "v1" ]]; then
         local pids_v1_path="/sys/fs/cgroup/pids/ds01.slice/$(basename "$(dirname "$slice_dir")")/$(basename "$slice_dir")"
         pids_current=$(read_cgroup_file "$pids_v1_path/pids.current")
         pids_max=$(read_cgroup_file "$pids_v1_path/pids.max")
@@ -237,7 +237,7 @@ collect_slice_stats() {
 
     # Read PSI metrics — v2: in slice_dir; v1: only in unified hierarchy
     local psi_dir="$slice_dir"
-    if [[ "$CGROUP_VERSION" == "v1" ]]; then
+    if [[ $CGROUP_VERSION == "v1" ]]; then
         psi_dir="/sys/fs/cgroup/unified/ds01.slice/$(basename "$(dirname "$slice_dir")")/$(basename "$slice_dir")"
     fi
 
@@ -266,13 +266,14 @@ collect_slice_stats() {
     fi
 
     # Build JSON log entry
-    local json_entry=$(cat <<JSONEOF
+    local json_entry=$(
+        cat <<JSONEOF
 {"timestamp":"$timestamp","user":"$user","group":"$group","memory_current_bytes":${memory_current:-0},"memory_max_bytes":"${memory_max:-max}","memory_pct":${memory_pct:-0},"pids_current":${pids_current:-0},"pids_max":"${pids_max:-max}","psi_memory_some_avg10":${psi_memory_some_avg10},"psi_memory_full_avg10":${psi_memory_full_avg10},"psi_cpu_some_avg10":${psi_cpu_some_avg10},"psi_cpu_full_avg10":${psi_cpu_full_avg10},"oom_count":${oom_count},"oom_kill_count":${oom_kill_count}}
 JSONEOF
-)
+    )
 
     # Append to log file (best-effort, never fails)
-    echo "$json_entry" >> "$STATS_LOG" 2>/dev/null || true
+    echo "$json_entry" >>"$STATS_LOG" 2>/dev/null || true
 
     log_verbose "  memory: ${memory_current}/${memory_max} (${memory_pct}%)"
     log_verbose "  pids: ${pids_current}/${pids_max}"
@@ -296,15 +297,15 @@ main() {
     # Iterate over group slices, then user slices within each group
     local slice_count=0
     for group_dir in "$CGROUP_ROOT"/ds01-*.slice; do
-        [[ ! -d "$group_dir" ]] && continue
+        [[ ! -d $group_dir ]] && continue
 
         # Skip user slices at the group level (they have two+ hyphens: ds01-group-user)
         local gname
         gname=$(basename "$group_dir")
-        [[ "$gname" =~ ds01-[^-]+-.*\.slice ]] && continue
+        [[ $gname =~ ds01-[^-]+-.*\.slice ]] && continue
 
         for slice_dir in "$group_dir"/ds01-*-*.slice; do
-            [[ ! -d "$slice_dir" ]] && continue
+            [[ ! -d $slice_dir ]] && continue
 
             collect_slice_stats "$slice_dir"
             ((slice_count++))
@@ -315,6 +316,6 @@ main() {
 }
 
 # Only run when executed, not sourced
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ ${BASH_SOURCE[0]} == "${0}" ]]; then
     main
 fi

@@ -10,12 +10,12 @@ SCRATCH_DIR="/scratch"
 for user_dir in /home/*; do
     if [ -d "$user_dir" ]; then
         username=$(basename "$user_dir")
-        
+
         # Skip special directories
         if [ "$username" != "." ] && [ "$username" != ".." ]; then
             # Create user's scratch directory
             user_scratch="$SCRATCH_DIR/$username"
-            
+
             if [ ! -d "$user_scratch" ]; then
                 sudo mkdir -p "$user_scratch"
                 # Get the actual owner and group from the home directory
@@ -32,4 +32,4 @@ for user_dir in /home/*; do
 done
 
 echo "Done! All user scratch directories created."
-echo "Users can now use: /scratch/\$USER/"
+echo 'Users can now use: /scratch/$USER/'

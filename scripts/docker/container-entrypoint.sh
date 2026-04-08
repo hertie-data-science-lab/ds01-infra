@@ -10,13 +10,13 @@ GROUP_ID=${GROUP_ID:-$(id -g)}
 USERNAME=${USERNAME:-ds01user}
 
 # Add user to /etc/passwd if not exists (fixes "I have no name!" issue)
-if ! getent passwd $USER_ID > /dev/null 2>&1; then
-    echo "$USERNAME:x:$USER_ID:$GROUP_ID:DS01 User:/workspace:/bin/bash" >> /etc/passwd
-    echo "$USERNAME:x:$GROUP_ID:" >> /etc/group
+if ! getent passwd $USER_ID >/dev/null 2>&1; then
+    echo "$USERNAME:x:$USER_ID:$GROUP_ID:DS01 User:/workspace:/bin/bash" >>/etc/passwd
+    echo "$USERNAME:x:$GROUP_ID:" >>/etc/group
 fi
 
 # Create bashrc with helpful aliases and welcome message
-cat > /tmp/.ds01_bashrc << 'BASHRCEOF'
+cat >/tmp/.ds01_bashrc <<'BASHRCEOF'
 # DS01 Container Environment
 
 # Custom exit commands
@@ -66,18 +66,18 @@ BASHRCEOF
 if [ -f ~/.bashrc ]; then
     # Append our custom bashrc if not already there
     if ! grep -q "DS01 Container Environment" ~/.bashrc 2>/dev/null; then
-        cat /tmp/.ds01_bashrc >> ~/.bashrc
+        cat /tmp/.ds01_bashrc >>~/.bashrc
     fi
 elif [ -f /root/.bashrc ]; then
     if ! grep -q "DS01 Container Environment" /root/.bashrc 2>/dev/null; then
-        cat /tmp/.ds01_bashrc >> /root/.bashrc
+        cat /tmp/.ds01_bashrc >>/root/.bashrc
     fi
 fi
 
 # If .bashrc doesn't exist, create it
 if [ ! -f ~/.bashrc ] && [ ! -f /root/.bashrc ]; then
     mkdir -p ~/.config 2>/dev/null || true
-    cat /tmp/.ds01_bashrc > ~/.bashrc || cat /tmp/.ds01_bashrc > /root/.bashrc
+    cat /tmp/.ds01_bashrc >~/.bashrc || cat /tmp/.ds01_bashrc >/root/.bashrc
 fi
 
 # Execute the command passed to entrypoint

@@ -66,7 +66,7 @@ if [ "${1:-}" = "--full" ]; then
 
     if [ "$live_hash" != "$git_hash" ]; then
         log "WARNING: Config has drifted from git HEAD. Restoring."
-        echo "$git_config" > "$CONFIG_FILE"
+        echo "$git_config" >"$CONFIG_FILE"
         logger -t ds01-watchdog "Config drift detected and restored from git HEAD"
     fi
 fi

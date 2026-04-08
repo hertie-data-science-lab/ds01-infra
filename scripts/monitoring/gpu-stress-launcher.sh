@@ -66,7 +66,7 @@ echo -e "${BLUE}═════════════════════�
 echo
 read -p "Launch stress tests interactively? (y/n): " launch
 
-if [[ "$launch" != "y" ]]; then
+if [[ $launch != "y" ]]; then
     echo "Exiting."
     exit 0
 fi
@@ -76,7 +76,7 @@ echo
 # Get device IDs to stress
 read -p "Enter GPU device IDs to stress (space-separated, e.g., '0 3 4'): " devices
 
-if [[ -z "$devices" ]]; then
+if [[ -z $devices ]]; then
     echo "No devices specified. Exiting."
     exit 0
 fi
@@ -84,7 +84,7 @@ fi
 # Get duration
 read -p "Duration in seconds (press Enter for infinite): " duration
 duration_arg=""
-if [[ -n "$duration" ]]; then
+if [[ -n $duration ]]; then
     duration_arg="--duration $duration"
 fi
 
@@ -98,7 +98,7 @@ for device in $devices; do
 
     echo -e "${BLUE}Starting stress test on device $device at ${util}% utilization${NC}"
     nohup python3 "$STRESS_SCRIPT" --device "$device" --target-util "$util" $duration_arg \
-        > "/tmp/gpu-stress-device-${device}.log" 2>&1 &
+        >"/tmp/gpu-stress-device-${device}.log" 2>&1 &
 
     pid=$!
     echo "  → PID: $pid, Log: /tmp/gpu-stress-device-${device}.log"

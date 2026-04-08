@@ -96,7 +96,7 @@ scan_and_add_new_users() {
 
         # Skip system/special directories
         case "$username" in
-            lost+found|shared|.*) continue ;;
+            lost+found | shared | .*) continue ;;
         esac
 
         # Skip if user doesn't exist in passwd/LDAP
@@ -130,7 +130,7 @@ case "${1:-}" in
     --scan)
         scan_and_add_new_users
         ;;
-    --help|-h)
+    --help | -h)
         echo "Usage: $0 <username>     Add specific user to docker group"
         echo "       $0 --scan         Scan /home and add all users"
         echo "       $0 --help         Show this help"

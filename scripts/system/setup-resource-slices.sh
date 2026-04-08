@@ -14,7 +14,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Check for yq (YAML parser)
-if ! command -v yq &> /dev/null; then
+if ! command -v yq &>/dev/null; then
     echo "Installing yq..."
     wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
     chmod 755 /usr/local/bin/yq
@@ -27,7 +27,7 @@ echo "=== Creating DS01 Resource Slices ==="
 echo ""
 
 # Create parent ds01.slice
-cat > /etc/systemd/system/ds01.slice << 'EOF'
+cat >/etc/systemd/system/ds01.slice <<'EOF'
 [Unit]
 Description=DS01 GPU Server Container Slice
 Before=slices.target
@@ -64,7 +64,7 @@ for GROUP in $GROUP_LIST; do
     # - Per-container limits via Docker are the correct enforcement point
 
     # Create slice file with accounting only (no resource limits)
-    cat > /etc/systemd/system/ds01-${GROUP}.slice << EOF
+    cat >/etc/systemd/system/ds01-${GROUP}.slice <<EOF
 [Unit]
 Description=DS01 ${GROUP^} Group
 Before=slices.target

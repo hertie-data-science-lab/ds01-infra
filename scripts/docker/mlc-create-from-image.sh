@@ -20,8 +20,8 @@ CONTAINER_NAME="$1"
 IMAGE_NAME="$2"
 WORKSPACE_DIR="${3:-$HOME/workspace}"
 
-if [[ -z "$CONTAINER_NAME" ]] || [[ -z "$IMAGE_NAME" ]]; then
-    cat << EOF
+if [[ -z $CONTAINER_NAME ]] || [[ -z $IMAGE_NAME ]]; then
+    cat <<EOF
 ${GREEN}Create Container from Custom Image${NC}
 
 Usage: mlc-create-from-image <container-name> <image-name> [workspace-dir]
@@ -109,31 +109,28 @@ docker run -dit \
     --ipc host \
     --restart unless-stopped \
     \
-    # ===== IDENTIFICATION LABELS ===== \
     --label "ds01.managed=true" \
     --label "ds01.user=$USERNAME" \
     --label "ds01.user_id=$USER_ID" \
     --label "ds01.group_id=$GROUP_ID" \
     --label "ds01.container_name=$CONTAINER_NAME" \
     --label "ds01.image=$IMAGE_NAME" \
-    --label "ds01.created_at=$(date -Iseconds)" \
+    --label "ds01.created_at=$(
+        date -Iseconds # ===== IDENTIFICATION LABELS ===== \
+    )" \
     --label "ds01.container_type=custom" \
     --label "ds01.project=$PROJECT_NAME" \
     --label "ds01.workspace=$WORKSPACE_DIR" \
     \
-    # ===== SECURITY & ISOLATION ===== \
     --security-opt=no-new-privileges:true \
     --cap-drop=ALL \
     --cap-add=SYS_PTRACE \
     --cap-add=NET_BIND_SERVICE \
     \
-    # ===== PROCESS MANAGEMENT ===== \
     --pids-limit=4096 \
     \
-    # ===== CGROUP HIERARCHY ===== \
     --cgroup-parent="ds01.slice/user-${USER_ID}.slice" \
     \
-    # ===== ENVIRONMENT ===== \
     -e "DS01_CONTAINER=1" \
     -e "DS01_USER=$USERNAME" \
     -e "DS01_USER_ID=$USER_ID" \
@@ -145,7 +142,7 @@ docker run -dit \
 if [ $? -eq 0 ]; then
     # Stop container initially (user opens with mlc-open)
     docker stop "$CONTAINER_TAG" &>/dev/null
-    
+
     log_success "Container '$CONTAINER_NAME' created!"
     echo ""
     log_info "Container details:"

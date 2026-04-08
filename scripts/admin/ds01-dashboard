@@ -15,7 +15,7 @@ NC='\033[0m'
 
 # Help/Info
 show_help() {
-    cat << EOF
+    cat <<EOF
 
 ${BOLD}${CYAN}DS01 Dashboard Commands${NC}
 
@@ -53,7 +53,7 @@ EOF
 }
 
 # Check for help flags
-if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]] || [[ "$1" == "--info" ]]; then
+if [[ $1 == "-h" ]] || [[ $1 == "--help" ]] || [[ $1 == "--info" ]]; then
     show_help
 fi
 
@@ -76,7 +76,7 @@ echo -e "${BOLD}GPU STATUS${NC}"
 echo -e "${CYAN}─────────────────────────────────────────────────────────────${NC}"
 if command -v nvidia-smi &>/dev/null; then
     # Show physical GPUs with MIG mode
-    nvidia-smi --query-gpu=index,name,mig.mode.current,memory.total,temperature.gpu --format=csv,noheader | \
+    nvidia-smi --query-gpu=index,name,mig.mode.current,memory.total,temperature.gpu --format=csv,noheader |
         awk -F', ' 'BEGIN {printf "  %-5s %-25s %-12s %-12s %-6s\n", "GPU", "Name", "MIG Mode", "Mem Total", "Temp"}
                     BEGIN {printf "  %-5s %-25s %-12s %-12s %-6s\n", "---", "----", "--------", "---------", "----"}
                     {
@@ -87,7 +87,7 @@ if command -v nvidia-smi &>/dev/null; then
     # Show utilization only for non-MIG GPUs (MIG GPUs show [N/A])
     echo ""
     echo -e "  ${BOLD}Full GPU Utilization:${NC}"
-    nvidia-smi --query-gpu=index,utilization.gpu,memory.used --format=csv,noheader | \
+    nvidia-smi --query-gpu=index,utilization.gpu,memory.used --format=csv,noheader |
         awk -F', ' '{
             if ($2 != "[N/A]" && $2 != "N/A") {
                 printf "    GPU %s: %s (Memory: %s)\n", $1, $2, $3
@@ -110,7 +110,7 @@ if [ -f "$QUERY_TOOL" ]; then
     echo -e "${CYAN}─────────────────────────────────────────────────────────────${NC}"
 
     # Use new query tool for GPU status
-    python3 << 'PYEOF'
+    python3 <<'PYEOF'
 import sys
 import subprocess
 import re
@@ -333,7 +333,7 @@ except Exception as e:
 PYEOF
 
     # Check for containers with GPUs not tracked by allocator
-    UNTRACKED_WITH_GPU=$(docker ps --filter "label=ds01.managed=true" --format '{{.Labels}}' 2>/dev/null | \
+    UNTRACKED_WITH_GPU=$(docker ps --filter "label=ds01.managed=true" --format '{{.Labels}}' 2>/dev/null |
         grep "ds01.gpus=device=" | wc -l)
     UNTRACKED_WITH_GPU=${UNTRACKED_WITH_GPU:-0}
 
@@ -414,7 +414,7 @@ else
         else
             echo -e "  ${DIM}○ $username (uid:$uid): no containers${NC}"
         fi
-    done <<< "$ALL_USERS"
+    done <<<"$ALL_USERS"
 fi
 
 echo ""
@@ -478,7 +478,7 @@ if [ "${DISK_PERCENT%\%}" -gt 85 ]; then
 fi
 
 # Check memory
-if (( $(echo "$MEM_PERCENT > 90" | bc -l) )); then
+if (($(echo "$MEM_PERCENT > 90" | bc -l))); then
     echo -e "  ${RED}⚠${NC}  Memory usage high: ${MEM_PERCENT}%"
     WARNINGS=$((WARNINGS + 1))
 fi

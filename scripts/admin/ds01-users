@@ -36,11 +36,11 @@ DETAILED=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -d|--detailed)
+        -d | --detailed)
             DETAILED=true
             shift
             ;;
-        -h|--help)
+        -h | --help)
             show_usage
             exit 0
             ;;
@@ -58,11 +58,11 @@ echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Get list of users with containers (ds01.user primary, legacy fallback)
-USERS=$(docker ps --format "{{.Label \"ds01.user\"}}" | sort -u | grep -v '^$')
+USERS=$(docker ps --format '{{.Label "ds01.user"}}' | sort -u | grep -v '^$')
 
 # Legacy fallback if no ds01.user labels found
 # TODO: Remove aime.mlc.USER fallback when docker ps --filter label=aime.mlc.USER returns nothing
-if [[ -z "$USERS" ]]; then
+if [[ -z $USERS ]]; then
     USERS=$(docker ps --format "{{.Labels}}" | grep -o "aime.mlc.USER=[^,]*" | cut -d= -f2 | sort -u)
 fi
 

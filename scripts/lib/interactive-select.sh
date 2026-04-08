@@ -59,7 +59,7 @@ select_container() {
         stopped)
             mapfile -t containers < <(docker ps -a --filter "name=\._\.$user_id" --filter "status=exited" --format "{{.Names}}" | sed "s/\._\.$user_id$//" | sort)
             ;;
-        all|*)
+        all | *)
             mapfile -t containers < <(docker ps -a --filter "name=\._\.$user_id" --format "{{.Names}}" | sed "s/\._\.$user_id$//" | sort)
             ;;
     esac
@@ -124,7 +124,7 @@ confirm() {
     local default="${2:-n}"
 
     local yn
-    if [[ "$default" =~ ^[Yy] ]]; then
+    if [[ $default =~ ^[Yy] ]]; then
         echo -n -e "${CYAN}${prompt}${NC} [Y/n]: " >&2
     else
         echo -n -e "${CYAN}${prompt}${NC} [y/N]: " >&2

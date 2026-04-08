@@ -23,8 +23,11 @@ CHECK_ONLY=false
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --check) CHECK_ONLY=true; shift ;;
-        --help|-h)
+        --check)
+            CHECK_ONLY=true
+            shift
+            ;;
+        --help | -h)
             echo "Usage: ensure-admin-sudo.sh [--check]"
             echo ""
             echo "Ensures $ADMIN_USER is in the sudo group."
@@ -33,7 +36,10 @@ while [[ $# -gt 0 ]]; do
             echo "  --check    Check only, don't modify"
             exit 0
             ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
     esac
 done
 
@@ -60,7 +66,7 @@ fi
 # User is NOT in sudo group
 log "warning" "$ADMIN_USER is NOT in sudo group!"
 
-if [[ "$CHECK_ONLY" == "true" ]]; then
+if [[ $CHECK_ONLY == "true" ]]; then
     echo "CHECK ONLY: Would restore $ADMIN_USER to sudo group"
     exit 1
 fi

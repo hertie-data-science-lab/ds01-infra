@@ -24,8 +24,8 @@ set -euo pipefail
 INFRA_ROOT="/opt/ds01-infra"
 EVENTS_LIB="$INFRA_ROOT/scripts/lib/ds01_events.sh"
 RATE_LIMIT_DIR="/var/lib/ds01/rate-limits"
-RATE_LIMIT_WINDOW=3600  # 1 hour in seconds
-RATE_LIMIT_MAX=10       # Max 10 denials per user per hour
+RATE_LIMIT_WINDOW=3600 # 1 hour in seconds
+RATE_LIMIT_MAX=10      # Max 10 denials per user per hour
 
 # Determine the real binary path from our name
 REAL_CMD="/usr/bin/$(basename "$0")"
@@ -61,20 +61,20 @@ check_rate_limit() {
             if [ "$timestamp" -ge "$window_start" ]; then
                 count=$((count + 1))
             fi
-        done < "$state_file"
+        done <"$state_file"
 
         # Prune old entries
-        (awk -v cutoff="$window_start" '$1 >= cutoff' "$state_file" > "${state_file}.tmp") 2>/dev/null || true
+        (awk -v cutoff="$window_start" '$1 >= cutoff' "$state_file" >"${state_file}.tmp") 2>/dev/null || true
         mv "${state_file}.tmp" "$state_file" 2>/dev/null || true
     fi
 
     # Check if under limit
     if [ "$count" -lt "$RATE_LIMIT_MAX" ]; then
         # Record this denial (subshell suppresses shell redirection errors)
-        (echo "$now" >> "$state_file") 2>/dev/null || true
-        return 0  # Allow logging
+        (echo "$now" >>"$state_file") 2>/dev/null || true
+        return 0 # Allow logging
     else
-        return 1  # Suppress logging (rate limit exceeded)
+        return 1 # Suppress logging (rate limit exceeded)
     fi
 }
 

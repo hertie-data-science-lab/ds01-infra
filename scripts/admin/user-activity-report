@@ -26,20 +26,26 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INFRA_ROOT="${SCRIPT_DIR}/../.."
 GROUPS_DIR="${INFRA_ROOT}/config/groups"
-INACTIVE_DAYS=180  # 6 months
+INACTIVE_DAYS=180 # 6 months
 OUTPUT_FORMAT="text"
 SHOW_ALL=true
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --inactive) SHOW_ALL=false; shift ;;
-        --csv) OUTPUT_FORMAT="csv"; shift ;;
+        --inactive)
+            SHOW_ALL=false
+            shift
+            ;;
+        --csv)
+            OUTPUT_FORMAT="csv"
+            shift
+            ;;
         --days)
             INACTIVE_DAYS="$2"
             shift 2
             ;;
-        --help|-h)
+        --help | -h)
             echo "Usage: user-activity-report [OPTIONS]"
             echo ""
             echo "Generate user activity report for DS01."
@@ -50,7 +56,10 @@ while [[ $# -gt 0 ]]; do
             echo "  --days N         Inactivity threshold in days (default: 180)"
             exit 0
             ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
     esac
 done
 
@@ -59,12 +68,12 @@ get_user_group() {
     local username="$1"
     for group in admin faculty researcher student; do
         local members_file="${GROUPS_DIR}/${group}.members"
-        if [[ -f "$members_file" ]] && grep -qE "^${username}(\s|$)" "$members_file" 2>/dev/null; then
+        if [[ -f $members_file ]] && grep -qE "^${username}(\s|$)" "$members_file" 2>/dev/null; then
             echo "$group"
             return
         fi
     done
-    echo "student"  # Default
+    echo "student" # Default
 }
 
 # Get container count for user
@@ -77,11 +86,11 @@ get_container_count() {
 days_since() {
     local timestamp="$1"
     local now=$(date +%s)
-    echo $(( (now - timestamp) / 86400 ))
+    echo $(((now - timestamp) / 86400))
 }
 
 # Header
-if [[ "$OUTPUT_FORMAT" == "csv" ]]; then
+if [[ $OUTPUT_FORMAT == "csv" ]]; then
     echo "Username,Last Activity,Days Inactive,Containers,Group,Status"
 else
     echo "=============================================================="
@@ -97,7 +106,7 @@ declare -A user_data
 cutoff_timestamp=$(date -d "${INACTIVE_DAYS} days ago" +%s)
 
 for dir in /home/*@hertie-school.lan /home/*@HERTIE-SCHOOL.LAN; do
-    [[ -d "$dir" ]] || continue
+    [[ -d $dir ]] || continue
 
     username=$(basename "$dir")
     last_modified=$(stat -c %Y "$dir" 2>/dev/null || echo "0")
@@ -118,11 +127,11 @@ for dir in /home/*@hertie-school.lan /home/*@HERTIE-SCHOOL.LAN; do
 done
 
 # Sort by last activity (oldest first for inactive, newest first for active)
-if [[ "$OUTPUT_FORMAT" == "csv" ]]; then
+if [[ $OUTPUT_FORMAT == "csv" ]]; then
     for key in $(echo "${!user_data[@]}" | tr ' ' '\n' | sort -n); do
-        IFS='|' read -r username last_date days_inactive containers group status <<< "${user_data[$key]}"
+        IFS='|' read -r username last_date days_inactive containers group status <<<"${user_data[$key]}"
 
-        if [[ "$SHOW_ALL" == "true" ]] || [[ "$status" == "INACTIVE" ]]; then
+        if [[ $SHOW_ALL == "true" ]] || [[ $status == "INACTIVE" ]]; then
             echo "$username,$last_date,$days_inactive,$containers,$group,$status"
         fi
     done
@@ -137,10 +146,10 @@ else
     printf "%s\n" "$(printf '=%.0s' {1..90})"
 
     for key in $(echo "${!user_data[@]}" | tr ' ' '\n' | sort -n); do
-        IFS='|' read -r username last_date days_inactive containers group status <<< "${user_data[$key]}"
+        IFS='|' read -r username last_date days_inactive containers group status <<<"${user_data[$key]}"
 
-        if [[ "$SHOW_ALL" == "true" ]] || [[ "$status" == "INACTIVE" ]]; then
-            if [[ "$status" == "INACTIVE" ]]; then
+        if [[ $SHOW_ALL == "true" ]] || [[ $status == "INACTIVE" ]]; then
+            if [[ $status == "INACTIVE" ]]; then
                 printf "%-40s %-12s %-8s %-6s %-12s \033[31m%s\033[0m\n" "$username" "$last_date" "$days_inactive" "$containers" "$group" "$status"
                 ((inactive_count++))
             else

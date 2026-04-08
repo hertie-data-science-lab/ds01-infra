@@ -28,10 +28,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
 # Parse arguments
 DRY_RUN=false
@@ -45,7 +45,7 @@ while [[ $# -gt 0 ]]; do
         --uninstall)
             UNINSTALL=true
             ;;
-        -h|--help)
+        -h | --help)
             echo "Usage: $0 [--dry-run] [--uninstall]"
             echo ""
             echo "Options:"
@@ -91,7 +91,7 @@ if [ "$UNINSTALL" = true ]; then
 
     # Remove from daemon.json
     if [ -f /etc/docker/daemon.json ]; then
-        python3 << 'PYEOF'
+        python3 <<'PYEOF'
 import json
 import sys
 
@@ -196,7 +196,7 @@ fi
 # Step 2: Create systemd service
 log_info "Creating systemd service..."
 
-cat > "$SYSTEMD_SERVICE" << EOF
+cat >"$SYSTEMD_SERVICE" <<EOF
 [Unit]
 Description=OPA Docker Authorization Plugin (DS01)
 After=docker.service
@@ -234,7 +234,7 @@ fi
 # Step 4: Enable in daemon.json (if not already)
 log_info "Enabling in daemon.json..."
 
-python3 << 'PYEOF'
+python3 <<'PYEOF'
 import json
 import sys
 

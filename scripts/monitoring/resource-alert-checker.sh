@@ -85,17 +85,19 @@ except:
 " 2>/dev/null || echo "")
 
     if [ -n "$last_notified" ]; then
-        local now_epoch; now_epoch=$(date +%s)
-        local notified_epoch; notified_epoch=$(date -d "$last_notified" +%s 2>/dev/null || echo "0")
-        local elapsed=$(( (now_epoch - notified_epoch) / 3600 ))
+        local now_epoch
+        now_epoch=$(date +%s)
+        local notified_epoch
+        notified_epoch=$(date -d "$last_notified" +%s 2>/dev/null || echo "0")
+        local elapsed=$(((now_epoch - notified_epoch) / 3600))
         if [ "$elapsed" -lt "$NOTIFY_COOLDOWN_HOURS" ]; then
-            return 0  # Within cooldown — skip terminal delivery
+            return 0 # Within cooldown — skip terminal delivery
         fi
     fi
 
     # Determine severity from alert type name
     local severity="WARNING"
-    [[ "$alert_type" == *"reached"* ]] && severity="ALERT"
+    [[ $alert_type == *"reached"* ]] && severity="ALERT"
 
     # Format and deliver via notification library
     local msg
@@ -277,7 +279,7 @@ print(sanitize_username_for_slice('$username'))
     current_bytes=$(echo "$current_bytes" | tr -d '[:space:]')
 
     # Guard against empty or non-numeric reads
-    if [ -z "$current_bytes" ] || ! [[ "$current_bytes" =~ ^[0-9]+$ ]]; then
+    if [ -z "$current_bytes" ] || ! [[ $current_bytes =~ ^[0-9]+$ ]]; then
         return 0
     fi
 
@@ -360,7 +362,7 @@ with open('$alerts_file', 'w') as f:
         fi
     else
         # Create new alerts file
-        echo "[{\"type\": \"$alert_type\", \"message\": \"$message\", \"created_at\": \"$timestamp\", \"updated_at\": \"$timestamp\"}]" > "$alerts_file"
+        echo "[{\"type\": \"$alert_type\", \"message\": \"$message\", \"created_at\": \"$timestamp\", \"updated_at\": \"$timestamp\"}]" >"$alerts_file"
     fi
 
     chmod 644 "$alerts_file"
@@ -444,7 +446,7 @@ main() {
             log_event "maintenance.alert_clean" "system" "Cleaning old alerts"
             clean_old_alerts
             ;;
-        --help|-h)
+        --help | -h)
             echo "Usage: $0 [username|--clean]"
             echo ""
             echo "Options:"

@@ -70,14 +70,14 @@ get_container_owner() {
 
     # Try devcontainer.local_folder path
     local folder=$(docker inspect "$container" --format '{{index .Config.Labels "devcontainer.local_folder"}}' 2>/dev/null)
-    if [[ "$folder" == /home/* ]]; then
+    if [[ $folder == /home/* ]]; then
         echo "$folder" | cut -d'/' -f3
         return
     fi
 
     # Fallback: extract from name._.uid pattern
     local name=$(docker inspect "$container" --format '{{.Name}}' 2>/dev/null | tr -d '/')
-    if [[ "$name" == *._\.* ]]; then
+    if [[ $name == *._\.* ]]; then
         local uid=$(echo "$name" | rev | cut -d'.' -f1 | rev)
         getent passwd "$uid" 2>/dev/null | cut -d: -f1
         return
@@ -116,7 +116,8 @@ get_container_type_hold_timeout() {
     local container_type="$1"
 
     # Read from config - container_types section (values are bare hours)
-    local timeout=$(python3 << PYEOF
+    local timeout=$(
+        python3 <<PYEOF
 import yaml
 import sys
 
@@ -138,7 +139,7 @@ except Exception as e:
     print(0.5, file=sys.stderr)
     print(0.5)
 PYEOF
-)
+    )
     echo "$timeout"
 }
 
@@ -147,7 +148,8 @@ cleanup_created_containers() {
     log "Checking for created-never-started containers..."
 
     # Get created container timeout from policies (bare minutes)
-    local created_timeout=$(python3 << PYEOF
+    local created_timeout=$(
+        python3 <<PYEOF
 import yaml
 try:
     with open("$CONFIG_FILE") as f:
@@ -157,7 +159,7 @@ try:
 except Exception:
     print(30)
 PYEOF
-)
+    )
 
     local created_timeout_seconds
     created_timeout_seconds=$(duration_to_seconds "$created_timeout" "m")
@@ -256,7 +258,7 @@ PYEOF
             log "Created container $container: age ${age_minutes}m, will remove in ${minutes_remaining}m"
         fi
 
-    done <<< "$created_containers"
+    done <<<"$created_containers"
 
     if [ "$created_removed" -gt 0 ]; then
         log "✓ Removed $created_removed created-state container(s)"
@@ -405,7 +407,7 @@ while IFS= read -r container_tag; do
         log "Container $container_tag (user: $username, type: $container_type): ${elapsed_hours}h stopped, will remove in ${hours_remaining}h"
     fi
 
-done <<< "$STOPPED_CONTAINERS"
+done <<<"$STOPPED_CONTAINERS"
 
 # Summary
 if [ "$REMOVED_COUNT" -gt 0 ]; then

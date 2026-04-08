@@ -25,7 +25,7 @@ mkdir -p "$REPORTS_DIR"
 decompress_if_needed() {
     local log_file="$1"
     if [ -f "${log_file}.gz" ] && [ ! -f "$log_file" ]; then
-        gunzip -c "${log_file}.gz" > "${log_file}.tmp"
+        gunzip -c "${log_file}.gz" >"${log_file}.tmp"
         echo "${log_file}.tmp"
     elif [ -f "$log_file" ]; then
         echo "$log_file"
@@ -43,11 +43,11 @@ CONTAINER_LOG=$(decompress_if_needed "$CONTAINER_LOG")
 
 # Track temp files for cleanup
 TEMP_FILES=()
-[[ "$GPU_LOG" == *.tmp ]] && TEMP_FILES+=("$GPU_LOG")
-[[ "$CPU_LOG" == *.tmp ]] && TEMP_FILES+=("$CPU_LOG")
-[[ "$MEMORY_LOG" == *.tmp ]] && TEMP_FILES+=("$MEMORY_LOG")
-[[ "$DISK_LOG" == *.tmp ]] && TEMP_FILES+=("$DISK_LOG")
-[[ "$CONTAINER_LOG" == *.tmp ]] && TEMP_FILES+=("$CONTAINER_LOG")
+[[ $GPU_LOG == *.tmp ]] && TEMP_FILES+=("$GPU_LOG")
+[[ $CPU_LOG == *.tmp ]] && TEMP_FILES+=("$CPU_LOG")
+[[ $MEMORY_LOG == *.tmp ]] && TEMP_FILES+=("$MEMORY_LOG")
+[[ $DISK_LOG == *.tmp ]] && TEMP_FILES+=("$DISK_LOG")
+[[ $CONTAINER_LOG == *.tmp ]] && TEMP_FILES+=("$CONTAINER_LOG")
 
 # Cleanup function
 cleanup() {
@@ -60,10 +60,10 @@ trap cleanup EXIT
 # Analysis functions
 analyze_gpu() {
     [ ! -f "$GPU_LOG" ] && echo "*No GPU data available*" && return
-    
+
     echo "## 🎮 GPU Utilization Summary"
     echo ""
-    
+
     awk -F'|' '/^GPU_DEVICE\|/ {
         gpu=$2
         util=$4
@@ -102,13 +102,13 @@ analyze_gpu() {
                 util_count[g]
         }
     }' "$GPU_LOG"
-    
+
     echo ""
-    
+
     # Per-user GPU usage
     echo "### Per-User GPU Memory Usage"
     echo ""
-    
+
     awk -F'|' '/^USER_GPU\|/ {
         user = $2
         mem = $4
@@ -127,16 +127,16 @@ analyze_gpu() {
             print "*No GPU usage detected*"
         }
     }' "$GPU_LOG"
-    
+
     echo ""
 }
 
 analyze_cpu() {
     [ ! -f "$CPU_LOG" ] && echo "*No CPU data available*" && return
-    
+
     echo "## 💻 CPU Utilization Summary"
     echo ""
-    
+
     awk -F'|' '/^CPU_OVERALL\|/ {
         util = $2
         split($3, load, " ")
@@ -162,13 +162,13 @@ analyze_cpu() {
             printf "- **Samples**: %d\n", util_count
         }
     }' "$CPU_LOG"
-    
+
     echo ""
-    
+
     # Per-user CPU usage
     echo "### Per-User CPU Usage"
     echo ""
-    
+
     awk -F'|' '/^USER_CPU\|/ {
         user = $2
         cpu = $3
@@ -186,16 +186,16 @@ analyze_cpu() {
             }
         }
     }' "$CPU_LOG"
-    
+
     echo ""
 }
 
 analyze_memory() {
     [ ! -f "$MEMORY_LOG" ] && echo "*No memory data available*" && return
-    
+
     echo "## 🧠 Memory Summary"
     echo ""
-    
+
     awk -F'|' '/^MEMORY_OVERALL\|/ {
         total = $2
         used = $3
@@ -229,13 +229,13 @@ analyze_memory() {
             printf "- **Samples**: %d\n", used_count
         }
     }' "$MEMORY_LOG"
-    
+
     echo ""
-    
+
     # Per-user memory
     echo "### Per-User Memory Usage"
     echo ""
-    
+
     awk -F'|' '/^USER_MEMORY\|/ {
         user = $2
         mem = $3
@@ -253,16 +253,16 @@ analyze_memory() {
             }
         }
     }' "$MEMORY_LOG"
-    
+
     echo ""
 }
 
 analyze_disk() {
     [ ! -f "$DISK_LOG" ] && echo "*No disk data available*" && return
-    
+
     echo "## 💾 Disk Usage Summary"
     echo ""
-    
+
     # Get latest disk space snapshot
     awk -F'|' '/^DISK_SPACE\|/ {
         fs=$2; size=$3; used=$4; avail=$5; use_pct=$6; mount=$7
@@ -272,7 +272,7 @@ analyze_disk() {
             printf "**Latest Disk Space** (from last sample):\n\n"
         }
     }' "$DISK_LOG"
-    
+
     awk -F'|' 'BEGIN {seen=0} 
     /^DISK_SPACE\|/ {
         if (!seen) {
@@ -282,23 +282,23 @@ analyze_disk() {
         }
         printf "| %s | %s | %s | %s | %s | %s |\n", $2, $3, $4, $5, $6, $7
     }' "$DISK_LOG" | tail -20
-    
+
     echo ""
 }
 
 analyze_containers() {
     [ ! -f "$CONTAINER_LOG" ] && echo "*No container data available*" && return
-    
+
     echo "## 🐳 Docker Container Activity"
     echo ""
-    
+
     # Check if there are any container metrics
     if ! grep -q "^CONTAINER_STATS|" "$CONTAINER_LOG" 2>/dev/null; then
         echo "*No Docker containers detected*"
         echo ""
         return
     fi
-    
+
     awk -F'|' '/^CONTAINER_STATS\|/ {
         name = $2
         containers[name]++
@@ -311,7 +311,7 @@ analyze_containers() {
             }
         }
     }' "$CONTAINER_LOG"
-    
+
     echo ""
 }
 
@@ -322,7 +322,7 @@ analyze_containers() {
     echo "**Date:** $(date -d "$DATE" '+%A, %B %d, %Y' 2>/dev/null || date '+%A, %B %d, %Y')"
     echo "**Report Generated:** $(date '+%Y-%m-%d %H:%M:%S')"
     echo ""
-    
+
     # Calculate total samples (from any log file)
     if [ -f "$GPU_LOG" ]; then
         SAMPLE_COUNT=$(grep -c "GPU_METRICS_START" "$GPU_LOG" 2>/dev/null) || SAMPLE_COUNT=0
@@ -331,25 +331,25 @@ analyze_containers() {
     else
         SAMPLE_COUNT=0
     fi
-    
+
     echo "**Collection Interval:** Every 5 minutes"
     echo "**Total Samples:** $SAMPLE_COUNT"
     echo ""
     echo "---"
     echo ""
-    
+
     analyze_gpu
     analyze_cpu
     analyze_memory
     analyze_disk
     analyze_containers
-    
+
     echo "---"
     echo ""
     echo "*Report generated by compile-daily-report.sh*"
     echo "*Source metrics: /var/log/ds01-infra/metrics/*"
-    
-} > "$REPORT_FILE"
+
+} >"$REPORT_FILE"
 
 # Create symlink to latest report
 ln -sf "$(basename "$REPORT_FILE")" "$REPORTS_DIR/_latest.md"

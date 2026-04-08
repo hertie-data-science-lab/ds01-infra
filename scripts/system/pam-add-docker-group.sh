@@ -19,7 +19,7 @@
 LOG_FILE="/var/log/ds01/docker-group-additions.log"
 
 log_msg() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE" 2>/dev/null || true
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >>"$LOG_FILE" 2>/dev/null || true
 }
 
 # Only run on session open

@@ -35,8 +35,8 @@ fi
 # 4. Reset device permissions to defaults (0666 root:root)
 echo "Resetting device permissions to defaults (0666 root:root)..."
 for dev in /dev/nvidia0 /dev/nvidia1 /dev/nvidia2 /dev/nvidia3 \
-           /dev/nvidiactl /dev/nvidia-modeset /dev/nvidia-uvm \
-           /dev/nvidia-uvm-tools /dev/nvidia-nvswitchctl; do
+    /dev/nvidiactl /dev/nvidia-modeset /dev/nvidia-uvm \
+    /dev/nvidia-uvm-tools /dev/nvidia-nvswitchctl; do
     if [ -c "$dev" ]; then
         chown root:root "$dev" 2>/dev/null || true
         chmod 0666 "$dev" 2>/dev/null || true
@@ -56,7 +56,7 @@ echo "✓ NVIDIA device permissions restored to defaults"
 echo ""
 echo "Next steps:"
 echo "  1. Run: sudo deploy"
-echo "  2. Users should logout and login to get CUDA_VISIBLE_DEVICES=\"\" in environment"
+echo '  2. Users should logout and login to get CUDA_VISIBLE_DEVICES="" in environment'
 echo "  3. Test: python3 -c 'import torch; print(torch.cuda.is_available())' → should be False"
 echo "  4. Test: nvidia-smi -L → should work and list GPUs"
 echo "  5. Test: container deploy → should succeed"

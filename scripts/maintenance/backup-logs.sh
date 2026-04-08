@@ -52,11 +52,11 @@ archive_logs() {
 
     # Create temporary list of files to archive
     local file_list=$(mktemp)
-    echo "$old_logs" > "$file_list"
+    echo "$old_logs" >"$file_list"
 
     # Create archive
     if tar -czf "$archive_file" -T "$file_list" 2>/dev/null; then
-        archived_count=$(wc -l < "$file_list")
+        archived_count=$(wc -l <"$file_list")
         log_success "Created archive: $archive_file ($archived_count files)"
 
         # Verify archive
@@ -64,7 +64,7 @@ archive_logs() {
             # Remove archived files
             while IFS= read -r file; do
                 rm -f "$file" && log "Removed: $file"
-            done < "$file_list"
+            done <"$file_list"
         else
             log_error "Archive verification failed! Not removing original files."
             rm -f "$archive_file"
@@ -95,7 +95,7 @@ clean_archives() {
             log "Removed old archive: $archive"
             ((removed_count++))
         fi
-    done <<< "$old_archives"
+    done <<<"$old_archives"
 
     log_success "Removed $removed_count old archive(s)"
 }
@@ -181,7 +181,7 @@ case "${1:-}" in
     --status)
         show_status
         ;;
-    --help|-h)
+    --help | -h)
         echo "Usage: $0 [--clean|--verify|--status]"
         echo ""
         echo "Options:"

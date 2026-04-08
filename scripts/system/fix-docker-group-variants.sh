@@ -88,7 +88,7 @@ report_mode() {
                 needs_canonical_count=$((needs_canonical_count + 1))
             fi
         fi
-    done <<< "$docker_members"
+    done <<<"$docker_members"
 
     echo ""
     echo "=== Summary ==="
@@ -175,7 +175,7 @@ apply_fixes() {
             log_msg "fix-docker-group-variants: ERROR - Failed to remove '$member'"
             error_count=$((error_count + 1))
         fi
-    done <<< "$docker_members"
+    done <<<"$docker_members"
 
     echo ""
     echo "=== Summary ==="
@@ -198,7 +198,7 @@ case "${1:-}" in
     --apply)
         apply_fixes
         ;;
-    --help|-h)
+    --help | -h)
         echo "Fix non-canonical usernames in docker group"
         echo ""
         echo "Usage:"

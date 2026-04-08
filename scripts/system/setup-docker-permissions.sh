@@ -39,11 +39,11 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
-log_step()    { echo -e "${CYAN}[STEP]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+log_step() { echo -e "${CYAN}[STEP]${NC} $1"; }
 
 # Parse arguments
 DRY_RUN=false
@@ -57,7 +57,7 @@ while [[ $# -gt 0 ]]; do
         --uninstall)
             UNINSTALL=true
             ;;
-        -h|--help)
+        -h | --help)
             echo "Usage: $0 [--dry-run] [--uninstall]"
             echo ""
             echo "Sets up DS01 Docker container permission system."
@@ -120,7 +120,7 @@ if [ "$UNINSTALL" = true ]; then
 
     # Restore Docker socket configuration
     if [ -f /etc/docker/daemon.json ]; then
-        python3 << 'PYEOF'
+        python3 <<'PYEOF'
 import json
 try:
     with open('/etc/docker/daemon.json', 'r') as f:
@@ -186,7 +186,8 @@ fi
 
 # Add admin users from resource-limits.yaml to the group
 if [ -f "$RESOURCE_LIMITS" ]; then
-    ADMIN_MEMBERS=$(python3 << PYEOF
+    ADMIN_MEMBERS=$(
+        python3 <<PYEOF
 import yaml
 try:
     with open('$RESOURCE_LIMITS') as f:
@@ -196,7 +197,7 @@ try:
 except:
     pass
 PYEOF
-)
+    )
     if [ -n "$ADMIN_MEMBERS" ]; then
         for user in $ADMIN_MEMBERS; do
             if id "$user" &>/dev/null; then
@@ -257,7 +258,7 @@ fi
 SYNC_SERVICE="/etc/systemd/system/ds01-container-sync.service"
 
 if [ "$DRY_RUN" = false ]; then
-    cat > "$SYNC_SERVICE" << EOF
+    cat >"$SYNC_SERVICE" <<EOF
 [Unit]
 Description=DS01 Container Ownership Sync
 After=docker.service
@@ -289,7 +290,7 @@ log_step "4/5: Configuring Docker daemon..."
 
 if [ "$DRY_RUN" = false ]; then
     # Update daemon.json to listen on the real socket
-    python3 << 'PYEOF'
+    python3 <<'PYEOF'
 import json
 import sys
 
@@ -319,7 +320,7 @@ PYEOF
 
     # Create systemd override to disable default socket
     mkdir -p /etc/systemd/system/docker.service.d/
-    cat > /etc/systemd/system/docker.service.d/ds01-socket.conf << 'EOF'
+    cat >/etc/systemd/system/docker.service.d/ds01-socket.conf <<'EOF'
 [Service]
 # Clear default socket and use our configured socket
 ExecStart=
@@ -340,7 +341,7 @@ log_step "5/5: Setting up Docker filter proxy..."
 FILTER_SERVICE="/etc/systemd/system/ds01-docker-filter.service"
 
 if [ "$DRY_RUN" = false ]; then
-    cat > "$FILTER_SERVICE" << EOF
+    cat >"$FILTER_SERVICE" <<EOF
 [Unit]
 Description=DS01 Docker Filter Proxy
 After=docker.service ds01-container-sync.service

@@ -17,11 +17,11 @@ read_requirements_packages() {
 
     while IFS= read -r line; do
         # Skip comments
-        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ $line =~ ^[[:space:]]*# ]] && continue
         # Skip empty lines
-        [[ -z "${line// }" ]] && continue
+        [[ -z ${line// /} ]] && continue
         # Skip -r/-e/--requirement/--editable (recursive requirements, editable installs)
-        [[ "$line" =~ ^[[:space:]]*- ]] && continue
+        [[ $line =~ ^[[:space:]]*- ]] && continue
 
         # Strip inline comments (everything after #)
         line=$(echo "$line" | sed 's/#.*//')
@@ -29,13 +29,13 @@ read_requirements_packages() {
         # Trim leading/trailing whitespace and normalize version specifiers
         # Handles "torch >= 2.0.1" → "torch>=2.0.1"
         local pkg
-        pkg=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
-              sed 's/[[:space:]]*\([><=!~]\+\)[[:space:]]*/\1/g')
+        pkg=$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' |
+            sed 's/[[:space:]]*\([><=!~]\+\)[[:space:]]*/\1/g')
 
         if [ -n "$pkg" ]; then
             packages="$packages $pkg"
         fi
-    done < "$req_file"
+    done <"$req_file"
 
     # Trim leading space
     echo "${packages# }"
@@ -76,19 +76,58 @@ generate_dockerfile() {
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --output) output="$2"; shift 2 ;;
-            --base-image) base_image="$2"; shift 2 ;;
-            --project) project="$2"; shift 2 ;;
-            --user-id) user_id="$2"; shift 2 ;;
-            --username) username="$2"; shift 2 ;;
-            --framework) framework="$2"; shift 2 ;;
-            --requirements) requirements="$2"; shift 2 ;;
-            --system-packages) system_packages="$2"; shift 2 ;;
-            --python-packages) python_packages="$2"; shift 2 ;;
-            --skip-system) skip_system=true; shift ;;
-            --skip-jupyter-config) skip_jupyter=true; shift ;;
-            --minimal) minimal=true; shift ;;
-            *) echo "Unknown option: $1" >&2; return 1 ;;
+            --output)
+                output="$2"
+                shift 2
+                ;;
+            --base-image)
+                base_image="$2"
+                shift 2
+                ;;
+            --project)
+                project="$2"
+                shift 2
+                ;;
+            --user-id)
+                user_id="$2"
+                shift 2
+                ;;
+            --username)
+                username="$2"
+                shift 2
+                ;;
+            --framework)
+                framework="$2"
+                shift 2
+                ;;
+            --requirements)
+                requirements="$2"
+                shift 2
+                ;;
+            --system-packages)
+                system_packages="$2"
+                shift 2
+                ;;
+            --python-packages)
+                python_packages="$2"
+                shift 2
+                ;;
+            --skip-system)
+                skip_system=true
+                shift
+                ;;
+            --skip-jupyter-config)
+                skip_jupyter=true
+                shift
+                ;;
+            --minimal)
+                minimal=true
+                shift
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                return 1
+                ;;
         esac
     done
 
@@ -103,7 +142,7 @@ generate_dockerfile() {
     mkdir -p "$(dirname "$output")"
 
     # === HEADER ===
-    cat > "$output" << EOF
+    cat >"$output" <<EOF
 # DS01 Project Dockerfile
 # Project: $project
 # Created: $(date)
@@ -132,7 +171,7 @@ EOF
 
     # === SYSTEM PACKAGES ===
     if [ "$skip_system" != true ] && [ "$minimal" != true ]; then
-        cat >> "$output" << 'EOF'
+        cat >>"$output" <<'EOF'
 # System packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
@@ -144,11 +183,11 @@ EOF
         # Add custom system packages
         if [ -n "$system_packages" ]; then
             for pkg in $system_packages; do
-                echo "    $pkg \\" >> "$output"
+                echo "    $pkg \\" >>"$output"
             done
         fi
-        echo "    && rm -rf /var/lib/apt/lists/*" >> "$output"
-        echo "" >> "$output"
+        echo "    && rm -rf /var/lib/apt/lists/*" >>"$output"
+        echo "" >>"$output"
     fi
 
     # === PYTHON PACKAGES ===
@@ -160,20 +199,20 @@ EOF
         if [ -n "$req_packages" ]; then
             # Show source path (abbreviated)
             local short_req="${requirements/#$HOME/~}"
-            echo "# Packages from requirements.txt" >> "$output"
-            echo "# Source: $short_req" >> "$output"
+            echo "# Packages from requirements.txt" >>"$output"
+            echo "# Source: $short_req" >>"$output"
             _write_pip_install "$output" "$req_packages"
-            echo "" >> "$output"
+            echo "" >>"$output"
         fi
     elif [ -n "$python_packages" ]; then
         # Inline packages mode
-        echo "# Python packages" >> "$output"
+        echo "# Python packages" >>"$output"
         _write_pip_install "$output" "$python_packages"
-        echo "" >> "$output"
+        echo "" >>"$output"
     fi
 
     # === CUSTOM PACKAGES SECTION ===
-    cat >> "$output" << 'EOF'
+    cat >>"$output" <<'EOF'
 # Custom additional packages
 # Add packages here with: image-update <project> then "Add Python packages"
 # Or edit this file directly and rebuild
@@ -182,7 +221,7 @@ EOF
 
     # === JUPYTER CONFIGURATION ===
     if [ "$skip_jupyter" != true ] && [ "$minimal" != true ]; then
-        cat >> "$output" << EOF
+        cat >>"$output" <<EOF
 # Configure Jupyter Lab
 RUN jupyter lab --generate-config 2>/dev/null || true && \\
     mkdir -p /root/.jupyter && \\
@@ -196,7 +235,7 @@ EOF
     fi
 
     # === FOOTER ===
-    cat >> "$output" << 'EOF'
+    cat >>"$output" <<'EOF'
 # Working directory (mapped to ~/workspace/<project>)
 WORKDIR /workspace
 
@@ -217,7 +256,7 @@ _write_pip_install() {
         return
     fi
 
-    echo "RUN pip install --no-cache-dir \\" >> "$file"
+    echo 'RUN pip install --no-cache-dir \' >>"$file"
 
     local pkg_array=($packages)
     local pkg_count=${#pkg_array[@]}
@@ -226,9 +265,9 @@ _write_pip_install() {
     for pkg in "${pkg_array[@]}"; do
         ((i++))
         if [ $i -lt $pkg_count ]; then
-            echo "    $pkg \\" >> "$file"
+            echo "    $pkg \\" >>"$file"
         else
-            echo "    $pkg" >> "$file"
+            echo "    $pkg" >>"$file"
         fi
     done
 }
@@ -250,17 +289,17 @@ add_to_custom_section() {
     local next_line=$((custom_line + 1))
     local next_content=$(sed -n "${next_line}p" "$dockerfile")
 
-    if [[ "$next_content" =~ ^RUN\ pip\ install ]]; then
+    if [[ $next_content =~ ^RUN\ pip\ install ]]; then
         # Append to existing RUN block
         # Find last line of RUN block, add backslash, insert packages
         :
     else
         # Insert new RUN block after custom comment
         local temp_file=$(mktemp)
-        head -n "$custom_line" "$dockerfile" > "$temp_file"
+        head -n "$custom_line" "$dockerfile" >"$temp_file"
         _write_pip_install "$temp_file" "$packages"
-        echo "" >> "$temp_file"
-        tail -n "+$next_line" "$dockerfile" >> "$temp_file"
+        echo "" >>"$temp_file"
+        tail -n "+$next_line" "$dockerfile" >>"$temp_file"
         mv "$temp_file" "$dockerfile"
     fi
 }

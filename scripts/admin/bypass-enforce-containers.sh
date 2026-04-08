@@ -5,7 +5,7 @@
 USERNAME="${1:-$(whoami)}"
 USER_HOME=$(eval echo "~$USERNAME")
 
-cat >> "$USER_HOME/.bashrc" << 'BYPASSEOF'
+cat >>"$USER_HOME/.bashrc" <<'BYPASSEOF'
 
 # Admin bypass for container enforcement
 export DS01_ADMIN_BYPASS=1

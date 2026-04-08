@@ -15,4 +15,4 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # Run the auto-add script in scan mode
-/opt/ds01-infra/scripts/system/auto-add-docker-group.sh --scan >> "$LOG_FILE" 2>&1
+/opt/ds01-infra/scripts/system/auto-add-docker-group.sh --scan >>"$LOG_FILE" 2>&1

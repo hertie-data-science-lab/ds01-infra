@@ -49,11 +49,11 @@ fi
 
 # Map subcommands to scripts
 case "$SUBCOMMAND" in
-    setup|new)
+    setup | new)
         shift
         exec "$SCRIPT_DIR/user-setup" "$@"
         ;;
-    get-limits|limits|quota)
+    get-limits | limits | quota)
         shift
         exec "$SCRIPT_DIR/get-limits" "$@"
         ;;

@@ -51,11 +51,11 @@ NUM_LINES=50
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        gpu|cleanup|metrics|audit|all)
+        gpu | cleanup | metrics | audit | all)
             LOG_TYPE="$1"
             shift
             ;;
-        -f|--follow)
+        -f | --follow)
             FOLLOW=true
             shift
             ;;
@@ -63,7 +63,7 @@ while [[ $# -gt 0 ]]; do
             NUM_LINES="$2"
             shift 2
             ;;
-        -h|--help)
+        -h | --help)
             show_usage
             exit 0
             ;;

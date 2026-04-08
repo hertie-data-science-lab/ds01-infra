@@ -64,8 +64,8 @@ USERNAME_UTILS="$INFRA_ROOT/scripts/lib/username-utils.sh"
 LOG_FILE="/var/log/ds01/docker-wrapper.log"
 
 # GPU allocation settings
-GPU_ALLOCATION_TIMEOUT=180  # 3 minutes
-GPU_ALLOCATION_RETRY_INTERVAL=10  # seconds
+GPU_ALLOCATION_TIMEOUT=180       # 3 minutes
+GPU_ALLOCATION_RETRY_INTERVAL=10 # seconds
 
 # Source username sanitization library (fail silently if not available)
 if [ -f "$USERNAME_UTILS" ]; then
@@ -92,7 +92,7 @@ log_debug() {
     # Level 1: Log interceptions (denials, filter injections, ownership checks)
     # Level 2: Log all invocations (every docker command)
     if [ "$level" -ge "1" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE" 2>/dev/null || true
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >>"$LOG_FILE" 2>/dev/null || true
     fi
 }
 
@@ -105,14 +105,14 @@ SUDO_REAL_USER="${SUDO_USER:-}"
 needs_cgroup_injection() {
     local cmd="$1"
     # Only inject for 'run' and 'create' subcommands
-    [[ "$cmd" == "run" ]] || [[ "$cmd" == "create" ]]
+    [[ $cmd == "run" ]] || [[ $cmd == "create" ]]
 }
 
 # Check if --cgroup-parent is already specified
 has_cgroup_parent() {
     for arg in "$@"; do
         case "$arg" in
-            --cgroup-parent=*|--cgroup-parent)
+            --cgroup-parent=* | --cgroup-parent)
                 return 0
                 ;;
         esac
@@ -125,11 +125,11 @@ has_owner_label() {
     local prev_arg=""
     for arg in "$@"; do
         # Check for --label=ds01.user=*
-        if [[ "$arg" == "--label=ds01.user="* ]]; then
+        if [[ $arg == "--label=ds01.user="* ]]; then
             return 0
         fi
         # Check for --label ds01.user=* (two separate args)
-        if [[ "$prev_arg" == "--label" ]] && [[ "$arg" == "ds01.user="* ]]; then
+        if [[ $prev_arg == "--label" ]] && [[ $arg == "ds01.user="* ]]; then
             return 0
         fi
         prev_arg="$arg"
@@ -143,13 +143,13 @@ get_devcontainer_owner() {
     local prev_arg=""
     for arg in "$@"; do
         # Check for --label=devcontainer.local_folder=/home/USER/...
-        if [[ "$arg" == "--label=devcontainer.local_folder=/home/"* ]]; then
+        if [[ $arg == "--label=devcontainer.local_folder=/home/"* ]]; then
             local path="${arg#--label=devcontainer.local_folder=}"
             echo "$path" | cut -d/ -f3
             return 0
         fi
         # Check for --label devcontainer.local_folder=/home/USER/... (two separate args)
-        if [[ "$prev_arg" == "--label" ]] && [[ "$arg" == "devcontainer.local_folder=/home/"* ]]; then
+        if [[ $prev_arg == "--label" ]] && [[ $arg == "devcontainer.local_folder=/home/"* ]]; then
             local path="${arg#devcontainer.local_folder=}"
             echo "$path" | cut -d/ -f3
             return 0
@@ -167,7 +167,7 @@ get_devcontainer_owner() {
 has_gpu_request() {
     for arg in "$@"; do
         case "$arg" in
-            --gpus|--gpus=*|--runtime=nvidia|--device=*nvidia*)
+            --gpus | --gpus=* | --runtime=nvidia | --device=*nvidia*)
                 return 0
                 ;;
         esac
@@ -182,11 +182,11 @@ has_label_pattern() {
     local prev_arg=""
     for arg in "$@"; do
         # Check for --label=pattern
-        if [[ "$arg" == "--label=$pattern"* ]] || [[ "$arg" == "--label="*"$pattern"* ]]; then
+        if [[ $arg == "--label=$pattern"* ]] || [[ $arg == "--label="*"$pattern"* ]]; then
             return 0
         fi
         # Check for --label pattern (two separate args)
-        if [[ "$prev_arg" == "--label" ]] && [[ "$arg" == "$pattern"* || "$arg" == *"$pattern"* ]]; then
+        if [[ $prev_arg == "--label" ]] && [[ $arg == "$pattern"* || $arg == *"$pattern"* ]]; then
             return 0
         fi
         prev_arg="$arg"
@@ -200,11 +200,11 @@ detect_container_type() {
     # Check for explicit ds01.interface label (highest priority)
     local prev_arg=""
     for arg in "$@"; do
-        if [[ "$arg" == "--label=ds01.interface="* ]]; then
+        if [[ $arg == "--label=ds01.interface="* ]]; then
             echo "${arg#--label=ds01.interface=}"
             return
         fi
-        if [[ "$prev_arg" == "--label" ]] && [[ "$arg" == "ds01.interface="* ]]; then
+        if [[ $prev_arg == "--label" ]] && [[ $arg == "ds01.interface="* ]]; then
             echo "${arg#ds01.interface=}"
             return
         fi
@@ -248,7 +248,7 @@ get_gpu_request_value() {
                 continue
                 ;;
         esac
-        if [[ "$prev_arg" == "--gpus" ]]; then
+        if [[ $prev_arg == "--gpus" ]]; then
             echo "$arg"
             return 0
         fi
@@ -282,7 +282,7 @@ show_gpu_notice() {
         printf "│  • Idle timeout: %-44s │\n" "${idle_timeout}h of GPU inactivity → auto-stop" >&2
         printf "│  • Max runtime: %-45s │\n" "${max_runtime}h → auto-stop" >&2
         echo "│                                                                  │" >&2
-        echo "│  Save work to mounted volumes (/home/\$USER/).                   │" >&2
+        echo '│  Save work to mounted volumes (/home/$USER/).                   │' >&2
         echo "│                                                                  │" >&2
         echo "└─────────────────────────────────────────────────────────────────┘" >&2
         echo "" >&2
@@ -435,7 +435,7 @@ get_container_type_timeout() {
     local container_type="$1"
 
     case "$container_type" in
-        orchestration|atomic)
+        orchestration | atomic)
             # Use user's configured timeout
             echo "0.5"
             ;;
@@ -459,7 +459,7 @@ get_container_type_max_runtime() {
     local container_type="$1"
 
     case "$container_type" in
-        orchestration|atomic)
+        orchestration | atomic)
             echo "24"
             ;;
         devcontainer)
@@ -619,7 +619,7 @@ else:
 
     # Check memory usage (v2: memory.current, v1: memory.usage_in_bytes)
     local memory_file="memory.current"
-    [[ "$cgroup_version" == "v1" ]] && memory_file="memory.usage_in_bytes"
+    [[ $cgroup_version == "v1" ]] && memory_file="memory.usage_in_bytes"
     if [ -n "$memory_max" ] && [ -f "$cgroup_path/$memory_file" ]; then
         local current_memory
         current_memory=$(cat "$cgroup_path/$memory_file" 2>/dev/null || echo "0")
@@ -681,7 +681,7 @@ else:
     # Check pids (soft check - warn at 90%)
     # v2: pids.current in same path; v1: separate hierarchy
     local pids_path="$cgroup_path/pids.current"
-    if [[ "$cgroup_version" == "v1" ]]; then
+    if [[ $cgroup_version == "v1" ]]; then
         pids_path="/sys/fs/cgroup/pids/ds01.slice/ds01-${group}.slice/${slice_name}/pids.current"
     fi
     if [ -n "$tasks_max" ] && [ -f "$pids_path" ]; then
@@ -717,9 +717,9 @@ else:
 # Check if user is an admin (root, datasciencelab, or ds01-admin group)
 is_admin() {
     # Root is always admin (needed for cron jobs running as root)
-    [[ "$CURRENT_UID" -eq 0 ]] && return 0
+    [[ $CURRENT_UID -eq 0 ]] && return 0
     # datasciencelab is always admin
-    [[ "$CURRENT_USER" == "datasciencelab" ]] && return 0
+    [[ $CURRENT_USER == "datasciencelab" ]] && return 0
     # Check ds01-admin group membership
     groups "$CURRENT_USER" 2>/dev/null | grep -qE '\bds01-admin\b'
 }
@@ -727,7 +727,7 @@ is_admin() {
 # Filter container list for non-admins
 filter_container_list() {
     # Monitoring mode: log but don't filter
-    if [[ "${_MONITORING_ONLY:-false}" == "true" ]]; then
+    if [[ ${_MONITORING_ONLY:-false} == "true" ]]; then
         log_debug "MONITORING: would filter container list for user=$CURRENT_USER"
         exec "$REAL_DOCKER" "$@"
     fi
@@ -750,7 +750,7 @@ filter_container_list() {
 # Verify container ownership for operations
 verify_container_ownership() {
     local container="$1"
-    local operation="$2"  # for logging
+    local operation="$2" # for logging
 
     # Admin bypass
     is_admin && return 0
@@ -761,13 +761,13 @@ verify_container_ownership() {
 
     # TODO: Remove aime.mlc.USER fallback when no legacy containers remain (Phase 7 migration)
     # Fallback: check aime.mlc.USER label for pre-migration containers
-    if [[ -z "$owner" || "$owner" == "<no value>" ]]; then
+    if [[ -z $owner || $owner == "<no value>" ]]; then
         owner=$("$REAL_DOCKER" inspect "$container" --format '{{index .Config.Labels "aime.mlc.USER"}}' 2>/dev/null || echo "")
     fi
 
     # No owner label at all - fail-open with warning
     # FAIL-OPEN: Allow unowned containers to prevent blocking legitimate operations
-    if [[ -z "$owner" || "$owner" == "<no value>" ]]; then
+    if [[ -z $owner || $owner == "<no value>" ]]; then
         log_debug "WARNING: Container $container has no owner label - allowing operation (fail-open)"
         # Log warning event (best-effort)
         if command -v log_event &>/dev/null; then
@@ -778,9 +778,9 @@ verify_container_ownership() {
     fi
 
     # Check ownership
-    if [[ "$owner" != "$CURRENT_USER" ]]; then
+    if [[ $owner != "$CURRENT_USER" ]]; then
         # Monitoring mode: log but allow
-        if [[ "${_MONITORING_ONLY:-false}" == "true" ]]; then
+        if [[ ${_MONITORING_ONLY:-false} == "true" ]]; then
             logger -p auth.notice -t ds01-wrapper "MONITORING: would deny user=$CURRENT_USER operation=$operation container=$container owner=$owner" 2>/dev/null || true
             log_debug "MONITORING: would deny user=$CURRENT_USER operation=$operation (container belongs to $owner)"
             return 0
@@ -808,26 +808,26 @@ rate_limited_deny_log() {
 
     local count=0
     local timestamp=$now
-    if [[ -f "$state_file" ]]; then
-        read -r count timestamp < "$state_file" 2>/dev/null || true
+    if [[ -f $state_file ]]; then
+        read -r count timestamp <"$state_file" 2>/dev/null || true
         # Reset if window expired (3600s = 1 hour)
-        if (( now - timestamp > 3600 )); then
+        if ((now - timestamp > 3600)); then
             count=0
             timestamp=$now
         fi
     fi
 
     # First denial always logged at warning level
-    if (( count == 0 )); then
+    if ((count == 0)); then
         logger -p auth.warning -t ds01-access "FIRST DENIAL: user=$user command=$command reason=$reason" 2>/dev/null || true
     fi
 
     # Check limit (max 10 per hour)
-    if (( count < 10 )); then
+    if ((count < 10)); then
         logger -p auth.notice -t ds01-access "DENIED: user=$user command=$command reason=$reason (${count}+1/10)" 2>/dev/null || true
     fi
 
-    (echo "$((count + 1)) $timestamp" > "$state_file") 2>/dev/null || true
+    (echo "$((count + 1)) $timestamp" >"$state_file") 2>/dev/null || true
 
     # Log event (best-effort)
     if command -v log_event &>/dev/null; then
@@ -841,7 +841,7 @@ is_protected_container() {
     local container="$1"
     local is_protected
     is_protected=$($REAL_DOCKER inspect "$container" --format '{{index .Config.Labels "ds01.protected"}}' 2>/dev/null)
-    [[ "$is_protected" == "true" ]]
+    [[ $is_protected == "true" ]]
 }
 
 # Extract container target from args
@@ -854,12 +854,13 @@ extract_container_target() {
             continue
         fi
         case "$arg" in
-            -*=*) continue ;;  # --flag=value
+            -*=*) continue ;; # --flag=value
             -*)
                 # Flags that take a value: skip next arg
                 case "$arg" in
-                    -e|-w|--env|--workdir|--user|-u|--name|--label|-l|--format|-f|--filter|--signal)
-                        skip_next=true ;;
+                    -e | -w | --env | --workdir | --user | -u | --name | --label | -l | --format | -f | --filter | --signal)
+                        skip_next=true
+                        ;;
                 esac
                 continue
                 ;;
@@ -879,7 +880,7 @@ main() {
     _ORIGINAL_ARGS=("$@")
 
     # Emergency bypass - FAIL-OPEN for wrapper crashes or emergencies
-    if [[ "${DS01_WRAPPER_BYPASS:-0}" == "1" ]]; then
+    if [[ ${DS01_WRAPPER_BYPASS:-0} == "1" ]]; then
         exec "$REAL_DOCKER" "$@"
     fi
 
@@ -891,7 +892,7 @@ main() {
     esac
 
     # Debug mode level 2: log all invocations
-    if [[ "${DS01_WRAPPER_DEBUG:-0}" -ge 2 ]]; then
+    if [[ ${DS01_WRAPPER_DEBUG:-0} -ge 2 ]]; then
         log_debug "INVOCATION: docker $*"
     fi
 
@@ -906,13 +907,13 @@ main() {
     # ========================================================================
     # CONTAINER LIST FILTERING (docker ps, docker container ls/list/ps)
     # ========================================================================
-    if [[ "$subcommand" == "ps" ]]; then
+    if [[ $subcommand == "ps" ]]; then
         filter_container_list "$@"
     fi
 
-    if [[ "$subcommand" == "container" ]]; then
+    if [[ $subcommand == "container" ]]; then
         local container_subcommand="${2:-}"
-        if [[ "$container_subcommand" == "ls" || "$container_subcommand" == "list" || "$container_subcommand" == "ps" ]]; then
+        if [[ $container_subcommand == "ls" || $container_subcommand == "list" || $container_subcommand == "ps" ]]; then
             filter_container_list "$@"
         fi
     fi
@@ -921,10 +922,10 @@ main() {
     # CONTAINER-TARGETING READ OPERATIONS (require ownership verification)
     # ========================================================================
     # exec, logs, inspect, stats, attach, top, port, diff, export, wait
-    if [[ "$subcommand" == "exec" || "$subcommand" == "logs" || "$subcommand" == "inspect" || \
-          "$subcommand" == "stats" || "$subcommand" == "attach" || "$subcommand" == "top" || \
-          "$subcommand" == "port" || "$subcommand" == "diff" || "$subcommand" == "export" || \
-          "$subcommand" == "wait" ]]; then
+    if [[ $subcommand == "exec" || $subcommand == "logs" || $subcommand == "inspect" ||
+        $subcommand == "stats" || $subcommand == "attach" || $subcommand == "top" ||
+        $subcommand == "port" || $subcommand == "diff" || $subcommand == "export" ||
+        $subcommand == "wait" ]]; then
         shift
         local container
         if container=$(extract_container_target "$@"); then
@@ -936,13 +937,13 @@ main() {
     fi
 
     # docker container <subcommand> — handle 'docker container exec', etc.
-    if [[ "$subcommand" == "container" ]]; then
+    if [[ $subcommand == "container" ]]; then
         local container_subcommand="${2:-}"
-        if [[ "$container_subcommand" == "exec" || "$container_subcommand" == "logs" || \
-              "$container_subcommand" == "inspect" || "$container_subcommand" == "stats" || \
-              "$container_subcommand" == "attach" || "$container_subcommand" == "top" || \
-              "$container_subcommand" == "port" || "$container_subcommand" == "diff" || \
-              "$container_subcommand" == "export" || "$container_subcommand" == "wait" ]]; then
+        if [[ $container_subcommand == "exec" || $container_subcommand == "logs" ||
+            $container_subcommand == "inspect" || $container_subcommand == "stats" ||
+            $container_subcommand == "attach" || $container_subcommand == "top" ||
+            $container_subcommand == "port" || $container_subcommand == "diff" ||
+            $container_subcommand == "export" || $container_subcommand == "wait" ]]; then
             shift 2
             local container
             if container=$(extract_container_target "$@"); then
@@ -958,10 +959,10 @@ main() {
     # CONTAINER-TARGETING WRITE OPERATIONS (ownership + protected check)
     # ========================================================================
     # stop, start, restart, pause, unpause, kill, rm, remove, rename, update
-    if [[ "$subcommand" == "stop" || "$subcommand" == "start" || "$subcommand" == "restart" || \
-          "$subcommand" == "pause" || "$subcommand" == "unpause" || "$subcommand" == "kill" || \
-          "$subcommand" == "rm" || "$subcommand" == "remove" || "$subcommand" == "rename" || \
-          "$subcommand" == "update" ]]; then
+    if [[ $subcommand == "stop" || $subcommand == "start" || $subcommand == "restart" ||
+        $subcommand == "pause" || $subcommand == "unpause" || $subcommand == "kill" ||
+        $subcommand == "rm" || $subcommand == "remove" || $subcommand == "rename" ||
+        $subcommand == "update" ]]; then
         shift
         # Extract container targets (support multiple containers for stop/kill/rm)
         local containers=()
@@ -975,7 +976,7 @@ main() {
                 -*=*) continue ;;
                 -*)
                     case "$arg" in
-                        -t|--time|--signal) skip_next=true ;;
+                        -t | --time | --signal) skip_next=true ;;
                     esac
                     continue
                     ;;
@@ -1005,13 +1006,13 @@ main() {
     fi
 
     # docker container <subcommand> — handle 'docker container stop', etc.
-    if [[ "$subcommand" == "container" ]]; then
+    if [[ $subcommand == "container" ]]; then
         local container_subcommand="${2:-}"
-        if [[ "$container_subcommand" == "stop" || "$container_subcommand" == "start" || \
-              "$container_subcommand" == "restart" || "$container_subcommand" == "pause" || \
-              "$container_subcommand" == "unpause" || "$container_subcommand" == "kill" || \
-              "$container_subcommand" == "rm" || "$container_subcommand" == "remove" || \
-              "$container_subcommand" == "rename" || "$container_subcommand" == "update" ]]; then
+        if [[ $container_subcommand == "stop" || $container_subcommand == "start" ||
+            $container_subcommand == "restart" || $container_subcommand == "pause" ||
+            $container_subcommand == "unpause" || $container_subcommand == "kill" ||
+            $container_subcommand == "rm" || $container_subcommand == "remove" ||
+            $container_subcommand == "rename" || $container_subcommand == "update" ]]; then
             shift 2
             # Extract container targets
             local containers=()
@@ -1025,7 +1026,7 @@ main() {
                     -*=*) continue ;;
                     -*)
                         case "$arg" in
-                            -t|--time|--signal) skip_next=true ;;
+                            -t | --time | --signal) skip_next=true ;;
                         esac
                         continue
                         ;;
@@ -1109,15 +1110,15 @@ main() {
             gpu_value=$(get_gpu_request_value "$@")
             local skip_gpu_alloc=false
 
-            if [[ "$CONTAINER_TYPE" == "orchestration" ]] || [[ "$CONTAINER_TYPE" == "atomic" ]]; then
+            if [[ $CONTAINER_TYPE == "orchestration" ]] || [[ $CONTAINER_TYPE == "atomic" ]]; then
                 log_debug "DS01 native container - GPU allocation handled by ds01 layer"
                 skip_gpu_alloc=true
-            elif [[ "$gpu_value" == device=MIG-* ]] || [[ "$gpu_value" == device=GPU-* ]]; then
+            elif [[ $gpu_value == device=MIG-* ]] || [[ $gpu_value == device=GPU-* ]]; then
                 log_debug "Specific GPU device already set ($gpu_value) - skipping re-allocation"
                 skip_gpu_alloc=true
             fi
 
-            if [[ "$skip_gpu_alloc" == "false" ]]; then
+            if [[ $skip_gpu_alloc == "false" ]]; then
                 # External container requesting GPU - allocate through ds01
                 log_debug "External container requesting GPU - initiating allocation"
 
@@ -1259,7 +1260,7 @@ main() {
                     ;;
                 *)
                     # Last non-flag arg is typically the image
-                    if [[ "$arg" != -* ]] && [[ "$arg" != *=* ]]; then
+                    if [[ $arg != -* ]] && [[ $arg != *=* ]]; then
                         IMAGE_NAME="$arg"
                     fi
                     ;;

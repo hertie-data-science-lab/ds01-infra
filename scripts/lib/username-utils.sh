@@ -18,7 +18,7 @@ sanitize_username_for_slice() {
     local username="$1"
 
     # Return empty if input is empty
-    if [[ -z "$username" ]]; then
+    if [[ -z $username ]]; then
         echo ""
         return
     fi
@@ -80,7 +80,7 @@ get_user_slice_name() {
 # Returns: canonical username from passwd, or empty string on error
 get_canonical_username() {
     local input_user="$1"
-    [[ -z "$input_user" ]] && return 1
+    [[ -z $input_user ]] && return 1
 
     # Get UID for input user
     local uid

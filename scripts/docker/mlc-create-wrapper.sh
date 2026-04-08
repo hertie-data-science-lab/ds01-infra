@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 INFRA_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 CONFIG_FILE="$INFRA_ROOT/config/runtime/resource-limits.yaml"
 RESOURCE_PARSER="$SCRIPT_DIR/get_resource_limits.py"
-MLC_PATCHED="$SCRIPT_DIR/mlc-patched.py"  # DS01-enhanced AIME v2
+MLC_PATCHED="$SCRIPT_DIR/mlc-patched.py" # DS01-enhanced AIME v2
 
 # Source username sanitization library for LDAP/SSSD support
 source "$INFRA_ROOT/scripts/lib/username-utils.sh"
@@ -51,7 +51,7 @@ log_error() {
 
 # Usage information
 print_usage() {
-    cat << EOF
+    cat <<EOF
 
 ${GREEN}DS01 GPU Server - Container Creation${NC}
 
@@ -114,14 +114,14 @@ preflight_checks() {
         log_info "Try: sudo usermod -aG docker $USER (then logout/login)"
         exit 1
     fi
-    
+
     # Check mlc-patched.py exists (DS01-enhanced AIME v2)
     if [ ! -f "$MLC_PATCHED" ]; then
         log_error "mlc-patched.py not found at: $MLC_PATCHED"
         log_error "DS01 infrastructure may not be properly installed"
         exit 1
     fi
-    
+
     # Check disk space (warn if <10GB free)
     DISK_FREE=$(df -BG /var/lib/docker | tail -1 | awk '{print $4}' | sed 's/G//')
     if [ "$DISK_FREE" -lt 10 ]; then
@@ -130,12 +130,12 @@ preflight_checks() {
 }
 
 # Check if user wants help or show limits FIRST
-if [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]] || [[ $# -eq 0 ]]; then
+if [[ $1 == "-h" ]] || [[ $1 == "--help" ]] || [[ $# -eq 0 ]]; then
     print_usage
     exit 0
 fi
 
-if [[ "$1" == "--show-limits" ]]; then
+if [[ $1 == "--show-limits" ]]; then
     CURRENT_USER="${SUDO_USER:-$(whoami)}"
     if [ -f "$RESOURCE_PARSER" ]; then
         python3 "$RESOURCE_PARSER" "$CURRENT_USER"
@@ -150,35 +150,35 @@ fi
 CONTAINER_NAME=""
 FRAMEWORK=""
 VERSION=""
-CUSTOM_IMAGE=""  # Custom Docker image (bypasses AIME catalog)
+CUSTOM_IMAGE="" # Custom Docker image (bypasses AIME catalog)
 WORKSPACE_DIR="$HOME/workspace"
 DATA_DIR=""
 REQUESTED_GPU=""
 CPU_ONLY=false
 DRY_RUN=false
-NUM_MIGS=1              # Number of MIG-equivalents to request (default: 1)
-PREFER_FULL_GPU=false   # Prefer full GPU over MIGs
+NUM_MIGS=1            # Number of MIG-equivalents to request (default: 1)
+PREFER_FULL_GPU=false # Prefer full GPU over MIGs
 
 # Parse container name
 CONTAINER_NAME="$1"
 shift
 
 # Parse framework (with case-insensitive mapping)
-if [ -n "$1" ] && [[ ! "$1" =~ ^- ]]; then
+if [ -n "$1" ] && [[ ! $1 =~ ^- ]]; then
     FRAMEWORK_INPUT="$1"
-    case "${FRAMEWORK_INPUT,,}" in  # ,, converts to lowercase
-        pytorch|torch)
+    case "${FRAMEWORK_INPUT,,}" in # ,, converts to lowercase
+        pytorch | torch)
             FRAMEWORK="Pytorch"
             ;;
-        tensorflow|tf)
+        tensorflow | tf)
             FRAMEWORK="Tensorflow"
             ;;
-        mxnet|mx)
+        mxnet | mx)
             FRAMEWORK="Mxnet"
             ;;
         *)
             # Capitalize first letter for unknown frameworks
-            FRAMEWORK="$(tr '[:lower:]' '[:upper:]' <<< ${FRAMEWORK_INPUT:0:1})${FRAMEWORK_INPUT:1}"
+            FRAMEWORK="$(tr '[:lower:]' '[:upper:]' <<<${FRAMEWORK_INPUT:0:1})${FRAMEWORK_INPUT:1}"
             ;;
     esac
     shift
@@ -187,13 +187,13 @@ fi
 # Parse remaining arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
-        -w=*|--workspace=*)
+        -w=* | --workspace=*)
             WORKSPACE_DIR="${1#*=}"
             ;;
-        -d=*|--data=*)
+        -d=* | --data=*)
             DATA_DIR="${1#*=}"
             ;;
-        -g=*|--gpu=*)
+        -g=* | --gpu=*)
             REQUESTED_GPU="${1#*=}"
             ;;
         --image=*)
@@ -220,7 +220,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run)
             DRY_RUN=true
             ;;
-        -h|--help)
+        -h | --help)
             print_usage
             exit 0
             ;;
@@ -244,7 +244,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Auto-select version if not specified
-if [[ -z "$VERSION" ]]; then
+if [[ -z $VERSION ]]; then
     case "$FRAMEWORK" in
         Pytorch)
             VERSION="2.5.1"
@@ -263,7 +263,7 @@ if [[ -z "$VERSION" ]]; then
 fi
 
 # Default framework if not specified
-if [[ -z "$FRAMEWORK" ]]; then
+if [[ -z $FRAMEWORK ]]; then
     FRAMEWORK="Pytorch"
     VERSION="2.5.1"
     log_info "No framework specified, defaulting to Pytorch 2.5.1"
@@ -286,14 +286,14 @@ else
 fi
 
 # Validate container name
-if [[ -z "$CONTAINER_NAME" ]]; then
+if [[ -z $CONTAINER_NAME ]]; then
     log_error "Container name is required"
     print_usage
     exit 1
 fi
 
 # Validate container name format (alphanumeric, hyphens, underscores only)
-if [[ ! "$CONTAINER_NAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+if [[ ! $CONTAINER_NAME =~ ^[a-zA-Z0-9_-]+$ ]]; then
     log_error "Invalid container name: $CONTAINER_NAME"
     log_info "Use only letters, numbers, hyphens, and underscores"
     exit 1
@@ -309,7 +309,7 @@ fi
 
 # Validate GPU ID if specified
 if [ -n "$REQUESTED_GPU" ]; then
-    if [[ ! "$REQUESTED_GPU" =~ ^[0-3]$ ]]; then
+    if [[ ! $REQUESTED_GPU =~ ^[0-3]$ ]]; then
         log_error "Invalid GPU ID: $REQUESTED_GPU (must be 0-3)"
         exit 1
     fi
@@ -411,8 +411,8 @@ fi
 # GPU allocation via gpu_allocator_v2.py (DS01 priority-based, stateless)
 GPU_ARG=""
 ALLOCATED_GPU=""
-ALLOCATED_SLOTS=""   # Comma-separated list of GPU slots
-MIG_EQUIV=0          # Total MIG-equivalents allocated
+ALLOCATED_SLOTS="" # Comma-separated list of GPU slots
+MIG_EQUIV=0        # Total MIG-equivalents allocated
 
 if [ "$CPU_ONLY" = true ]; then
     log_info "Creating CPU-only container (no GPU)"
@@ -460,7 +460,7 @@ else
                         # Build comma-separated device list for Docker
                         # Format: device=UUID1,device=UUID2
                         DEVICE_LIST=""
-                        IFS=',' read -ra UUID_ARRAY <<< "$DOCKER_IDS"
+                        IFS=',' read -ra UUID_ARRAY <<<"$DOCKER_IDS"
                         for uuid in "${UUID_ARRAY[@]}"; do
                             if [ -n "$DEVICE_LIST" ]; then
                                 DEVICE_LIST="$DEVICE_LIST,$uuid"
@@ -479,7 +479,7 @@ else
                 else
                     # Use friendly error messages
                     ERROR_MESSAGES="$SCRIPT_DIR/../lib/error-messages.sh"
-                    echo ""  # Blank line before error
+                    echo "" # Blank line before error
                     if [ -f "$ERROR_MESSAGES" ]; then
                         source "$ERROR_MESSAGES"
                         show_limit_error "$ALLOC_OUTPUT" "$CURRENT_USER" "$CONTAINER_TAG"
@@ -534,7 +534,7 @@ else
                 else
                     # Use friendly error messages
                     ERROR_MESSAGES="$SCRIPT_DIR/../lib/error-messages.sh"
-                    echo ""  # Blank line before error
+                    echo "" # Blank line before error
                     if [ -f "$ERROR_MESSAGES" ]; then
                         source "$ERROR_MESSAGES"
                         show_limit_error "$ALLOC_OUTPUT" "$CURRENT_USER" "$CONTAINER_TAG"

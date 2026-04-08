@@ -64,7 +64,7 @@ get_interface_label() {
 # Returns: 0 if banner shown, 1 if suppressed (for conditional logic)
 show_atomic_banner() {
     local title="$1"
-    if is_atomic_context && [[ -z "$DS01_ORCHESTRATOR" ]]; then
+    if is_atomic_context && [[ -z $DS01_ORCHESTRATOR ]]; then
         echo -e ""
         echo -e "\033[0;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m"
         echo -e "\033[1m${title}\033[0m"
@@ -124,7 +124,7 @@ show_info() {
 # Show debug - only if verbose
 # Usage: DS01_VERBOSE=1 show_debug "Checking GPU availability"
 show_debug() {
-    if [[ "${DS01_VERBOSE:-0}" == "1" ]]; then
+    if [[ ${DS01_VERBOSE:-0} == "1" ]]; then
         echo -e "\033[0;90m[DEBUG]\033[0m $1"
     fi
 }

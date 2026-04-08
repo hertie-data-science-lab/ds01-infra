@@ -20,7 +20,7 @@ log_allocation() {
     local action=$3
 
     echo "$(date '+%Y-%m-%d %H:%M:%S')|$username|$action|GPU $gpu_id" \
-        >> "$LOGS_DIR/gpu_allocations.log"
+        >>"$LOGS_DIR/gpu_allocations.log"
 }
 
 # Allocate GPU to user
@@ -29,16 +29,16 @@ allocate_gpu() {
     local gpu_id=$2
 
     # Validate GPU number
-    if [[ "$gpu_id" -lt 0 || "$gpu_id" -gt 3 ]]; then
+    if [[ $gpu_id -lt 0 || $gpu_id -gt 3 ]]; then
         echo "Invalid GPU. Choose 0-3."
         return 1
-    }
+    fi
 
     # Check if GPU is already allocated
     if grep -q "gpu_$gpu_id: $username" "$CONFIG_FILE"; then
         echo "GPU $gpu_id already allocated to $username"
         return 1
-    }
+    fi
 
     # Update configuration
     sed -i "/gpu_$gpu_id:/c\    gpu_$gpu_id: $username" "$CONFIG_FILE"
@@ -47,7 +47,7 @@ allocate_gpu() {
     log_allocation "$username" "$gpu_id" "ALLOCATED"
 
     # Update user's environment
-    echo "export CUDA_VISIBLE_DEVICES=$gpu_id" >> "/home/$username/.bashrc"
+    echo "export CUDA_VISIBLE_DEVICES=$gpu_id" >>"/home/$username/.bashrc"
 
     echo "GPU $gpu_id allocated to $username"
 }
@@ -71,8 +71,8 @@ release_gpu() {
 
 # Initialize configuration if not exists
 initialize_config() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        cat > "$CONFIG_FILE" << EOF
+    if [[ ! -f $CONFIG_FILE ]]; then
+        cat >"$CONFIG_FILE" <<EOF
 gpu_allocation:
   gpu_0: available
   gpu_1: available

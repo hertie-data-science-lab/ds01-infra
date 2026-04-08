@@ -56,7 +56,7 @@ ds01_container_paused() {
     local user_id="${2:-$(id -u)}"
     local tag="${name}._.${user_id}"
     local status=$(docker inspect -f '{{.State.Status}}' "$tag" 2>/dev/null || echo "")
-    [[ "$status" == "paused" ]]
+    [[ $status == "paused" ]]
 }
 
 ds01_container_status() {
@@ -80,7 +80,7 @@ ds01_get_container_label() {
     local value
     value=$(docker inspect -f "{{index .Config.Labels \"$label\"}}" "$container" 2>/dev/null || echo "")
     # Handle Docker's <no value> placeholder
-    if [[ "$value" == "<no value>" ]]; then
+    if [[ $value == "<no value>" ]]; then
         echo ""
     else
         echo "$value"
@@ -102,7 +102,7 @@ ds01_get_container_gpu_uuids() {
     local container="$1"
     local uuids
     uuids=$(ds01_get_container_label "$container" "ds01.gpu.uuids")
-    if [[ -z "$uuids" ]]; then
+    if [[ -z $uuids ]]; then
         uuids=$(ds01_get_container_label "$container" "ds01.gpu.uuid")
     fi
     echo "$uuids"
@@ -115,7 +115,7 @@ ds01_get_container_gpu_slots() {
     local container="$1"
     local slots
     slots=$(ds01_get_container_label "$container" "ds01.gpu.slots")
-    if [[ -z "$slots" ]]; then
+    if [[ -z $slots ]]; then
         slots=$(ds01_get_container_label "$container" "ds01.gpu.allocated")
     fi
     echo "$slots"
@@ -130,7 +130,7 @@ ds01_get_container_owner() {
     local container="$1"
     local owner
     owner=$(ds01_get_container_label "$container" "ds01.user")
-    if [[ -z "$owner" ]]; then
+    if [[ -z $owner ]]; then
         owner=$(ds01_get_container_label "$container" "aime.mlc.USER")
     fi
     echo "$owner"
@@ -143,9 +143,9 @@ ds01_get_container_interface() {
     local container="$1"
     local interface
     interface=$(ds01_get_container_label "$container" "ds01.interface")
-    if [[ -z "$interface" ]]; then
+    if [[ -z $interface ]]; then
         # Fallback: detect from container name
-        if [[ "$container" == *"._."* ]]; then
+        if [[ $container == *"._."* ]]; then
             echo "atomic"
         else
             echo "docker"
@@ -235,7 +235,7 @@ ds01_is_ds01_managed() {
     local tag="$1"
     local managed
     managed=$(ds01_get_container_label "$tag" "ds01.managed")
-    [[ "$managed" == "true" ]]
+    [[ $managed == "true" ]]
 }
 
 ds01_is_aime_container() {
@@ -244,5 +244,5 @@ ds01_is_aime_container() {
     # Returns: 0 if AIME container, 1 otherwise
     local tag="$1"
     # AIME containers follow name._.userid pattern
-    [[ "$tag" == *"._."* ]]
+    [[ $tag == *"._."* ]]
 }

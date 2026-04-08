@@ -28,9 +28,9 @@ else
     fi
 
     # Add PAM hook at end of file
-    echo "" >> /etc/pam.d/common-session
-    echo "# DS01: Auto-create .bashrc on first login" >> /etc/pam.d/common-session
-    echo "session optional pam_exec.so seteuid /usr/local/bin/pam-ensure-bashrc.sh" >> /etc/pam.d/common-session
+    echo "" >>/etc/pam.d/common-session
+    echo "# DS01: Auto-create .bashrc on first login" >>/etc/pam.d/common-session
+    echo "session optional pam_exec.so seteuid /usr/local/bin/pam-ensure-bashrc.sh" >>/etc/pam.d/common-session
 
     echo "✓ Added PAM hook to /etc/pam.d/common-session"
 fi

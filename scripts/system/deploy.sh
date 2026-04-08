@@ -37,8 +37,8 @@ NC='\033[0m'
 VERBOSE=false
 for arg in "$@"; do
     case $arg in
-        -v|--verbose) VERBOSE=true ;;
-        -h|--help)
+        -v | --verbose) VERBOSE=true ;;
+        -h | --help)
             echo "Usage: sudo deploy [OPTIONS]"
             echo ""
             echo "Deploy DS01 commands to /usr/local/bin"
@@ -92,7 +92,7 @@ fill_config_template() {
     fi
 
     # Use envsubst to substitute variables
-    if ! envsubst < "$template_file" > "$output_file" 2>/dev/null; then
+    if ! envsubst <"$template_file" >"$output_file" 2>/dev/null; then
         echo -e "  ${RED}✗${NC} Failed to process template: $template_file"
         return 1
     fi
@@ -183,7 +183,7 @@ validate_yaml() {
         echo -e "${RED}ERROR: Invalid YAML in $name${NC}"
         echo -e "${YELLOW}Path: $yaml_file${NC}"
         echo ""
-        python3 -c "import yaml; yaml.safe_load(open('$yaml_file'))"  # Show error
+        python3 -c "import yaml; yaml.safe_load(open('$yaml_file'))" # Show error
         exit 1
     fi
 }
@@ -326,8 +326,8 @@ echo ""
 # --- Prerequisites: Ensure at command is available ---
 if ! command -v at &>/dev/null || ! systemctl is-active --quiet atd; then
     echo -e "  ${DIM}Installing at scheduler (required for temporary grants)...${NC}"
-    apt-get install -y at &>/dev/null && systemctl enable --now atd &>/dev/null && \
-        echo -e "  ${GREEN}✓${NC} at/atd installed and active" || \
+    apt-get install -y at &>/dev/null && systemctl enable --now atd &>/dev/null &&
+        echo -e "  ${GREEN}✓${NC} at/atd installed and active" ||
         echo -e "  ${YELLOW}!${NC} WARNING: Failed to install at — temporary grants will not auto-revoke"
 fi
 
@@ -370,7 +370,7 @@ for script in "$INFRA_ROOT"/config/deploy/profile.d/ds01-*.sh; do
     name="$(basename "$script")"
 
     # Check if template file (ends with .template)
-    if [[ "$name" == *.template ]]; then
+    if [[ $name == *.template ]]; then
         # Generate from template
         output_name="${name%.template}"
         if fill_config_template "$script" "/etc/profile.d/$output_name"; then
@@ -474,8 +474,8 @@ if [ -f "$INFRA_ROOT/scripts/monitoring/detect-workloads.py" ]; then
 fi
 
 # Deploy workload detector systemd units
-if [ -f "$INFRA_ROOT/config/deploy/systemd/ds01-workload-detector.timer" ] && \
-   [ -f "$INFRA_ROOT/config/deploy/systemd/ds01-workload-detector.service" ]; then
+if [ -f "$INFRA_ROOT/config/deploy/systemd/ds01-workload-detector.timer" ] &&
+    [ -f "$INFRA_ROOT/config/deploy/systemd/ds01-workload-detector.service" ]; then
     echo -e "${DIM}Deploying workload detector units...${NC}"
     cp "$INFRA_ROOT/config/deploy/systemd/ds01-workload-detector.timer" /etc/systemd/system/
     cp "$INFRA_ROOT/config/deploy/systemd/ds01-workload-detector.service" /etc/systemd/system/
@@ -565,4 +565,3 @@ fi
 echo ""
 echo -e "${DIM}Run 'help' to see all available commands${NC}"
 echo ""
-
