@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      python: ${{ steps.filter.outputs.python }}
+      shell: ${{ steps.filter.outputs.shell }}
+      workflows: ${{ steps.filter.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            python:
+              - '**/*.py'
+              - 'pyproject.toml'
+            shell:
+              - 'scripts/**'
+              - '.shellcheckrc'
+            workflows:
+              - '.github/workflows/**'
+
+  # Job name must match branch protection rule exactly
+  ruff:
+    name: Ruff Lint & Format Check
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: format --check
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: check
+
+  shfmt:
+    name: Shell format check
+    needs: changes
+    if: needs.changes.outputs.shell == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mfinelli/setup-shfmt@v2
+        with:
+          shfmt-version: 3.10.0
+      - run: find scripts/ -name '*.sh' -not -path '*/aime-ml-containers/*' | xargs shfmt -d -i 4 -ci -s
+
+  # Job name must match branch protection rule exactly
+  shellcheck:
+    name: Shellcheck (differential)
+    needs: changes
+    if: needs.changes.outputs.shell == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: redhat-plumbers-in-action/differential-shellcheck@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Job name must match branch protection rule exactly
+  pytest:
+    name: pytest (unit tests)
+    needs: changes
+    if: needs.changes.outputs.python == 'true' || needs.changes.outputs.shell == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Symlink to /opt/ds01-infra for hardcoded test paths
+        run: sudo ln -s "$GITHUB_WORKSPACE" /opt/ds01-infra
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install pytest pyyaml
+      - name: Run unit + integration tests
+        working-directory: /opt/ds01-infra/testing
+        run: pytest . -m "not system" -v --tb=short
+
+  actionlint:
+    name: Lint workflows
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rhysd/actionlint-action@v1

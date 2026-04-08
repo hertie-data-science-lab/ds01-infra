@@ -45,6 +45,14 @@ repos:
         args: [-x]  # Follow source statements
         exclude: ^aime-ml-containers/
 
+  # Shell script formatting
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.10.0-1
+    hooks:
+      - id: shfmt
+        args: [-i, '4', -ci, -s]
+        exclude: ^aime-ml-containers/
+
   # Python formatting and linting
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.9

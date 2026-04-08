@@ -1,20 +1,21 @@
-name: GPU CI
+name: System CI
 
 on:
   schedule:
     - cron: '0 3 * * *'  # Nightly at 03:00 UTC
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
-  group: gpu-ci
+  group: ci-system
   cancel-in-progress: true
 
 jobs:
-  gpu-tests:
-    name: Full test suite (GPU + runtime)
+  system-tests:
+    name: Full test suite (GPU + system)
     runs-on: [self-hosted, linux, gpu]
     steps:
-      - name: Run runtime tests against live system
+      - name: Run full test suite on live system
         working-directory: /opt/ds01-infra/testing
         run: sudo /home/datasciencelab/anaconda3/bin/python -m pytest . -v --tb=short
 
@@ -25,10 +26,10 @@ jobs:
         run: |
           gh issue create \
             --repo "${{ github.repository }}" \
-            --title "GPU CI failed ($(date -u +%Y-%m-%d))" \
-            --body "Nightly GPU CI failed on $(date -u).
+            --title "System CI failed ($(date -u +%Y-%m-%d))" \
+            --body "Nightly system CI failed on $(date -u).
 
           **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-          Check the runtime test logs for details." \
+          Check the test logs for details." \
             --label "bug"
