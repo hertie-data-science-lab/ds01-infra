@@ -44,9 +44,11 @@ DCGM_EXPORTER_URL = os.environ.get("DCGM_EXPORTER_URL", "http://127.0.0.1:9400/m
 INFRA_ROOT = Path("/opt/ds01-infra")
 STATE_DIR = Path("/var/lib/ds01")
 LOG_DIR = Path("/var/log/ds01")
+GROUPS_DIR = INFRA_ROOT / "config/runtime/groups"
 
 # Module paths for reuse
 GPU_STATE_READER = INFRA_ROOT / "scripts/docker/gpu-state-reader.py"
+USERNAME_UTILS = INFRA_ROOT / "scripts/lib/username_utils.py"
 
 # ============================================================================
 # Module Loading (reuse existing DS01 code)
@@ -69,6 +71,17 @@ def get_gpu_state_module():
     if _gpu_state_module is None:
         _gpu_state_module = _load_module("gpu_state_reader", GPU_STATE_READER)
     return _gpu_state_module
+
+
+_username_utils_module = None
+
+
+def get_username_utils_module():
+    """Get cached username_utils module."""
+    global _username_utils_module
+    if _username_utils_module is None:
+        _username_utils_module = _load_module("username_utils", USERNAME_UTILS)
+    return _username_utils_module
 
 
 # ============================================================================
@@ -611,6 +624,221 @@ def collect_mig_slot_mapping() -> List[str]:
     return lines
 
 
+# ============================================================================
+# Group Membership & Per-User Resource Metrics
+# ============================================================================
+
+# Cache for group membership (refreshed periodically)
+_group_membership_cache: Dict[str, Dict[str, str]] = {}  # sanitized -> {user, group}
+_group_membership_cache_timestamp: float = 0
+GROUP_MEMBERSHIP_CACHE_TTL = 300  # Refresh every 5 minutes
+
+
+def _load_group_membership() -> Tuple[Dict[str, Dict[str, str]], Dict[str, int]]:
+    """Load group membership from .members files.
+
+    Returns:
+        Tuple of:
+        - sanitized_to_full: maps sanitized username -> {user: full_username, group: group_name}
+        - group_counts: maps group_name -> member count
+    """
+    sanitized_to_full: Dict[str, Dict[str, str]] = {}
+    group_counts: Dict[str, int] = {}
+
+    try:
+        utils = get_username_utils_module()
+    except Exception:
+        return sanitized_to_full, group_counts
+
+    for group in ("student", "researcher", "faculty", "admin"):
+        members_file = GROUPS_DIR / f"{group}.members"
+        if not members_file.exists():
+            continue
+
+        count = 0
+        try:
+            with open(members_file) as f:
+                for line in f:
+                    line = line.split("#")[0].strip()
+                    if not line:
+                        continue
+                    count += 1
+                    sanitized = utils.sanitize_username_for_slice(line)
+                    sanitized_to_full[sanitized] = {"user": line, "group": group}
+        except OSError:
+            continue
+        group_counts[group] = count
+
+    return sanitized_to_full, group_counts
+
+
+def _get_group_membership() -> Tuple[Dict[str, Dict[str, str]], Dict[str, int]]:
+    """Get cached group membership data."""
+    global _group_membership_cache, _group_membership_cache_timestamp
+
+    now = time.time()
+    if now - _group_membership_cache_timestamp > GROUP_MEMBERSHIP_CACHE_TTL:
+        mapping, counts = _load_group_membership()
+        _group_membership_cache = mapping
+        _group_membership_cache_timestamp = now
+        return mapping, counts
+
+    # Recompute counts from cache
+    counts: Dict[str, int] = {}
+    for info in _group_membership_cache.values():
+        g = info["group"]
+        counts[g] = counts.get(g, 0) + 1
+    return _group_membership_cache, counts
+
+
+def collect_user_group_info() -> List[str]:
+    """Collect user-to-group mapping for Prometheus joins.
+
+    Enables queries like:
+        count by (group)(ds01_gpu_allocated * on(user) group_left(group) ds01_user_group_info)
+    """
+    lines = []
+    mapping, counts = _get_group_membership()
+
+    lines.append("# HELP ds01_user_group_info User group membership (1=member)")
+    lines.append("# TYPE ds01_user_group_info gauge")
+
+    for info in mapping.values():
+        user = info["user"].replace('"', '\\"')
+        group = info["group"]
+        lines.append(f'ds01_user_group_info{{user="{user}",group="{group}"}} 1')
+
+    lines.append("")
+    lines.append("# HELP ds01_group_members_total Total members per group")
+    lines.append("# TYPE ds01_group_members_total gauge")
+
+    for group, count in sorted(counts.items()):
+        lines.append(f'ds01_group_members_total{{group="{group}"}} {count}')
+
+    return lines
+
+
+def _detect_cgroup_root() -> str:
+    """Detect cgroup hierarchy root for ds01.slice.
+
+    Mirrors logic from collect-resource-stats.sh.
+    """
+    candidates = [
+        Path("/sys/fs/cgroup/ds01.slice"),  # pure v2
+        Path("/sys/fs/cgroup/unified/ds01.slice"),  # v1 hybrid
+        Path("/sys/fs/cgroup/cpu/ds01.slice"),  # v1 cpu controller
+    ]
+    for path in candidates:
+        if path.is_dir():
+            return str(path)
+    return ""
+
+
+def collect_cpu_per_user() -> List[str]:
+    """Collect per-user CPU and memory usage from cgroup stats.
+
+    Reads cpu.stat and memory.current from each user slice under ds01.slice.
+    Reverse-maps sanitized slice names to full usernames via group membership files.
+    """
+    lines = []
+    cgroup_root = _detect_cgroup_root()
+    if not cgroup_root:
+        return lines
+
+    mapping, _ = _get_group_membership()
+    root_path = Path(cgroup_root)
+    is_v1 = "/cpu/" in cgroup_root
+
+    lines.append(
+        "# HELP ds01_user_cpu_usage_seconds_total Total CPU seconds consumed by user (from cgroup)"
+    )
+    lines.append("# TYPE ds01_user_cpu_usage_seconds_total counter")
+
+    cpu_lines = []
+    mem_lines = []
+
+    # Iterate group slices
+    for group_dir in sorted(root_path.iterdir()):
+        if not group_dir.is_dir() or not group_dir.name.startswith("ds01-"):
+            continue
+
+        # Extract group name: ds01-student.slice -> student
+        group_name = group_dir.name.replace(".slice", "").split("-", 1)[1]
+
+        # Iterate user slices within group
+        for user_dir in sorted(group_dir.iterdir()):
+            if not user_dir.is_dir() or not user_dir.name.startswith("ds01-"):
+                continue
+
+            # Extract sanitized user: ds01-student-h_baker.slice -> h_baker
+            slice_base = user_dir.name.replace(".slice", "")
+            # Remove "ds01-{group}-" prefix
+            prefix = f"ds01-{group_name}-"
+            if not slice_base.startswith(prefix):
+                continue
+            sanitized_user = slice_base[len(prefix) :]
+
+            # Reverse-map to full username
+            info = mapping.get(sanitized_user)
+            if info:
+                full_user = info["user"]
+                group = info["group"]
+            else:
+                full_user = sanitized_user
+                group = group_name
+
+            safe_user = full_user.replace('"', '\\"')
+
+            # Read CPU usage
+            if is_v1:
+                cpu_stat_file = user_dir / "cpuacct.usage"
+                try:
+                    raw = cpu_stat_file.read_text().strip()
+                    # v1 cpuacct.usage is in nanoseconds
+                    cpu_seconds = int(raw) / 1_000_000_000
+                except (OSError, ValueError):
+                    cpu_seconds = None
+            else:
+                cpu_stat_file = user_dir / "cpu.stat"
+                cpu_seconds = None
+                try:
+                    for line in cpu_stat_file.read_text().splitlines():
+                        if line.startswith("usage_usec "):
+                            cpu_seconds = int(line.split()[1]) / 1_000_000
+                            break
+                except (OSError, ValueError):
+                    pass
+
+            if cpu_seconds is not None:
+                cpu_lines.append(
+                    f"ds01_user_cpu_usage_seconds_total"
+                    f'{{user="{safe_user}",group="{group}"}} {cpu_seconds:.3f}'
+                )
+
+            # Read memory usage
+            if is_v1:
+                mem_file = user_dir / "memory.usage_in_bytes"
+            else:
+                mem_file = user_dir / "memory.current"
+
+            try:
+                mem_bytes = int(mem_file.read_text().strip())
+                mem_lines.append(
+                    f"ds01_user_memory_current_bytes"
+                    f'{{user="{safe_user}",group="{group}"}} {mem_bytes}'
+                )
+            except (OSError, ValueError):
+                pass
+
+    lines.extend(cpu_lines)
+    lines.append("")
+    lines.append("# HELP ds01_user_memory_current_bytes Current memory usage by user (from cgroup)")
+    lines.append("# TYPE ds01_user_memory_current_bytes gauge")
+    lines.extend(mem_lines)
+
+    return lines
+
+
 def collect_all_metrics() -> str:
     """Collect all metrics and return as Prometheus text format."""
     lines = []
@@ -624,7 +852,7 @@ def collect_all_metrics() -> str:
     # Exporter info
     lines.append("# HELP ds01_exporter_info DS01 exporter information")
     lines.append("# TYPE ds01_exporter_info gauge")
-    lines.append('ds01_exporter_info{version="2.2.0",type="slim"} 1')
+    lines.append('ds01_exporter_info{version="2.3.0",type="slim"} 1')
     lines.append("")
 
     # Collect DS01-specific metrics only (allocation, user, events, system)
@@ -644,6 +872,10 @@ def collect_all_metrics() -> str:
     lines.extend(collect_unmanaged_metrics())
     lines.append("")
     lines.extend(collect_ssh_metrics())
+    lines.append("")
+    lines.extend(collect_user_group_info())
+    lines.append("")
+    lines.extend(collect_cpu_per_user())
 
     return "\n".join(lines) + "\n"
 
