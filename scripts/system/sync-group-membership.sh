@@ -38,6 +38,12 @@ OVERRIDES_FILE="${INFRA_ROOT}/config/group-overrides.txt"
 ARCHIVED_FILE="${GROUPS_DIR}/archived.members"
 LOG_TAG="DS01-sync-groups"
 
+# Source event logging library
+EVENTS_LIB="${INFRA_ROOT}/scripts/lib/ds01_events.sh"
+if [ -f "$EVENTS_LIB" ]; then
+    source "$EVENTS_LIB"
+fi
+
 # Options
 DRY_RUN=false
 VERBOSE=false
@@ -200,6 +206,11 @@ EOF
     # Add user
     echo "$username" >>"$members_file"
     log "Added $username to ${group}.members" "always"
+
+    # Log event for monthly reporting (best-effort, never blocks)
+    if command -v log_event &>/dev/null; then
+        log_event "user.added" "$username" "sync-group-membership" group="$group" || true
+    fi
 }
 
 # Main sync function
