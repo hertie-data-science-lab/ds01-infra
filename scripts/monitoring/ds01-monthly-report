@@ -32,7 +32,7 @@ from typing import Any
 # Configuration
 # ============================================================================
 
-PROMETHEUS_URL = "http://localhost:9090"
+PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://localhost:9090")
 INFRA_ROOT = Path("/opt/ds01-infra")
 GROUPS_DIR = INFRA_ROOT / "config/runtime/groups"
 EVENTS_FILE = Path("/var/log/ds01/events.jsonl")
