@@ -40,7 +40,7 @@ LOG_TAG="DS01-sync-groups"
 
 # Source event logging library
 EVENTS_LIB="${INFRA_ROOT}/scripts/lib/ds01_events.sh"
-if [[ -f "$EVENTS_LIB" ]]; then
+if [[ -f $EVENTS_LIB ]]; then
     source "$EVENTS_LIB"
 fi
 
