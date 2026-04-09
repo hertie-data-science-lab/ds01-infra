@@ -16,6 +16,7 @@ import argparse
 import calendar
 import gzip
 import json
+import math
 import os
 import subprocess
 import sys
@@ -227,10 +228,12 @@ def query_github_issues(month_start: str, month_end: str) -> dict[str, Any] | No
             timeout=30,
         )
         if result.returncode != 0:
+            print(f"  [warn] gh issue list failed: {result.stderr.strip()}", file=sys.stderr)
             return None
 
         issues = json.loads(result.stdout)
-    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError):
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"  [warn] GitHub Issues query failed: {e}", file=sys.stderr)
         return None
 
     start_dt = datetime.fromisoformat(f"{month_start}T00:00:00+00:00")
@@ -354,10 +357,13 @@ def _section_user_activity(
     # By group
     lines.append("\n### By Group\n")
 
+    # Count distinct active GPU users per group (using current group mapping)
     gpu_by_group = prom_vector(
-        f"count by (group)(count_over_time("
-        f"(ds01_gpu_allocated * on(user) group_left(group) ds01_user_group_info)"
-        f"[{range_str}]))",
+        f"count by (group)("
+        f"count by (user, group)("
+        f"count_over_time(ds01_gpu_allocated[{range_str}])"
+        f") * on(user) group_left(group) ds01_user_group_info"
+        f")",
         query_time,
     )
 
@@ -400,14 +406,14 @@ def _section_gpu_usage(
         summary["Total GPU-hours (allocated)"] = f"{total_gpu_hours:,.1f}"
     if weighted_gpu_hours is not None:
         lines.append(f"- **Total GPU-hours (utilisation-weighted):** {weighted_gpu_hours:,.1f}")
-    if total_gpu_hours and weighted_gpu_hours and total_gpu_hours > 0:
+    if total_gpu_hours and weighted_gpu_hours and total_gpu_hours > 1:
         efficiency = (weighted_gpu_hours / total_gpu_hours) * 100
         lines.append(f"- **GPU efficiency:** {efficiency:.1f}%")
         summary["GPU efficiency"] = f"{efficiency:.1f}%"
 
     # Average waste
     avg_waste = prom_scalar(f"avg_over_time(ds01:gpu_waste_percent[{range_str}])", query_time)
-    if avg_waste is not None:
+    if avg_waste is not None and not math.isnan(avg_waste):
         lines.append(f"- **Average GPU waste:** {avg_waste:.1f}%")
 
     # Per-user GPU-hours (top 15)
@@ -453,9 +459,11 @@ def _section_cpu_usage(
     if peak_cpu is not None:
         lines.append(f"- **Peak system CPU utilisation:** {peak_cpu:.1f}%")
 
-    # Per-user CPU-hours
+    # Per-user CPU-hours (counter — use increase over the month, fall back to
+    # current value if the metric has less than a full month of history)
     user_cpu_hours = prom_vector(
-        f"topk(15, increase(ds01_user_cpu_usage_seconds_total[{range_str}]) / 3600)",
+        f"topk(15, (increase(ds01_user_cpu_usage_seconds_total[{range_str}])"
+        f" or ds01_user_cpu_usage_seconds_total) / 3600)",
         query_time,
     )
     if user_cpu_hours:
