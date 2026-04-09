@@ -865,8 +865,10 @@ def _section_system_load(
 
     if avg_temp is not None:
         lines.append(f"- **Average GPU temperature:** {avg_temp:.0f}\u00b0C")
+        summary["Avg GPU temp"] = f"{avg_temp:.0f}\u00b0C"
     if peak_temp is not None:
         lines.append(f"- **Peak GPU temperature:** {peak_temp:.0f}\u00b0C")
+        summary["Peak GPU temp"] = f"{peak_temp:.0f}\u00b0C"
 
     # Lifecycle events from event log (already scanned above)
     lifecycle = {
@@ -896,10 +898,12 @@ def _section_support_tickets(
         summary["Issues closed"] = str(tickets["closed"])
         if tickets["resolution_days_mean"] is not None:
             lines.append(f"- **Mean resolution time:** {tickets['resolution_days_mean']:.1f} days")
+            summary["Resolution mean"] = f"{tickets['resolution_days_mean']:.1f}d"
         if tickets["resolution_days_median"] is not None:
             lines.append(
                 f"- **Median resolution time:** {tickets['resolution_days_median']:.1f} days"
             )
+            summary["Resolution median"] = f"{tickets['resolution_days_median']:.1f}d"
 
         if tickets["by_label"]:
             lines.append("\n### By Category\n")
@@ -1120,6 +1124,7 @@ def generate_report(
     summary_data["avg_cpu_pct"] = _parse_num("Average system CPU utilisation")
     summary_data["avg_memory_pct"] = _parse_num("Average memory utilisation")
     summary_data["total_members"] = sum(len(m) for m in groups.values())
+    summary_data["members_by_group"] = {g: len(m) for g, m in groups.items()}
     summary_data["new_users"] = event_counts.get("user.added", 0)
     summary_data["containers_created"] = len(container_events.get("container.create", []))
     summary_data["gpu_rejected"] = len(container_events.get("gpu.rejected", []))
@@ -1213,50 +1218,63 @@ def build_teams_summary(
     cpu_val = _trend("avg_cpu_pct", is_pct=True)
     if cpu_val != "-":
         facts.append({"title": "CPU utilisation", "value": cpu_val})
-    mem_val = summary.get("Average memory utilisation", "")
-    if mem_val:
+    mem_val = _trend("avg_memory_pct", is_pct=True)
+    if mem_val != "-":
         facts.append({"title": "Memory utilisation", "value": mem_val})
+    avg_temp = summary.get("Avg GPU temp", "")
+    peak_temp = summary.get("Peak GPU temp", "")
+    if avg_temp or peak_temp:
+        facts.append({"title": "GPU temperature", "value": f"{avg_temp} avg / {peak_temp} peak"})
     containers_val = _trend("containers_created")
     if containers_val != "-":
         facts.append({"title": "Containers created", "value": containers_val})
-    gpu_rej = summary_data.get("gpu_rejected", 0)
-    if gpu_rej and gpu_rej > 0:
-        facts.append({"title": "GPU rejected", "value": str(int(gpu_rej))})
-    opened = summary.get("Issues opened", "")
-    closed = summary.get("Issues closed", "")
-    if opened or closed:
+    gpu_rej_val = _trend("gpu_rejected")
+    if gpu_rej_val != "-" and summary_data.get("gpu_rejected", 0):
+        facts.append({"title": "GPU rejected", "value": gpu_rej_val})
+    issues_opened = _trend("issues_opened")
+    issues_closed = _trend("issues_closed")
+    if issues_opened != "-" or issues_closed != "-":
         facts.append(
-            {"title": "Issues", "value": f"{opened or '?'} opened / {closed or '?'} closed"}
+            {"title": "Issues", "value": f"{issues_opened} opened / {issues_closed} closed"}
         )
-    new_users = summary_data.get("new_users", 0)
+    res_mean = summary.get("Resolution mean", "")
+    res_median = summary.get("Resolution median", "")
+    if res_mean or res_median:
+        facts.append(
+            {"title": "Resolution time", "value": f"{res_mean} mean / {res_median} median"}
+        )
+
+    # Users by group
+    new_users_val = _trend("new_users")
     total_members = summary_data.get("total_members", 0)
-    if new_users or total_members:
+    members_by_group = summary_data.get("members_by_group", {})
+    if new_users_val != "-" or total_members:
+        group_parts = [
+            f"{g}: {c}"
+            for g, c in sorted(members_by_group.items(), key=lambda x: x[1], reverse=True)
+            if g != "archived"
+        ]
         facts.append(
-            {
-                "title": "Users",
-                "value": f"{int(new_users or 0)} new / {int(total_members or 0)} total",
-            }
+            {"title": "Users", "value": f"{new_users_val} new / {int(total_members or 0)} total"}
         )
+        if group_parts:
+            facts.append({"title": "By group", "value": ", ".join(group_parts)})
 
     # Highlights
     highlights = []
-    # Find busiest period from summary (set by _section_system_load if available)
     busiest = summary.get("Busiest period")
     if busiest:
         highlights.append(f"- Busiest: {busiest}")
-    if new_users and int(new_users) > 0:
-        highlights.append(f"- {int(new_users)} new user(s) joined")
-    # Most notable trend
+    new_users_count = summary_data.get("new_users", 0) or 0
+    if new_users_count > 0:
+        highlights.append(f"- {int(new_users_count)} new user(s) joined")
     if prev:
         gpu_curr = summary_data.get("total_gpu_hours")
         gpu_prev = prev.get("total_gpu_hours")
         if gpu_curr and gpu_prev and gpu_prev > 0:
             pct = ((gpu_curr - gpu_prev) / gpu_prev) * 100
             direction = "up" if pct > 0 else "down"
-            if month == 1:
-                prev_name = calendar.month_name[12]
-            else:
-                prev_name = calendar.month_name[month - 1]
+            prev_name = calendar.month_name[12 if month == 1 else month - 1]
             highlights.append(f"- GPU usage {direction} {abs(pct):.0f}% vs {prev_name}")
 
     # Build card body
@@ -1272,30 +1290,19 @@ def build_teams_summary(
     if facts:
         body.append({"type": "FactSet", "facts": facts})
     if highlights:
+        body.append({"type": "TextBlock", "text": "**Highlights**", "spacing": "Medium"})
         body.append(
-            {
-                "type": "TextBlock",
-                "text": "**Highlights**",
-                "spacing": "Medium",
-            }
-        )
-        body.append(
-            {
-                "type": "TextBlock",
-                "text": "\n".join(highlights),
-                "wrap": True,
-                "size": "Small",
-            }
+            {"type": "TextBlock", "text": "\n".join(highlights), "wrap": True, "size": "Small"}
         )
 
-    # Grafana link
+    # Grafana link (internal for now)
     body.append(
         {
             "type": "ActionSet",
             "actions": [
                 {
                     "type": "Action.OpenUrl",
-                    "title": "View in Grafana",
+                    "title": "View in Grafana (internal)",
                     "url": grafana_url,
                 }
             ],
@@ -1305,8 +1312,9 @@ def build_teams_summary(
         {
             "type": "TextBlock",
             "text": (
-                f"Full report: /var/log/ds01-infra/reports/monthly/{year}-{month:02d}.md\n"
-                "Grafana: internal access only (external via Cloudflare tunnel planned)"
+                "Full report posted below. "
+                "Grafana dashboard and email delivery coming soon "
+                "\u2014 external access via Cloudflare tunnel planned."
             ),
             "size": "Small",
             "isSubtle": True,
@@ -1332,13 +1340,8 @@ def build_teams_summary(
     return json.dumps(card)
 
 
-def post_to_teams(payload: str) -> bool:
-    """Post an Adaptive Card payload to Teams via webhook."""
-    url = _load_teams_webhook_url()
-    if not url:
-        print("  Teams webhook URL not configured -- skipping", file=sys.stderr)
-        return False
-
+def _post_webhook(url: str, payload: str, label: str = "Teams") -> bool:
+    """Post a JSON payload to a webhook URL."""
     try:
         req = urllib.request.Request(
             url,
@@ -1349,8 +1352,23 @@ def post_to_teams(payload: str) -> bool:
         with urllib.request.urlopen(req, timeout=15) as resp:
             return resp.status in (200, 202)
     except (urllib.error.URLError, OSError) as e:
-        print(f"  Teams post failed: {e}", file=sys.stderr)
+        print(f"  {label} post failed: {e}", file=sys.stderr)
         return False
+
+
+def post_to_teams(summary_card: str, report_md: str | None = None) -> bool:
+    """Post summary card to Teams, optionally followed by full report as second message."""
+    url = _load_teams_webhook_url()
+    if not url:
+        print("  Teams webhook URL not configured -- skipping", file=sys.stderr)
+        return False
+
+    ok = _post_webhook(url, summary_card, "Teams summary card")
+    if ok and report_md:
+        # Post full report as a simple text message (Teams renders basic markdown)
+        text_payload = json.dumps({"text": report_md})
+        _post_webhook(url, text_payload, "Teams full report")
+    return ok
 
 
 # ============================================================================
@@ -1425,11 +1443,11 @@ def main() -> None:
     sidecar_file.write_text(json.dumps(sidecar, indent=2) + "\n")
     print(f"Summary saved: {sidecar_file}")
 
-    # Post to Teams
+    # Post to Teams (summary card + full report as second message)
     if not args.no_teams:
-        print("Posting summary to Teams...")
-        payload = build_teams_summary(summary, summary_data, year, month)
-        if post_to_teams(payload):
+        print("Posting to Teams...")
+        card_payload = build_teams_summary(summary, summary_data, year, month)
+        if post_to_teams(card_payload, report):
             print("Teams notification sent.")
         else:
             print("Teams notification skipped or failed.")
