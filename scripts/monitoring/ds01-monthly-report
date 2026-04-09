@@ -311,6 +311,16 @@ def display_user(user: str) -> str:
     return user.split("@")[0] if "@" in user else user
 
 
+def _lookup_group(user: str, user_group_map: dict[str, str]) -> str:
+    """Look up user's group, trying both full and short username forms."""
+    group = user_group_map.get(user)
+    if group:
+        return group
+    # Try stripping domain (GPU metrics may have @domain, group_info may not, or vice versa)
+    short = user.split("@")[0] if "@" in user else user
+    return user_group_map.get(short, "-")
+
+
 def _render_user_table(
     title: str, unit: str, data: dict[str, float], user_group_map: dict[str, str]
 ) -> list[str]:
@@ -319,7 +329,7 @@ def _render_user_table(
     lines.append(f"| User | Group | {unit} |")
     lines.append("|------|-------|-----------|")
     for user, hours in sorted(data.items(), key=lambda x: x[1], reverse=True):
-        group = user_group_map.get(user, "-")
+        group = _lookup_group(user, user_group_map)
         lines.append(f"| {display_user(user)} | {group} | {hours:,.1f} |")
     return lines
 
@@ -408,12 +418,13 @@ def _section_gpu_usage(
     lines: list[str] = []
     summary: dict[str, str] = {}
 
-    # Total GPU-hours
+    # Total GPU-hours (count_over_time * scrape_interval is accurate for gauges;
+    # increase() on the recording rule gauge gives wrong results)
     total_gpu_hours = prom_scalar(
-        f"sum(increase(ds01:user_gpu_seconds[{range_str}])) / 3600", query_time
+        f"sum(count_over_time(ds01_gpu_allocated[{range_str}])) * 30 / 3600", query_time
     )
     weighted_gpu_hours = prom_scalar(
-        f"sum(increase(ds01:user_gpu_seconds_weighted[{range_str}])) / 3600",
+        f"sum(sum_over_time(ds01:user_gpu_seconds_weighted[{range_str}])) / 3600",
         query_time,
     )
 
@@ -432,19 +443,30 @@ def _section_gpu_usage(
     if avg_waste is not None and not math.isnan(avg_waste):
         lines.append(f"- **Average GPU waste:** {avg_waste:.1f}%")
 
-    # Per-user GPU-hours (top 15)
-    user_gpu_hours = prom_vector(
-        f"topk(15, increase(ds01:user_gpu_seconds[{range_str}]) / 3600)",
+    # Per-user GPU-hours (allocated + weighted, top 15 by allocated)
+    user_alloc = prom_query(
+        f"topk(15, sum by (user)(count_over_time(ds01_gpu_allocated[{range_str}])) * 30 / 3600)",
         query_time,
     )
-    if user_gpu_hours:
-        lines.extend(
-            _render_user_table(
-                "GPU-Hours by User (Top 15)", "GPU-Hours", user_gpu_hours, user_group_map
-            )
-        )
+    user_weighted = prom_vector(
+        f"topk(15, sum_over_time(ds01:user_gpu_seconds_weighted[{range_str}]) / 3600)",
+        query_time,
+    )
+    if user_alloc:
+        lines.append("\n### GPU-Hours by User (Top 15)\n")
+        lines.append("| User | Group | Allocated | Weighted |")
+        lines.append("|------|-------|-----------|----------|")
+        for r in user_alloc:
+            user = r.get("metric", {}).get("user", "?")
+            group = _lookup_group(user, user_group_map)
+            try:
+                alloc_h = float(r["value"][1])
+            except (KeyError, ValueError, IndexError):
+                continue
+            weight_h = user_weighted.get(user, 0)
+            lines.append(f"| {display_user(user)} | {group} | {alloc_h:,.1f} | {weight_h:,.1f} |")
 
-    # Per-container GPU-hours (top 15)
+    # Per-container GPU-hours (top 15, allocated only — weighted requires new recording rule)
     # 30s multiplier = ds01-exporter scrape interval
     container_results = prom_query(
         f"topk(15, sum by (container, user)"
@@ -459,7 +481,7 @@ def _section_gpu_usage(
             m = r.get("metric", {})
             container = m.get("container", "?")
             user = m.get("user", "?")
-            group = user_group_map.get(user, "-")
+            group = _lookup_group(user, user_group_map)
             try:
                 hours = float(r["value"][1])
             except (KeyError, ValueError, IndexError):
@@ -515,7 +537,9 @@ def _section_cpu_usage(
             )
         )
     else:
-        lines.append("*Per-user CPU data not yet available (requires ds01-exporter v2.3.0+).*")
+        lines.append(
+            "*Per-user CPU data not available for this period (insufficient metric history).*"
+        )
 
     return lines, summary
 
@@ -561,7 +585,9 @@ def _section_memory_usage(
             _render_user_table("Memory by User (Top 15)", "Avg GiB", user_mem, user_group_map)
         )
     else:
-        lines.append("*Per-user memory data not yet available.*")
+        lines.append(
+            "*Per-user memory data not available for this period (insufficient metric history).*"
+        )
 
     return lines, summary
 
@@ -638,14 +664,24 @@ def _section_container_activity(
         )
         lines.append(f"- **Median container lifetime:** {median_lifetime:.1f}h")
 
-    # GPU rejections, auth denied, bare metal warnings
+    # GPU rejections, auth denied, bare metal warnings — with top offenders
+    def _top_users(events: list[dict], n: int = 5) -> str:
+        by_user: dict[str, int] = defaultdict(int)
+        for ev in events:
+            by_user[display_user(ev.get("user", "unknown"))] += 1
+        top = sorted(by_user.items(), key=lambda x: x[1], reverse=True)[:n]
+        return ", ".join(f"{u} ({c})" for u, c in top)
+
     if rejected:
         summary["GPU rejected"] = str(len(rejected))
         lines.append(f"\n- **GPU requests rejected:** {len(rejected)}")
+        lines.append(f"  - Top users: {_top_users(rejected)}")
     if denied:
         lines.append(f"- **Auth denied (bare metal GPU):** {len(denied)}")
+        lines.append(f"  - Top users: {_top_users(denied)}")
     if bare_metal:
         lines.append(f"- **Bare metal GPU warnings:** {len(bare_metal)}")
+        lines.append(f"  - Top users: {_top_users(bare_metal)}")
 
     return lines, summary
 
@@ -668,11 +704,22 @@ def _section_system_load(
     peak_allocated = prom_scalar(
         f"max_over_time(ds01:system_mig_allocated[{range_str}])", query_time
     )
-    avg_free = prom_scalar(f"avg_over_time(ds01:system_mig_free[{range_str}])", query_time)
-    total_slots = prom_scalar("ds01:system_mig_total", query_time)
+    # Combine MIG + full GPU free counts for accurate total
+    avg_free = prom_scalar(
+        f"avg_over_time((ds01:system_mig_free + ds01:system_full_gpu_slots_free)[{range_str}:5m])",
+        query_time,
+    )
+    # Total = MIG instances + full GPU slots
+    total_mig = prom_scalar("ds01:system_mig_total", query_time)
+    total_full = prom_scalar("ds01:system_full_gpu_slots_total", query_time)
+    total_slots = None
+    if total_mig is not None and total_full is not None:
+        total_slots = int(total_mig) + int(total_full)
+    elif total_full is not None:
+        total_slots = int(total_full)
 
     if total_slots is not None:
-        lines.append(f"- **Total GPU/MIG slots:** {int(total_slots)}")
+        lines.append(f"- **Total GPU/MIG slots:** {total_slots}")
     if avg_allocated is not None:
         lines.append(f"- **Average allocated:** {avg_allocated:.1f}")
     if peak_allocated is not None:
@@ -970,10 +1017,16 @@ def generate_report(
     event_counts = count_events_in_range(start_ts, end_ts, event_types_needed, container_events)
 
     # Query user-group mapping once for table lookups
+    # Index by both full (user@domain) and short (user) forms for cross-metric matching
     user_group_map: dict[str, str] = {}
-    for r in prom_query("ds01_user_group_info", query_time):
+    # Query current group membership (not at report time — metric may not have existed then)
+    for r in prom_query("ds01_user_group_info"):
         m = r.get("metric", {})
-        user_group_map[m.get("user", "")] = m.get("group", "")
+        user = m.get("user", "")
+        group = m.get("group", "")
+        user_group_map[user] = group
+        if "@" in user:
+            user_group_map[user.split("@")[0]] = group
 
     lines: list[str] = []
     summary: dict[str, str] = {}
