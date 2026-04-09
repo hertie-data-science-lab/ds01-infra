@@ -704,28 +704,19 @@ def _section_system_load(
 
     lines.append("\n### GPU Capacity\n")
 
+    total_gpus = prom_scalar("ds01:system_full_gpu_slots_total")
     avg_allocated = prom_scalar(
-        f"avg_over_time(ds01:system_mig_allocated[{range_str}])", query_time
+        f"avg_over_time(ds01:system_full_gpu_slots_allocated[{range_str}])", query_time
     )
     peak_allocated = prom_scalar(
-        f"max_over_time(ds01:system_mig_allocated[{range_str}])", query_time
+        f"max_over_time(ds01:system_full_gpu_slots_allocated[{range_str}])", query_time
     )
-    # Combine MIG + full GPU free counts for accurate total
     avg_free = prom_scalar(
-        f"avg_over_time((ds01:system_mig_free + ds01:system_full_gpu_slots_free)[{range_str}:5m])",
-        query_time,
+        f"avg_over_time(ds01:system_full_gpu_slots_free[{range_str}])", query_time
     )
-    # Total = MIG instances + full GPU slots
-    total_mig = prom_scalar("ds01:system_mig_total", query_time)
-    total_full = prom_scalar("ds01:system_full_gpu_slots_total", query_time)
-    total_slots = None
-    if total_mig is not None and total_full is not None:
-        total_slots = int(total_mig) + int(total_full)
-    elif total_full is not None:
-        total_slots = int(total_full)
 
-    if total_slots is not None:
-        lines.append(f"- **Total GPU/MIG slots:** {total_slots}")
+    if total_gpus is not None:
+        lines.append(f"- **Total GPUs:** {int(total_gpus)}")
     if avg_allocated is not None:
         lines.append(f"- **Average allocated:** {avg_allocated:.1f}")
     if peak_allocated is not None:
