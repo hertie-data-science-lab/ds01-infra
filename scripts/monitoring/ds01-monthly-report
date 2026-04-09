@@ -61,6 +61,9 @@ def _load_teams_webhook_url() -> str | None:
 # ============================================================================
 
 
+_prom_warn_seen: set[str] = set()
+
+
 def _prom_request(path: str, params: str, timeout: int = 30) -> list[dict]:
     """Shared Prometheus HTTP request: build URL, fetch, parse result vector."""
     url = f"{PROMETHEUS_URL}{path}?{params}"
@@ -70,7 +73,10 @@ def _prom_request(path: str, params: str, timeout: int = 30) -> list[dict]:
             if data.get("status") == "success":
                 return data["data"]["result"]
     except (urllib.error.URLError, json.JSONDecodeError, KeyError, OSError) as e:
-        print(f"  [warn] Prometheus query failed: {e}", file=sys.stderr)
+        err_key = type(e).__name__
+        if err_key not in _prom_warn_seen:
+            _prom_warn_seen.add(err_key)
+            print(f"  [warn] Prometheus query failed: {e} (suppressing further)", file=sys.stderr)
     return []
 
 
@@ -472,17 +478,34 @@ def _section_gpu_usage(
             weight_h = user_weighted.get(user, 0)
             lines.append(f"| {display_user(user)} | {group} | {alloc_h:,.1f} | {weight_h:,.1f} |")
 
-    # Per-container GPU-hours (top 15, allocated only — weighted requires new recording rule)
+    # Per-container GPU-hours (top 15)
     # 30s multiplier = ds01-exporter scrape interval
     container_results = prom_query(
         f"topk(15, sum by (container, user)"
         f"(count_over_time(ds01_gpu_allocated[{range_str}])) * 30 / 3600)",
         query_time,
     )
+    # Per-container weighted: allocated_hours * avg_utilisation of each slot
+    container_weighted = {}
+    weighted_results = prom_query(
+        f"sum by (container, user)("
+        f"count_over_time(ds01_gpu_allocated[{range_str}]) * 30 / 3600"
+        f" * on(gpu_slot) group_left()"
+        f" (avg_over_time(ds01:gpu_utilization_by_slot[{range_str}]) / 100))",
+        query_time,
+    )
+    for r in weighted_results:
+        m = r.get("metric", {})
+        key = (m.get("container", ""), m.get("user", ""))
+        try:
+            container_weighted[key] = float(r["value"][1])
+        except (KeyError, ValueError, IndexError):
+            pass
+
     if container_results:
         lines.append("\n### GPU-Hours by Container (Top 15)\n")
-        lines.append("| Container | User | Group | GPU-Hours |")
-        lines.append("|-----------|------|-------|-----------|")
+        lines.append("| Container | User | Group | Allocated | Weighted |")
+        lines.append("|-----------|------|-------|-----------|----------|")
         for r in container_results:
             m = r.get("metric", {})
             container = m.get("container", "?")
@@ -492,7 +515,10 @@ def _section_gpu_usage(
                 hours = float(r["value"][1])
             except (KeyError, ValueError, IndexError):
                 continue
-            lines.append(f"| {container} | {display_user(user)} | {group} | {hours:,.1f} |")
+            w_hours = container_weighted.get((container, user), 0)
+            lines.append(
+                f"| {container} | {display_user(user)} | {group} | {hours:,.1f} | {w_hours:,.1f} |"
+            )
 
     return lines, summary
 
