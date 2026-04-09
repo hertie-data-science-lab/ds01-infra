@@ -944,26 +944,36 @@ def _load_previous_summary(year: int, month: int) -> dict[str, float | int] | No
 
 
 def _trend_str(current: float, previous: float, is_pct: bool = False) -> str:
-    """Format a trend indicator: '15 (+3)' or '42.3% (-2.1pp)'."""
+    """Format a trend indicator: '15 (+3)' or '42.3% (-2.1pp)'.
+
+    Suppresses trend when change is negligible (rounds to zero).
+    """
     delta = current - previous
     if previous != 0:
         pct_change = abs(delta / previous) * 100
     else:
         pct_change = 0
 
-    if delta > 0:
-        arrow = "\u2191"
-    elif delta < 0:
-        arrow = "\u2193"
-    else:
-        arrow = "\u2192"
-
     if is_pct:
+        # For percentage metrics, show pp change — suppress if <0.05pp
+        if abs(delta) < 0.05:
+            return f"{current:.1f}%"
+        arrow = "\u2191" if delta > 0 else "\u2193"
         return f"{current:.1f}% ({arrow} {abs(delta):.1f}pp)"
     elif abs(current) >= 100:
+        # For large numbers, show % change — suppress if rounds to 0%
+        if round(pct_change) == 0:
+            return f"{current:,.0f}"
+        arrow = "\u2191" if delta > 0 else "\u2193"
         return f"{current:,.0f} ({arrow} {pct_change:.0f}%)"
     else:
-        return f"{int(current)} ({arrow} {abs(int(delta))})"
+        # For small numbers, show absolute change — suppress if rounds to 0
+        fmt = f"{current:,.1f}" if current != int(current) else str(int(current))
+        if round(abs(delta)) == 0:
+            return fmt
+        arrow = "\u2191" if delta > 0 else "\u2193"
+        delta_fmt = f"{abs(delta):,.1f}" if delta != int(delta) else str(abs(int(delta)))
+        return f"{fmt} ({arrow} {delta_fmt})"
 
 
 def _section_trends(
@@ -1197,10 +1207,10 @@ def build_teams_summary(
             return f"{curr:.1f}%"
         return f"{int(curr)}" if curr == int(curr) else f"{curr:,.1f}"
 
-    # Headline KPI columns
+    # Headline KPI columns (with month-over-month trends)
     kpi_columns = [
         ("Active Users", _trend("active_gpu_users")),
-        ("GPU-Hours", summary.get("Total GPU-hours (allocated)", "-")),
+        ("GPU-Hours", _trend("total_gpu_hours")),
         ("GPU Efficiency", _trend("gpu_efficiency", is_pct=True)),
     ]
     columns = []
@@ -1222,24 +1232,17 @@ def build_teams_summary(
             }
         )
 
-    # Fact set — key metrics with trends
+    # Fact set — key metrics with month-over-month trends
     facts = []
     cpu_val = _trend("avg_cpu_pct", is_pct=True)
     if cpu_val != "-":
         facts.append({"title": "CPU utilisation", "value": cpu_val})
     mem_val = _trend("avg_memory_pct", is_pct=True)
     if mem_val != "-":
-        facts.append({"title": "Memory utilisation", "value": mem_val})
-    avg_temp = summary.get("Avg GPU temp", "")
-    peak_temp = summary.get("Peak GPU temp", "")
-    if avg_temp or peak_temp:
-        facts.append({"title": "GPU temperature", "value": f"{avg_temp} avg / {peak_temp} peak"})
+        facts.append({"title": "RAM utilisation", "value": mem_val})
     containers_val = _trend("containers_created")
     if containers_val != "-":
         facts.append({"title": "Containers created", "value": containers_val})
-    gpu_rej_val = _trend("gpu_rejected")
-    if gpu_rej_val != "-" and summary_data.get("gpu_rejected", 0):
-        facts.append({"title": "GPU rejected", "value": gpu_rej_val})
     issues_opened = _trend("issues_opened")
     issues_closed = _trend("issues_closed")
     if issues_opened != "-" or issues_closed != "-":
@@ -1252,22 +1255,6 @@ def build_teams_summary(
         facts.append(
             {"title": "Resolution time", "value": f"{res_mean} mean / {res_median} median"}
         )
-
-    # Users by group
-    new_users_val = _trend("new_users")
-    total_members = summary_data.get("total_members", 0)
-    members_by_group = summary_data.get("members_by_group", {})
-    if new_users_val != "-" or total_members:
-        group_parts = [
-            f"{g}: {c}"
-            for g, c in sorted(members_by_group.items(), key=lambda x: x[1], reverse=True)
-            if g != "archived"
-        ]
-        facts.append(
-            {"title": "Users", "value": f"{new_users_val} new / {int(total_members or 0)} total"}
-        )
-        if group_parts:
-            facts.append({"title": "By group", "value": ", ".join(group_parts)})
 
     # Highlights
     highlights = []
@@ -1293,6 +1280,12 @@ def build_teams_summary(
             "text": f"DS01 Monthly Report \u2014 {month_name} {year}",
             "weight": "Bolder",
             "size": "Large",
+        },
+        {
+            "type": "TextBlock",
+            "text": "Summary \u2014 full report follows below.",
+            "size": "Small",
+            "isSubtle": True,
         },
         {"type": "ColumnSet", "columns": columns},
     ]
