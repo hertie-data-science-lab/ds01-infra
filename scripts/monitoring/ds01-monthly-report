@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import calendar
+import getpass
 import gzip
 import json
 import math
@@ -207,26 +208,26 @@ def query_github_issues(month_start: str, month_end: str) -> dict[str, Any] | No
         # Use --search with date qualifiers to scope server-side, avoiding the
         # default behaviour of fetching the 500 most-recently-updated issues
         # across all time (which silently misses data in repos with >500 issues).
-        result = subprocess.run(
-            [
-                "gh",
-                "issue",
-                "list",
-                "--repo",
-                GITHUB_REPO,
-                "--state",
-                "all",
-                "--json",
-                "number,title,state,createdAt,closedAt,labels",
-                "--limit",
-                "500",
-                "--search",
-                f"created:{month_start}..{month_end} updated:{month_start}..{month_end}",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        # Run as datasciencelab user to inherit gh CLI auth (cron runs as root)
+        cmd = [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            GITHUB_REPO,
+            "--state",
+            "all",
+            "--json",
+            "number,title,state,createdAt,closedAt,labels",
+            "--limit",
+            "500",
+            "--search",
+            f"created:{month_start}..{month_end} updated:{month_start}..{month_end}",
+        ]
+        # If running as root, use sudo to inherit datasciencelab's gh auth
+        if getpass.getuser() == "root":
+            cmd = ["sudo", "-u", "datasciencelab"] + cmd
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if result.returncode != 0:
             print(f"  [warn] gh issue list failed: {result.stderr.strip()}", file=sys.stderr)
             return None
@@ -459,13 +460,17 @@ def _section_cpu_usage(
     if peak_cpu is not None:
         lines.append(f"- **Peak system CPU utilisation:** {peak_cpu:.1f}%")
 
-    # Per-user CPU-hours (counter — use increase over the month, fall back to
-    # current value if the metric has less than a full month of history)
+    # Per-user CPU-hours (counter — use increase over the month; if the metric
+    # has less history than range_str, fall back to the raw counter value)
     user_cpu_hours = prom_vector(
-        f"topk(15, (increase(ds01_user_cpu_usage_seconds_total[{range_str}])"
-        f" or ds01_user_cpu_usage_seconds_total) / 3600)",
+        f"topk(15, increase(ds01_user_cpu_usage_seconds_total[{range_str}]) / 3600)",
         query_time,
     )
+    if not user_cpu_hours:
+        user_cpu_hours = prom_vector(
+            "topk(15, ds01_user_cpu_usage_seconds_total / 3600)",
+            query_time,
+        )
     if user_cpu_hours:
         lines.extend(
             _render_user_table(
