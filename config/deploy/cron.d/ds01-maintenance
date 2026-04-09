@@ -75,6 +75,14 @@ INFRA_ROOT=/opt/ds01-infra
 0 3 * * * root $INFRA_ROOT/scripts/monitoring/ds01-health-check >> /var/log/ds01/health-check.log 2>&1
 
 # ============================================================================
+# Group Membership Sync (daily at 4:30am)
+# ============================================================================
+
+# Scan /home/ for new users and update config/runtime/groups/*.members
+# Logs user.added events for monthly report user growth tracking
+30 4 * * * root $INFRA_ROOT/scripts/system/sync-group-membership.sh >> /var/log/ds01/docker-group-cron.log 2>&1
+
+# ============================================================================
 # Log Management and Retention
 # ============================================================================
 
