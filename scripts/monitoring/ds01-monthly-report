@@ -353,6 +353,7 @@ def _section_user_activity(
     month_end: str,
     groups: dict[str, list[str]],
     event_counts: dict[str, int],
+    user_group_map: dict[str, str],
 ) -> tuple[list[str], dict[str, str]]:
     lines: list[str] = []
     summary: dict[str, str] = {}
@@ -395,21 +396,23 @@ def _section_user_activity(
     # By group
     lines.append("\n### By Group\n")
 
-    # Count distinct active GPU users per group (using current group mapping)
-    gpu_by_group = prom_vector(
-        f"count by (group)("
-        f"count by (user, group)("
-        f"count_over_time(ds01_gpu_allocated[{range_str}])"
-        f") * on(user) group_left(group) ds01_user_group_info"
-        f")",
+    # Count distinct active GPU users per group using Python-side group mapping
+    # (PromQL join with ds01_user_group_info fails for historical months where the metric didn't exist)
+    gpu_users_raw = prom_vector(
+        f"count by (user)(count_over_time(ds01_gpu_allocated[{range_str}]))",
         query_time,
     )
+    active_by_group: dict[str, int] = defaultdict(int)
+    for user in gpu_users_raw:
+        group = _lookup_group(user, user_group_map)
+        if group != "-":
+            active_by_group[group] += 1
 
     lines.append("| Group | Members | Active (GPU) |")
     lines.append("|-------|---------|--------------|")
     for group in ("student", "researcher", "faculty", "admin"):
         member_count = len(groups.get(group, []))
-        active = int(gpu_by_group.get(group, 0))
+        active = active_by_group.get(group, 0)
         lines.append(f"| {group} | {member_count} | {active} |")
 
     # User growth
@@ -1075,7 +1078,13 @@ def generate_report(
         (
             "User Activity",
             _section_user_activity(
-                query_time, range_str, month_start, month_end, groups, event_counts
+                query_time,
+                range_str,
+                month_start,
+                month_end,
+                groups,
+                event_counts,
+                user_group_map,
             ),
         ),
         (
