@@ -116,6 +116,8 @@ EVENT_TYPES = {
     # Authentication/Authorization
     "auth.sudo_grant": ["user", "command"],
     "auth.access_denied": ["user", "resource", "reason"],
+    # User management
+    "user.added": ["user", "group"],
     # Test/Verification events
     "test.selftest": ["source", "result"],
     "test.cli": ["source", "result"],
