@@ -374,3 +374,11 @@ groups:
       - record: ds01:lifecycle_kills_24h
         expr: |
           sum(ds01_lifecycle_events_total{action=~"idle_kill|runtime_kill|oom_kill"}) or vector(0)
+
+  # Per-user CPU usage rate (from cgroup stats via ds01-exporter)
+  - name: ds01_cpu_metrics
+    interval: 1m
+    rules:
+      # Per-user CPU cores in use (5m average)
+      - record: ds01:user_cpu_usage_rate
+        expr: rate(ds01_user_cpu_usage_seconds_total[5m])

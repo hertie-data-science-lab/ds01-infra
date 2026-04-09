@@ -514,6 +514,40 @@ else
     echo -e "  ${DIM}DCGM exporter unit not found${NC}"
 fi
 
+# Deploy DS01 metrics exporter (restart only if exporter code changed)
+EXPORTER_SRC="$INFRA_ROOT/monitoring/exporter/ds01_exporter.py"
+EXPORTER_UNIT="$INFRA_ROOT/config/deploy/systemd/ds01-exporter.service"
+if [ -f "$EXPORTER_UNIT" ]; then
+    echo -e "${DIM}Deploying DS01 exporter unit...${NC}"
+    cp "$EXPORTER_UNIT" /etc/systemd/system/
+    systemctl daemon-reload
+    systemctl enable ds01-exporter >/dev/null 2>&1
+
+    if systemctl is-active --quiet ds01-exporter; then
+        # Restart if the exporter source has changed since the service started
+        SERVICE_START=$(systemctl show ds01-exporter --property=ActiveEnterTimestamp --value)
+        if [ -n "$SERVICE_START" ] && [ -f "$EXPORTER_SRC" ]; then
+            SERVICE_EPOCH=$(date -d "$SERVICE_START" +%s 2>/dev/null || echo 0)
+            FILE_EPOCH=$(stat -c %Y "$EXPORTER_SRC" 2>/dev/null || echo 0)
+            if [ "$FILE_EPOCH" -gt "$SERVICE_EPOCH" ]; then
+                systemctl restart ds01-exporter >/dev/null 2>&1
+                echo -e "  ${GREEN}✓${NC} DS01 exporter restarted (code updated)"
+            else
+                echo -e "  ${GREEN}✓${NC} DS01 exporter running (no code changes)"
+            fi
+        fi
+    else
+        systemctl start ds01-exporter >/dev/null 2>&1
+        if systemctl is-active --quiet ds01-exporter; then
+            echo -e "  ${GREEN}✓${NC} DS01 exporter started"
+        else
+            echo -e "  ${YELLOW}!${NC} DS01 exporter failed to start (check journalctl -u ds01-exporter)"
+        fi
+    fi
+else
+    echo -e "  ${DIM}DS01 exporter unit not found${NC}"
+fi
+
 # ============================================================================
 # Resource Enforcement: Generate Per-User Aggregate Limits
 # ============================================================================

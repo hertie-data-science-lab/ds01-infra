@@ -28,7 +28,6 @@ import urllib.request
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 # ============================================================================
 # Configuration
@@ -44,31 +43,45 @@ DCGM_EXPORTER_URL = os.environ.get("DCGM_EXPORTER_URL", "http://127.0.0.1:9400/m
 INFRA_ROOT = Path("/opt/ds01-infra")
 STATE_DIR = Path("/var/lib/ds01")
 LOG_DIR = Path("/var/log/ds01")
+GROUPS_DIR = INFRA_ROOT / "config/runtime/groups"
 
 # Module paths for reuse
 GPU_STATE_READER = INFRA_ROOT / "scripts/docker/gpu-state-reader.py"
+USERNAME_UTILS = INFRA_ROOT / "scripts/lib/username_utils.py"
 
 # ============================================================================
 # Module Loading (reuse existing DS01 code)
 # ============================================================================
 
-_gpu_state_module = None
+_module_cache: dict[str, object] = {}
 
 
 def _load_module(name: str, path: Path):
-    """Dynamically load a Python module from file path."""
-    spec = importlib.util.spec_from_file_location(name, str(path))
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    """Dynamically load a Python module from file path, with caching."""
+    if name not in _module_cache:
+        spec = importlib.util.spec_from_file_location(name, str(path))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _module_cache[name] = module
+    return _module_cache[name]
 
 
 def get_gpu_state_module():
-    """Get cached gpu-state-reader module."""
-    global _gpu_state_module
-    if _gpu_state_module is None:
-        _gpu_state_module = _load_module("gpu_state_reader", GPU_STATE_READER)
-    return _gpu_state_module
+    return _load_module("gpu_state_reader", GPU_STATE_READER)
+
+
+def get_username_utils_module():
+    return _load_module("username_utils", USERNAME_UTILS)
+
+
+# ============================================================================
+# Helpers
+# ============================================================================
+
+
+def _safe_label(value: str) -> str:
+    """Escape a string for use as a Prometheus label value."""
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 # ============================================================================
@@ -80,7 +93,7 @@ def get_gpu_state_module():
 # ============================================================================
 
 
-def collect_allocation_metrics() -> List[str]:
+def collect_allocation_metrics() -> list[str]:
     """Collect GPU allocation metrics from gpu-state-reader."""
     lines = []
 
@@ -129,7 +142,7 @@ def collect_allocation_metrics() -> List[str]:
     return lines
 
 
-def collect_user_metrics() -> List[str]:
+def collect_user_metrics() -> list[str]:
     """Collect per-user resource metrics."""
     lines = []
 
@@ -166,13 +179,13 @@ def collect_user_metrics() -> List[str]:
 
 
 # Event log cache for efficient parsing
-_event_cache: Dict[str, int] = {}
+_event_cache: dict[str, int] = {}
 _event_cache_timestamp: float = 0
 _event_cache_file_pos: int = 0
 EVENT_CACHE_TTL = 60  # Refresh cache every 60 seconds
 
 
-def collect_event_counts() -> List[str]:
+def collect_event_counts() -> list[str]:
     """Collect event counts from events.jsonl (last 24 hours).
 
     Uses incremental file reading with caching to avoid O(n) parsing on every scrape.
@@ -204,7 +217,7 @@ def collect_event_counts() -> List[str]:
             with open(events_file, "r") as f:
                 # If starting fresh, scan the whole file but only count recent events
                 if _event_cache_file_pos == 0:
-                    event_counts: Dict[str, int] = {}
+                    event_counts: dict[str, int] = {}
                     for line in f:
                         try:
                             event = json.loads(line.strip())
@@ -248,7 +261,7 @@ def collect_event_counts() -> List[str]:
         lines.append("# TYPE ds01_events_24h_total gauge")
 
         for event_type, count in _event_cache.items():
-            safe_type = event_type.replace('"', '\\"')
+            safe_type = _safe_label(event_type)
             lines.append(f'ds01_events_24h_total{{event_type="{safe_type}"}} {count}')
 
     except Exception as e:
@@ -257,7 +270,7 @@ def collect_event_counts() -> List[str]:
     return lines
 
 
-LIFECYCLE_EVENT_MAP: Dict[str, Dict[str, str]] = {
+LIFECYCLE_EVENT_MAP: dict[str, dict[str, str]] = {
     "maintenance.idle_kill": {"action": "idle_kill"},
     "maintenance.runtime_kill": {"action": "runtime_kill"},
     "resource.oom_kill": {"action": "oom_kill"},
@@ -268,7 +281,7 @@ LIFECYCLE_EVENT_MAP: Dict[str, Dict[str, str]] = {
 }
 
 
-def collect_lifecycle_metrics() -> List[str]:
+def collect_lifecycle_metrics() -> list[str]:
     """Emit lifecycle event counters from events.jsonl cache.
 
     Depends on collect_event_counts() having been called first to populate _event_cache.
@@ -287,7 +300,7 @@ def collect_lifecycle_metrics() -> List[str]:
     return lines
 
 
-def collect_ssh_metrics() -> List[str]:
+def collect_ssh_metrics() -> list[str]:
     """Collect active SSH session counts per user.
 
     Parses output of the `who` command (available on all Linux systems, no dependencies).
@@ -300,7 +313,7 @@ def collect_ssh_metrics() -> List[str]:
             return lines
 
         # Count sessions per user
-        sessions: Dict[str, int] = {}
+        sessions: dict[str, int] = {}
         for line in result.stdout.strip().split("\n"):
             if not line.strip():
                 continue
@@ -313,8 +326,7 @@ def collect_ssh_metrics() -> List[str]:
         lines.append("# HELP ds01_ssh_sessions_active Active SSH sessions per user")
         lines.append("# TYPE ds01_ssh_sessions_active gauge")
         for user, count in sorted(sessions.items()):
-            safe_user = user.replace('"', '\\"')
-            lines.append(f'ds01_ssh_sessions_active{{user="{safe_user}"}} {count}')
+            lines.append(f'ds01_ssh_sessions_active{{user="{_safe_label(user)}"}} {count}')
 
         lines.append("# HELP ds01_ssh_sessions_total Total active SSH sessions")
         lines.append("# TYPE ds01_ssh_sessions_total gauge")
@@ -327,7 +339,7 @@ def collect_ssh_metrics() -> List[str]:
     return lines
 
 
-def collect_system_metrics() -> List[str]:
+def collect_system_metrics() -> list[str]:
     """Collect basic system metrics."""
     lines = []
 
@@ -351,7 +363,7 @@ def collect_system_metrics() -> List[str]:
     return lines
 
 
-def collect_unmanaged_metrics() -> List[str]:
+def collect_unmanaged_metrics() -> list[str]:
     """Collect metrics for GPU containers outside DS01 tracking.
 
     Unmanaged containers bypass the docker wrapper (e.g., Docker Compose v2)
@@ -368,8 +380,8 @@ def collect_unmanaged_metrics() -> List[str]:
         lines.append("# TYPE ds01_unmanaged_gpu_container gauge")
 
         for c in unmanaged:
-            name = c.get("name", "unknown").replace('"', '\\"')
-            user = c.get("user", "unknown").replace('"', '\\"')
+            name = _safe_label(c.get("name", "unknown"))
+            user = _safe_label(c.get("user", "unknown"))
             gpu_count = c.get("gpu_count", 0)
             access_type = c.get("access_type", "unknown")
             running = "true" if c.get("running") else "false"
@@ -406,25 +418,25 @@ def collect_unmanaged_metrics() -> List[str]:
 # ============================================================================
 
 # Cache for MIG slot mapping (refreshed periodically)
-_mig_mapping_cache: Dict[str, Dict] = {}
+_mig_mapping_cache: dict[str, dict] = {}
 _mig_mapping_cache_timestamp: float = 0
 MIG_MAPPING_CACHE_TTL = 60  # Refresh every 60 seconds
 
 
-def _parse_nvidia_smi_mig_topology() -> Dict[int, List[Tuple[int, str]]]:
+def _parse_nvidia_smi_mig_topology() -> dict[int, list[tuple[int, str]]]:
     """Parse nvidia-smi -L output to get MIG device indices and UUIDs.
 
     Returns:
         Dict mapping GPU index to list of (device_idx, mig_uuid) tuples
     """
-    result: Dict[int, List[Tuple[int, str]]] = {}
+    result: dict[int, list[tuple[int, str]]] = {}
 
     try:
         output = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, timeout=10)
         if output.returncode != 0:
             return result
 
-        current_gpu: Optional[int] = None
+        current_gpu: int | None = None
 
         for line in output.stdout.split("\n"):
             # Match GPU line: "GPU 2: NVIDIA A100-PCIE-40GB (UUID: GPU-xxx)"
@@ -448,13 +460,13 @@ def _parse_nvidia_smi_mig_topology() -> Dict[int, List[Tuple[int, str]]]:
     return result
 
 
-def _query_dcgm_gpu_i_ids() -> Dict[int, List[int]]:
+def _query_dcgm_gpu_i_ids() -> dict[int, list[int]]:
     """Query DCGM exporter to get GPU_I_ID values per GPU.
 
     Returns:
         Dict mapping GPU index to list of GPU_I_ID values (sorted)
     """
-    result: Dict[int, List[int]] = {}
+    collected: dict[int, set[int]] = {}
 
     try:
         req = urllib.request.Request(DCGM_EXPORTER_URL, method="GET")
@@ -469,7 +481,6 @@ def _query_dcgm_gpu_i_ids() -> Dict[int, List[int]]:
                 if 'GPU_I_ID="' not in line:
                     continue
 
-                # Extract gpu label
                 gpu_match = re.search(r'gpu="(\d+)"', line)
                 gpu_i_id_match = re.search(r'GPU_I_ID="(\d+)"', line)
 
@@ -477,18 +488,17 @@ def _query_dcgm_gpu_i_ids() -> Dict[int, List[int]]:
                     gpu_idx = int(gpu_match.group(1))
                     gpu_i_id = int(gpu_i_id_match.group(1))
 
-                    if gpu_idx not in result:
-                        result[gpu_idx] = set()
-                    result[gpu_idx].add(gpu_i_id)
+                    if gpu_idx not in collected:
+                        collected[gpu_idx] = set()
+                    collected[gpu_idx].add(gpu_i_id)
 
     except (urllib.error.URLError, OSError, TimeoutError):
         pass
 
-    # Convert sets to sorted lists
-    return {gpu: sorted(list(ids)) for gpu, ids in result.items()}
+    return {gpu: sorted(ids) for gpu, ids in collected.items()}
 
 
-def collect_mig_slot_mapping() -> List[str]:
+def collect_mig_slot_mapping() -> list[str]:
     """Export MIG slot info for joining with DCGM metrics.
 
     This metric allows Prometheus to join DS01 allocation data (which uses
@@ -519,7 +529,7 @@ def collect_mig_slot_mapping() -> List[str]:
             nvidia_smi_topology = _parse_nvidia_smi_mig_topology()
             dcgm_gpu_i_ids = _query_dcgm_gpu_i_ids()
 
-            new_cache: Dict[str, Dict] = {}
+            new_cache: dict[str, dict] = {}
 
             for gpu_idx, mig_devices in nvidia_smi_topology.items():
                 dcgm_ids = dcgm_gpu_i_ids.get(gpu_idx, [])
@@ -611,6 +621,194 @@ def collect_mig_slot_mapping() -> List[str]:
     return lines
 
 
+# ============================================================================
+# Group Membership & Per-User Resource Metrics
+# ============================================================================
+
+# Cache for group membership (refreshed periodically)
+_group_membership_cache: dict[str, dict[str, str]] = {}  # sanitized -> {user, group}
+_group_counts_cache: dict[str, int] = {}
+_group_membership_cache_timestamp: float = 0
+GROUP_MEMBERSHIP_CACHE_TTL = 300  # Refresh every 5 minutes
+
+
+def _load_group_membership() -> tuple[dict[str, dict[str, str]], dict[str, int]]:
+    """Load group membership from .members files.
+
+    Discovers groups dynamically by globbing *.members (excludes archived.members).
+
+    Returns:
+        Tuple of:
+        - sanitized_to_full: maps sanitized username -> {user: full_username, group: group_name}
+        - group_counts: maps group_name -> member count
+    """
+    sanitized_to_full: dict[str, dict[str, str]] = {}
+    group_counts: dict[str, int] = {}
+
+    try:
+        utils = get_username_utils_module()
+    except Exception:
+        return sanitized_to_full, group_counts
+
+    for members_file in sorted(GROUPS_DIR.glob("*.members")):
+        group = members_file.stem
+        if group == "archived":
+            continue
+
+        count = 0
+        try:
+            for line in members_file.read_text().splitlines():
+                line = line.split("#")[0].strip()
+                if not line:
+                    continue
+                count += 1
+                sanitized = utils.sanitize_username_for_slice(line)
+                sanitized_to_full[sanitized] = {"user": line, "group": group}
+        except OSError:
+            continue
+        group_counts[group] = count
+
+    return sanitized_to_full, group_counts
+
+
+def _get_group_membership() -> tuple[dict[str, dict[str, str]], dict[str, int]]:
+    """Get cached group membership data."""
+    global _group_membership_cache, _group_counts_cache, _group_membership_cache_timestamp
+
+    now = time.time()
+    if now - _group_membership_cache_timestamp > GROUP_MEMBERSHIP_CACHE_TTL:
+        mapping, counts = _load_group_membership()
+        _group_membership_cache = mapping
+        _group_counts_cache = counts
+        _group_membership_cache_timestamp = now
+
+    return _group_membership_cache, _group_counts_cache
+
+
+def collect_user_group_info() -> list[str]:
+    """Collect user-to-group mapping for Prometheus joins.
+
+    Enables queries like:
+        count by (group)(ds01_gpu_allocated * on(user) group_left(group) ds01_user_group_info)
+    """
+    lines = []
+    mapping, counts = _get_group_membership()
+
+    lines.append("# HELP ds01_user_group_info User group membership (1=member)")
+    lines.append("# TYPE ds01_user_group_info gauge")
+
+    for info in mapping.values():
+        user = _safe_label(info["user"])
+        group = info["group"]
+        lines.append(f'ds01_user_group_info{{user="{user}",group="{group}"}} 1')
+
+    lines.append("")
+    lines.append("# HELP ds01_group_members_total Total members per group")
+    lines.append("# TYPE ds01_group_members_total gauge")
+
+    for group, count in sorted(counts.items()):
+        lines.append(f'ds01_group_members_total{{group="{group}"}} {count}')
+
+    return lines
+
+
+def _detect_cgroup_root() -> Path | None:
+    """Detect cgroup v2 hierarchy root for ds01.slice."""
+    v2_path = Path("/sys/fs/cgroup/ds01.slice")
+    if v2_path.is_dir() and Path("/sys/fs/cgroup/cgroup.controllers").is_file():
+        return v2_path
+    return None
+
+
+def collect_cgroup_per_user() -> list[str]:
+    """Collect per-user CPU and memory usage from cgroup v2 stats.
+
+    Reads cpu.stat and memory.current from each user slice under ds01.slice.
+    Reverse-maps sanitized slice names to full usernames via group membership files.
+    """
+    lines = []
+    root_path = _detect_cgroup_root()
+    if not root_path:
+        return lines
+
+    try:
+        mapping, _ = _get_group_membership()
+
+        lines.append(
+            "# HELP ds01_user_cpu_usage_seconds_total"
+            " Total CPU seconds consumed by user (from cgroup)"
+        )
+        lines.append("# TYPE ds01_user_cpu_usage_seconds_total counter")
+
+        cpu_lines = []
+        mem_lines = []
+
+        for group_dir in sorted(root_path.iterdir()):
+            if not group_dir.is_dir() or not group_dir.name.startswith("ds01-"):
+                continue
+
+            group_name = group_dir.name.replace(".slice", "").split("-", 1)[1]
+
+            for user_dir in sorted(group_dir.iterdir()):
+                if not user_dir.is_dir() or not user_dir.name.startswith("ds01-"):
+                    continue
+
+                slice_base = user_dir.name.replace(".slice", "")
+                prefix = f"ds01-{group_name}-"
+                if not slice_base.startswith(prefix):
+                    continue
+                sanitized_user = slice_base[len(prefix) :]
+
+                info = mapping.get(sanitized_user)
+                if info:
+                    full_user = info["user"]
+                    group = info["group"]
+                else:
+                    full_user = sanitized_user
+                    group = group_name
+
+                safe_user = _safe_label(full_user)
+
+                # CPU usage (v2: cpu.stat usage_usec)
+                cpu_seconds = None
+                try:
+                    for line in (user_dir / "cpu.stat").read_text().splitlines():
+                        if line.startswith("usage_usec "):
+                            cpu_seconds = int(line.split()[1]) / 1_000_000
+                            break
+                except (OSError, ValueError):
+                    pass
+
+                if cpu_seconds is not None:
+                    cpu_lines.append(
+                        f"ds01_user_cpu_usage_seconds_total"
+                        f'{{user="{safe_user}",group="{group}"}} {cpu_seconds:.3f}'
+                    )
+
+                # Memory usage (v2: memory.current)
+                try:
+                    mem_bytes = int((user_dir / "memory.current").read_text().strip())
+                    mem_lines.append(
+                        f"ds01_user_memory_current_bytes"
+                        f'{{user="{safe_user}",group="{group}"}} {mem_bytes}'
+                    )
+                except (OSError, ValueError):
+                    pass
+
+        lines.extend(cpu_lines)
+        lines.append("")
+        lines.append(
+            "# HELP ds01_user_memory_current_bytes Current memory usage by user (from cgroup)"
+        )
+        lines.append("# TYPE ds01_user_memory_current_bytes gauge")
+        lines.extend(mem_lines)
+
+    except Exception as e:
+        lines.append(f"# Error collecting cgroup per-user metrics: {e}")
+
+    return lines
+
+
 def collect_all_metrics() -> str:
     """Collect all metrics and return as Prometheus text format."""
     lines = []
@@ -624,7 +822,7 @@ def collect_all_metrics() -> str:
     # Exporter info
     lines.append("# HELP ds01_exporter_info DS01 exporter information")
     lines.append("# TYPE ds01_exporter_info gauge")
-    lines.append('ds01_exporter_info{version="2.2.0",type="slim"} 1')
+    lines.append('ds01_exporter_info{version="2.3.0",type="slim"} 1')
     lines.append("")
 
     # Collect DS01-specific metrics only (allocation, user, events, system)
@@ -644,6 +842,10 @@ def collect_all_metrics() -> str:
     lines.extend(collect_unmanaged_metrics())
     lines.append("")
     lines.extend(collect_ssh_metrics())
+    lines.append("")
+    lines.extend(collect_user_group_info())
+    lines.append("")
+    lines.extend(collect_cgroup_per_user())
 
     return "\n".join(lines) + "\n"
 
