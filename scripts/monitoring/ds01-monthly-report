@@ -398,12 +398,8 @@ def _section_user_activity(
 
     # Count distinct active GPU users per group using Python-side group mapping
     # (PromQL join with ds01_user_group_info fails for historical months where the metric didn't exist)
-    gpu_users_raw = prom_vector(
-        f"count by (user)(count_over_time(ds01_gpu_allocated[{range_str}]))",
-        query_time,
-    )
     active_by_group: dict[str, int] = defaultdict(int)
-    for user in gpu_users_raw:
+    for user in gpu_users:
         group = _lookup_group(user, user_group_map)
         if group != "-":
             active_by_group[group] += 1
