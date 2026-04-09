@@ -75,6 +75,14 @@ INFRA_ROOT=/opt/ds01-infra
 0 3 * * * root $INFRA_ROOT/scripts/monitoring/ds01-health-check >> /var/log/ds01/health-check.log 2>&1
 
 # ============================================================================
+# Group Membership Sync (daily at 4:30am)
+# ============================================================================
+
+# Scan /home/ for new users and update config/runtime/groups/*.members
+# Logs user.added events for monthly report user growth tracking
+30 4 * * * root $INFRA_ROOT/scripts/system/sync-group-membership.sh >> /var/log/ds01/docker-group-cron.log 2>&1
+
+# ============================================================================
 # Log Management and Retention
 # ============================================================================
 
@@ -89,6 +97,13 @@ INFRA_ROOT=/opt/ds01-infra
 
 # Clean old archives monthly (1st of month 3am)
 0 3 1 * * root $INFRA_ROOT/scripts/maintenance/backup-logs.sh --clean >> /var/log/ds01/log-archive.log 2>&1
+
+# ============================================================================
+# Monthly Reporting
+# ============================================================================
+
+# Monthly report - 1st of each month at 06:00
+0 6 1 * * root $INFRA_ROOT/scripts/monitoring/ds01-monthly-report >> /var/log/ds01/monthly-report.log 2>&1
 
 # Note: Standard logrotate handles daily rotation via /etc/logrotate.d/ds01
 # Install logrotate config: sudo cp $INFRA_ROOT/config/logrotate.d/ds01 /etc/logrotate.d/

@@ -1,0 +1,1461 @@
+#!/usr/bin/env python3
+"""
+DS01 Monthly Report Generator
+
+Queries Prometheus, GitHub Issues, group membership files, and the event log
+to produce a monthly summary report. Optionally posts a summary to Teams.
+
+Usage:
+    ds01-monthly-report                    # Previous month, save + post
+    ds01-monthly-report --month 2026-03    # Specific month
+    ds01-monthly-report --dry-run          # Print to stdout only
+    ds01-monthly-report --no-teams         # Save but don't post
+"""
+
+import argparse
+import calendar
+import getpass
+import gzip
+import json
+import math
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from collections import defaultdict
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://localhost:9090")
+INFRA_ROOT = Path("/opt/ds01-infra")
+GROUPS_DIR = INFRA_ROOT / "config/runtime/groups"
+EVENTS_FILE = Path("/var/log/ds01/events.jsonl")
+REPORTS_DIR = Path("/var/log/ds01-infra/reports/monthly")
+GITHUB_REPO = "hertie-data-science-lab/ds01-hub"
+
+
+def _load_teams_webhook_url() -> str | None:
+    """Load Teams webhook URL from environment or config file."""
+    url = os.environ.get("DS01_TEAMS_WEBHOOK_URL")
+    if url:
+        return url
+
+    try:
+        text = (INFRA_ROOT / "config/runtime/teams-webhook-url.txt").read_text().strip()
+        if text and not text.startswith("PLACEHOLDER"):
+            return text
+    except OSError:
+        pass
+
+    return None
+
+
+# ============================================================================
+# Prometheus Client
+# ============================================================================
+
+
+_prom_warn_seen: set[str] = set()
+
+
+def _prom_request(path: str, params: str, timeout: int = 30) -> list[dict]:
+    """Shared Prometheus HTTP request: build URL, fetch, parse result vector."""
+    url = f"{PROMETHEUS_URL}{path}?{params}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            data = json.loads(resp.read())
+            if data.get("status") == "success":
+                return data["data"]["result"]
+    except (urllib.error.URLError, json.JSONDecodeError, KeyError, OSError) as e:
+        err_key = type(e).__name__
+        if err_key not in _prom_warn_seen:
+            _prom_warn_seen.add(err_key)
+            print(f"  [warn] Prometheus query failed: {e} (suppressing further)", file=sys.stderr)
+    return []
+
+
+def prom_query(expr: str, time: str | None = None) -> list[dict]:
+    """Execute an instant query against Prometheus."""
+    params = f"query={urllib.request.quote(expr)}"
+    if time:
+        params += f"&time={urllib.request.quote(time)}"
+    return _prom_request("/api/v1/query", params)
+
+
+def prom_query_range(expr: str, start: str, end: str, step: str = "1h") -> list[dict]:
+    """Execute a range query against Prometheus."""
+    params = (
+        f"query={urllib.request.quote(expr)}"
+        f"&start={urllib.request.quote(start)}"
+        f"&end={urllib.request.quote(end)}"
+        f"&step={urllib.request.quote(step)}"
+    )
+    return _prom_request("/api/v1/query_range", params, timeout=60)
+
+
+def prom_scalar(expr: str, time: str | None = None) -> float | None:
+    """Get a single scalar value from Prometheus."""
+    results = prom_query(expr, time)
+    if results:
+        try:
+            return float(results[0]["value"][1])
+        except (IndexError, KeyError, ValueError):
+            pass
+    return None
+
+
+def prom_vector(expr: str, time: str | None = None) -> dict[str, float]:
+    """Get a label->value mapping from Prometheus."""
+    results = prom_query(expr, time)
+    out: dict[str, float] = {}
+    for r in results:
+        # Use the first non-__name__ label as key, or "user" if present
+        metric = r.get("metric", {})
+        key = metric.get("user") or metric.get("group") or str(metric)
+        try:
+            out[key] = float(r["value"][1])
+        except (KeyError, ValueError):
+            pass
+    return out
+
+
+# ============================================================================
+# Data Sources
+# ============================================================================
+
+
+def load_group_membership() -> dict[str, list[str]]:
+    """Load group membership from .members files.
+
+    Returns dict of group -> list of usernames.
+    """
+    groups: dict[str, list[str]] = {}
+    for members_file in sorted(GROUPS_DIR.glob("*.members")):
+        group = members_file.stem
+        if group == "archived":
+            continue
+        members: list[str] = []
+        try:
+            for line in members_file.read_text().splitlines():
+                line = line.split("#")[0].strip()
+                if line:
+                    members.append(line)
+        except OSError:
+            continue
+        groups[group] = members
+    return groups
+
+
+# Lifecycle event types to track in monthly reports
+LIFECYCLE_EVENT_TYPES = {
+    "maintenance.idle_kill": "idle_kill",
+    "maintenance.runtime_kill": "runtime_kill",
+    "resource.oom_kill": "oom_kill",
+}
+
+
+def count_events_in_range(
+    start_ts: float,
+    end_ts: float,
+    match_types: set[str],
+    container_events: dict[str, list[dict]] | None = None,
+) -> dict[str, int]:
+    """Single-pass event log scan: count events by type within a time range.
+
+    Scans events.jsonl and rotated archives once, counting all matching event types.
+    When container_events is provided, also collects structured event dicts for those types.
+    """
+    counts: dict[str, int] = {}
+    files: list[Path] = []
+
+    # Collect all event log files
+    events_dir = EVENTS_FILE.parent
+    for gz_file in sorted(events_dir.glob("events.jsonl-*.gz")):
+        files.append(gz_file)
+    # Also non-gzipped rotated files
+    for f in sorted(events_dir.glob("events.jsonl-*[0-9]")):
+        files.append(f)
+    if EVENTS_FILE.exists():
+        files.append(EVENTS_FILE)
+
+    collect_types = set(container_events.keys()) if container_events else set()
+
+    for f in files:
+        try:
+            opener = gzip.open(f, "rt") if f.suffix == ".gz" else open(f)
+            with opener as fh:
+                for line in fh:
+                    try:
+                        event = json.loads(line.strip())
+                        etype = event.get("event_type", "")
+                        if etype not in match_types:
+                            continue
+                        ts_str = event.get("timestamp", "")
+                        if ts_str:
+                            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                            if start_ts <= ts.timestamp() <= end_ts:
+                                counts[etype] = counts.get(etype, 0) + 1
+                                if etype in collect_types:
+                                    entry = {
+                                        "user": event.get("user", "unknown"),
+                                        "ts": ts.timestamp(),
+                                    }
+                                    entry.update(event.get("details", {}))
+                                    container_events[etype].append(entry)
+                    except (json.JSONDecodeError, ValueError):
+                        continue
+        except OSError:
+            continue
+
+    return counts
+
+
+def query_github_issues(month_start: str, month_end: str) -> dict[str, Any] | None:
+    """Query GitHub Issues for the given month via gh CLI.
+
+    Args:
+        month_start: ISO date string (e.g., "2026-03-01")
+        month_end: ISO date string (e.g., "2026-03-31")
+
+    Returns dict with keys: opened, closed, resolution_days_mean, resolution_days_median, by_label, or None on failure.
+    """
+    try:
+        # Use --search with date qualifiers to scope server-side, avoiding the
+        # default behaviour of fetching the 500 most-recently-updated issues
+        # across all time (which silently misses data in repos with >500 issues).
+        # Run as datasciencelab user to inherit gh CLI auth (cron runs as root)
+        cmd = [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            GITHUB_REPO,
+            "--state",
+            "all",
+            "--json",
+            "number,title,state,createdAt,closedAt,labels",
+            "--limit",
+            "500",
+            "--search",
+            f"created:{month_start}..{month_end} updated:{month_start}..{month_end}",
+        ]
+        # If running as root, use sudo to inherit datasciencelab's gh auth
+        if getpass.getuser() == "root":
+            cmd = ["sudo", "-u", "datasciencelab"] + cmd
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            print(f"  [warn] gh issue list failed: {result.stderr.strip()}", file=sys.stderr)
+            return None
+
+        issues = json.loads(result.stdout)
+    except (subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"  [warn] GitHub Issues query failed: {e}", file=sys.stderr)
+        return None
+
+    start_dt = datetime.fromisoformat(f"{month_start}T00:00:00+00:00")
+    end_dt = datetime.fromisoformat(f"{month_end}T23:59:59+00:00")
+
+    opened = 0
+    closed = 0
+    resolution_times: list[float] = []
+    by_label: dict[str, dict[str, int]] = defaultdict(lambda: {"opened": 0, "closed": 0})
+
+    for issue in issues:
+        created_str = issue.get("createdAt", "")
+        closed_str = issue.get("closedAt")
+
+        try:
+            created = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            continue
+
+        # Count opened in month
+        if start_dt <= created <= end_dt:
+            opened += 1
+            for label in issue.get("labels", []):
+                by_label[label.get("name", "unlabelled")]["opened"] += 1
+
+        # Count closed in month
+        if closed_str:
+            try:
+                closed_dt = datetime.fromisoformat(closed_str.replace("Z", "+00:00"))
+                if start_dt <= closed_dt <= end_dt:
+                    closed += 1
+                    for label in issue.get("labels", []):
+                        by_label[label.get("name", "unlabelled")]["closed"] += 1
+
+                    # Resolution time
+                    delta = (closed_dt - created).total_seconds() / 86400
+                    if delta >= 0:
+                        resolution_times.append(delta)
+            except (ValueError, AttributeError):
+                pass
+
+    avg_resolution = sum(resolution_times) / len(resolution_times) if resolution_times else None
+    if resolution_times:
+        sorted_rt = sorted(resolution_times)
+        median_resolution = sorted_rt[len(sorted_rt) // 2]
+    else:
+        median_resolution = None
+
+    return {
+        "opened": opened,
+        "closed": closed,
+        "resolution_days_mean": avg_resolution,
+        "resolution_days_median": median_resolution,
+        "by_label": dict(by_label),
+    }
+
+
+# ============================================================================
+# Report Generation
+# ============================================================================
+
+
+def display_user(user: str) -> str:
+    """Strip domain for table display."""
+    return user.split("@")[0] if "@" in user else user
+
+
+def _lookup_group(user: str, user_group_map: dict[str, str]) -> str:
+    """Look up user's group, trying both full and short username forms."""
+    group = user_group_map.get(user)
+    if group:
+        return group
+    # Try stripping domain (GPU metrics may have @domain, group_info may not, or vice versa)
+    short = user.split("@")[0] if "@" in user else user
+    return user_group_map.get(short, "-")
+
+
+def _render_user_table(
+    title: str, unit: str, data: dict[str, float], user_group_map: dict[str, str]
+) -> list[str]:
+    """Render a top-15 user table with group lookup."""
+    lines = [f"\n### {title}\n"]
+    lines.append(f"| User | Group | {unit} |")
+    lines.append("|------|-------|-----------|")
+    for user, hours in sorted(data.items(), key=lambda x: x[1], reverse=True):
+        group = _lookup_group(user, user_group_map)
+        lines.append(f"| {display_user(user)} | {group} | {hours:,.1f} |")
+    return lines
+
+
+def _section_user_activity(
+    query_time: str,
+    range_str: str,
+    month_start: str,
+    month_end: str,
+    groups: dict[str, list[str]],
+    event_counts: dict[str, int],
+    user_group_map: dict[str, str],
+) -> tuple[list[str], dict[str, str]]:
+    lines: list[str] = []
+    summary: dict[str, str] = {}
+
+    total_members = sum(len(m) for m in groups.values())
+
+    # Active GPU users (distinct users with allocations during the month)
+    gpu_users = prom_vector(
+        f"count by (user)(count_over_time(ds01_gpu_allocated[{range_str}]))",
+        query_time,
+    )
+    active_gpu_users = len(gpu_users)
+
+    # Peak concurrent GPU users
+    peak_users = prom_scalar(f"max_over_time(ds01:system_active_users[{range_str}])", query_time)
+
+    # SSH users (distinct users with sessions during the month)
+    ssh_range = prom_query_range(
+        "ds01_ssh_sessions_active",
+        f"{month_start}T00:00:00Z",
+        f"{month_end}T23:59:59Z",
+        "15m",
+    )
+    ssh_users = set()
+    for series in ssh_range:
+        user = series.get("metric", {}).get("user", "")
+        if user:
+            for _, val in series.get("values", []):
+                if float(val) > 0:
+                    ssh_users.add(user)
+                    break
+
+    lines.append(f"- **Total registered users:** {total_members}")
+    lines.append(f"- **Active GPU users:** {active_gpu_users}")
+    summary["Active GPU users"] = str(active_gpu_users)
+    if peak_users is not None:
+        lines.append(f"- **Peak concurrent GPU users:** {int(peak_users)}")
+    lines.append(f"- **Unique SSH users:** {len(ssh_users)}")
+
+    # By group
+    lines.append("\n### By Group\n")
+
+    # Count distinct active GPU users per group using Python-side group mapping
+    # (PromQL join with ds01_user_group_info fails for historical months where the metric didn't exist)
+    gpu_users_raw = prom_vector(
+        f"count by (user)(count_over_time(ds01_gpu_allocated[{range_str}]))",
+        query_time,
+    )
+    active_by_group: dict[str, int] = defaultdict(int)
+    for user in gpu_users_raw:
+        group = _lookup_group(user, user_group_map)
+        if group != "-":
+            active_by_group[group] += 1
+
+    lines.append("| Group | Members | Active (GPU) |")
+    lines.append("|-------|---------|--------------|")
+    for group in ("student", "researcher", "faculty", "admin"):
+        member_count = len(groups.get(group, []))
+        active = active_by_group.get(group, 0)
+        lines.append(f"| {group} | {member_count} | {active} |")
+
+    # User growth
+    new_users = event_counts.get("user.added", 0)
+    if new_users > 0:
+        lines.append(f"\n**New users this month:** {new_users}")
+    else:
+        lines.append("\n*User growth tracking enabled -- data available from next sync cycle.*")
+
+    return lines, summary
+
+
+def _section_gpu_usage(
+    query_time: str,
+    range_str: str,
+    user_group_map: dict[str, str],
+) -> tuple[list[str], dict[str, str]]:
+    lines: list[str] = []
+    summary: dict[str, str] = {}
+
+    # Total GPU-hours (count_over_time * scrape_interval is accurate for gauges;
+    # increase() on the recording rule gauge gives wrong results)
+    total_gpu_hours = prom_scalar(
+        f"sum(count_over_time(ds01_gpu_allocated[{range_str}])) * 30 / 3600", query_time
+    )
+    weighted_gpu_hours = prom_scalar(
+        f"sum(sum_over_time(ds01:user_gpu_seconds_weighted[{range_str}])) / 3600",
+        query_time,
+    )
+
+    if total_gpu_hours is not None:
+        lines.append(f"- **Total GPU-hours (allocated):** {total_gpu_hours:,.1f}")
+        summary["Total GPU-hours (allocated)"] = f"{total_gpu_hours:,.1f}"
+    if weighted_gpu_hours is not None:
+        lines.append(f"- **Total GPU-hours (utilisation-weighted):** {weighted_gpu_hours:,.1f}")
+    if total_gpu_hours and weighted_gpu_hours and total_gpu_hours > 1:
+        efficiency = (weighted_gpu_hours / total_gpu_hours) * 100
+        lines.append(f"- **GPU efficiency:** {efficiency:.1f}%")
+        summary["GPU efficiency"] = f"{efficiency:.1f}%"
+
+    # Average waste
+    avg_waste = prom_scalar(f"avg_over_time(ds01:gpu_waste_percent[{range_str}])", query_time)
+    if avg_waste is not None and not math.isnan(avg_waste):
+        lines.append(f"- **Average GPU waste:** {avg_waste:.1f}%")
+
+    # Per-user GPU-hours (allocated + weighted, top 15 by allocated)
+    user_alloc = prom_query(
+        f"topk(15, sum by (user)(count_over_time(ds01_gpu_allocated[{range_str}])) * 30 / 3600)",
+        query_time,
+    )
+    user_weighted = prom_vector(
+        f"topk(15, sum_over_time(ds01:user_gpu_seconds_weighted[{range_str}]) / 3600)",
+        query_time,
+    )
+    if user_alloc:
+        lines.append("\n### GPU-Hours by User (Top 15)\n")
+        lines.append("| User | Group | Allocated | Weighted |")
+        lines.append("|------|-------|-----------|----------|")
+        for r in user_alloc:
+            user = r.get("metric", {}).get("user", "?")
+            group = _lookup_group(user, user_group_map)
+            try:
+                alloc_h = float(r["value"][1])
+            except (KeyError, ValueError, IndexError):
+                continue
+            weight_h = user_weighted.get(user, 0)
+            lines.append(f"| {display_user(user)} | {group} | {alloc_h:,.1f} | {weight_h:,.1f} |")
+
+    # Per-container GPU-hours (top 15)
+    # 30s multiplier = ds01-exporter scrape interval
+    container_results = prom_query(
+        f"topk(15, sum by (container, user)"
+        f"(count_over_time(ds01_gpu_allocated[{range_str}])) * 30 / 3600)",
+        query_time,
+    )
+    # Per-container weighted: allocated_hours * avg_utilisation of each slot
+    container_weighted = {}
+    weighted_results = prom_query(
+        f"sum by (container, user)("
+        f"count_over_time(ds01_gpu_allocated[{range_str}]) * 30 / 3600"
+        f" * on(gpu_slot) group_left()"
+        f" (avg_over_time(ds01:gpu_utilization_by_slot[{range_str}]) / 100))",
+        query_time,
+    )
+    for r in weighted_results:
+        m = r.get("metric", {})
+        key = (m.get("container", ""), m.get("user", ""))
+        try:
+            container_weighted[key] = float(r["value"][1])
+        except (KeyError, ValueError, IndexError):
+            pass
+
+    if container_results:
+        lines.append("\n### GPU-Hours by Container (Top 15)\n")
+        lines.append("| Container | User | Group | Allocated | Weighted |")
+        lines.append("|-----------|------|-------|-----------|----------|")
+        for r in container_results:
+            m = r.get("metric", {})
+            container = m.get("container", "?")
+            user = m.get("user", "?")
+            group = _lookup_group(user, user_group_map)
+            try:
+                hours = float(r["value"][1])
+            except (KeyError, ValueError, IndexError):
+                continue
+            w_hours = container_weighted.get((container, user), 0)
+            lines.append(
+                f"| {container} | {display_user(user)} | {group} | {hours:,.1f} | {w_hours:,.1f} |"
+            )
+
+    return lines, summary
+
+
+def _section_cpu_usage(
+    query_time: str,
+    range_str: str,
+    user_group_map: dict[str, str],
+) -> tuple[list[str], dict[str, str]]:
+    lines: list[str] = []
+    summary: dict[str, str] = {}
+
+    # System CPU
+    avg_cpu = prom_scalar(
+        f"100 - (avg_over_time("
+        f'(avg(rate(node_cpu_seconds_total{{mode="idle"}}[5m])) * 100)'
+        f"[{range_str}:1h]))",
+        query_time,
+    )
+    peak_cpu = prom_scalar(
+        f"100 - (min_over_time("
+        f'(avg(rate(node_cpu_seconds_total{{mode="idle"}}[5m])) * 100)'
+        f"[{range_str}:1h]))",
+        query_time,
+    )
+
+    if avg_cpu is not None:
+        lines.append(f"- **Average system CPU utilisation:** {avg_cpu:.1f}%")
+        summary["Average system CPU utilisation"] = f"{avg_cpu:.1f}%"
+    if peak_cpu is not None:
+        lines.append(f"- **Peak system CPU utilisation:** {peak_cpu:.1f}%")
+
+    # Per-user CPU-hours (counter — use increase over the month; if the metric
+    # has less history than range_str, fall back to the raw counter value)
+    user_cpu_hours = prom_vector(
+        f"topk(15, increase(ds01_user_cpu_usage_seconds_total[{range_str}]) / 3600)",
+        query_time,
+    )
+    if not user_cpu_hours:
+        user_cpu_hours = prom_vector(
+            "topk(15, ds01_user_cpu_usage_seconds_total / 3600)",
+            query_time,
+        )
+    if user_cpu_hours:
+        lines.extend(
+            _render_user_table(
+                "CPU-Hours by User (Top 15)", "CPU-Hours", user_cpu_hours, user_group_map
+            )
+        )
+    else:
+        lines.append(
+            "*Per-user CPU data not available for this period (insufficient metric history).*"
+        )
+
+    return lines, summary
+
+
+def _section_memory_usage(
+    query_time: str,
+    range_str: str,
+    user_group_map: dict[str, str],
+) -> tuple[list[str], dict[str, str]]:
+    lines: list[str] = []
+    summary: dict[str, str] = {}
+
+    # System memory
+    total_bytes = prom_scalar("node_memory_MemTotal_bytes", query_time)
+    avg_used_pct = prom_scalar(
+        f"100 - (avg_over_time("
+        f"(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100)"
+        f"[{range_str}:1h]))",
+        query_time,
+    )
+    peak_used_pct = prom_scalar(
+        f"100 - (min_over_time("
+        f"(node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100)"
+        f"[{range_str}:1h]))",
+        query_time,
+    )
+
+    if total_bytes is not None:
+        lines.append(f"- **Total system memory:** {total_bytes / (1024**3):,.1f} GiB")
+    if avg_used_pct is not None:
+        lines.append(f"- **Average memory utilisation:** {avg_used_pct:.1f}%")
+        summary["Average memory utilisation"] = f"{avg_used_pct:.1f}%"
+    if peak_used_pct is not None:
+        lines.append(f"- **Peak memory utilisation:** {peak_used_pct:.1f}%")
+
+    # Per-user memory (top 15 by average during active periods)
+    user_mem = prom_vector(
+        f"topk(15, avg_over_time(ds01_user_memory_current_bytes[{range_str}]) / (1024*1024*1024))",
+        query_time,
+    )
+    if user_mem:
+        lines.extend(
+            _render_user_table("Memory by User (Top 15)", "Avg GiB", user_mem, user_group_map)
+        )
+    else:
+        lines.append(
+            "*Per-user memory data not available for this period (insufficient metric history).*"
+        )
+
+    return lines, summary
+
+
+def _section_container_activity(
+    container_events: dict[str, list[dict]],
+) -> tuple[list[str], dict[str, str]]:
+    lines: list[str] = []
+    summary: dict[str, str] = {}
+
+    creates = container_events.get("container.create", [])
+    discovered = container_events.get("detection.container_discovered", [])
+    exited = container_events.get("detection.container_exited", [])
+    rejected = container_events.get("gpu.rejected", [])
+    denied = container_events.get("auth.denied", [])
+    bare_metal = container_events.get("bare_metal.warning", [])
+
+    total_created = len(creates)
+    total_exited = len(exited)
+    lines.append(f"- **Containers created:** {total_created}")
+    lines.append(f"- **Containers exited:** {total_exited}")
+    summary["Containers created"] = str(total_created)
+
+    # Container type breakdown (from container.create events)
+    if creates:
+        by_type: dict[str, int] = defaultdict(int)
+        for ev in creates:
+            ctype = ev.get("container_type", "unknown")
+            by_type[ctype] += 1
+        type_parts = [
+            f"{t}: {c}" for t, c in sorted(by_type.items(), key=lambda x: x[1], reverse=True)
+        ]
+        lines.append(f"- **By type:** {', '.join(type_parts)}")
+
+    # GPU vs non-GPU ratio (from detection.container_discovered)
+    if discovered:
+        gpu_count = sum(1 for ev in discovered if ev.get("has_gpu"))
+        non_gpu = len(discovered) - gpu_count
+        lines.append(f"- **GPU containers:** {gpu_count} | **Non-GPU:** {non_gpu}")
+
+    # Per-user container creation counts (top 10)
+    if creates:
+        by_user: dict[str, int] = defaultdict(int)
+        for ev in creates:
+            by_user[ev.get("user", "unknown")] += 1
+
+        lines.append("\n### Containers Created by User (Top 10)\n")
+        lines.append("| User | Containers |")
+        lines.append("|------|------------|")
+        for user, count in sorted(by_user.items(), key=lambda x: x[1], reverse=True)[:10]:
+            lines.append(f"| {display_user(user)} | {count} |")
+
+    # Average container lifetime (match discovered/exited by container_id)
+    discover_times: dict[str, float] = {}
+    for ev in discovered:
+        cid = ev.get("container_id", "")
+        if cid:
+            discover_times[cid] = ev.get("ts", 0)
+
+    lifetimes: list[float] = []
+    for ev in exited:
+        cid = ev.get("container_id", "")
+        if cid in discover_times:
+            lifetime_h = (ev.get("ts", 0) - discover_times[cid]) / 3600
+            if lifetime_h >= 0:
+                lifetimes.append(lifetime_h)
+
+    if lifetimes:
+        avg_lifetime = sum(lifetimes) / len(lifetimes)
+        sorted_lt = sorted(lifetimes)
+        median_lifetime = sorted_lt[len(sorted_lt) // 2]
+        lines.append(
+            f"\n- **Average container lifetime:** {avg_lifetime:.1f}h (n={len(lifetimes)})"
+        )
+        lines.append(f"- **Median container lifetime:** {median_lifetime:.1f}h")
+
+    # GPU rejections, auth denied, bare metal warnings — with top offenders
+    def _top_users(events: list[dict], n: int = 5) -> str:
+        by_user: dict[str, int] = defaultdict(int)
+        for ev in events:
+            by_user[display_user(ev.get("user", "unknown"))] += 1
+        top = sorted(by_user.items(), key=lambda x: x[1], reverse=True)[:n]
+        return ", ".join(f"{u} ({c})" for u, c in top)
+
+    if rejected:
+        summary["GPU rejected"] = str(len(rejected))
+        lines.append(f"\n- **GPU requests rejected:** {len(rejected)}")
+        lines.append(f"  - Top users: {_top_users(rejected)}")
+    if denied:
+        lines.append(f"- **Auth denied (bare metal GPU):** {len(denied)}")
+        lines.append(f"  - Top users: {_top_users(denied)}")
+    if bare_metal:
+        lines.append(f"- **Bare metal GPU warnings:** {len(bare_metal)}")
+        lines.append(f"  - Top users: {_top_users(bare_metal)}")
+
+    return lines, summary
+
+
+def _section_system_load(
+    query_time: str,
+    range_str: str,
+    month_start: str,
+    month_end: str,
+    event_counts: dict[str, int],
+) -> tuple[list[str], dict[str, str]]:
+    lines: list[str] = []
+    summary: dict[str, str] = {}
+
+    lines.append("\n### GPU Capacity\n")
+
+    total_gpus = prom_scalar("ds01:system_full_gpu_slots_total")
+    avg_allocated = prom_scalar(
+        f"avg_over_time(ds01:system_full_gpu_slots_allocated[{range_str}])", query_time
+    )
+    peak_allocated = prom_scalar(
+        f"max_over_time(ds01:system_full_gpu_slots_allocated[{range_str}])", query_time
+    )
+    avg_free = prom_scalar(
+        f"avg_over_time(ds01:system_full_gpu_slots_free[{range_str}])", query_time
+    )
+
+    if total_gpus is not None:
+        lines.append(f"- **Total GPUs:** {int(total_gpus)}")
+    if avg_allocated is not None:
+        lines.append(f"- **Average allocated:** {avg_allocated:.1f}")
+    if peak_allocated is not None:
+        lines.append(f"- **Peak allocated:** {int(peak_allocated)}")
+    if avg_free is not None:
+        lines.append(f"- **Average free:** {avg_free:.1f}")
+
+    # Peak usage patterns
+    lines.append("\n### Usage Patterns\n")
+
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    hourly_data = prom_query_range(
+        "ds01:hourly_mig_allocated_avg",
+        f"{month_start}T00:00:00Z",
+        f"{month_end}T23:59:59Z",
+        "1h",
+    )
+
+    if hourly_data:
+        # Build weekday x 3-hour-block grid for heatmap
+        grid: dict[int, dict[int, list[float]]] = {d: {b: [] for b in range(8)} for d in range(7)}
+        # Also track per-slot averages for busiest/quietest
+        slot_avgs: dict[str, list[float]] = {}
+
+        for series in hourly_data:
+            for ts_str, val_str in series.get("values", []):
+                try:
+                    ts = datetime.fromtimestamp(float(ts_str), tz=timezone.utc)
+                    val = float(val_str)
+                    grid[ts.weekday()][ts.hour // 3].append(val)
+                    key = f"{day_names[ts.weekday()]} {ts.hour:02d}:00"
+                    slot_avgs.setdefault(key, []).append(val)
+                except (ValueError, IndexError):
+                    continue
+
+        # Render weekday x time-of-day heatmap
+        block_labels = ["00-03", "03-06", "06-09", "09-12", "12-15", "15-18", "18-21", "21-00"]
+        heatmap_lines = ["             " + "  ".join(f"{b:>5s}" for b in block_labels)]
+        chars = ["\u2591", "\u2592", "\u2593", "\u2588"]
+        for day_idx in range(7):
+            cells = []
+            for block_idx in range(8):
+                vals = grid[day_idx][block_idx]
+                avg = sum(vals) / len(vals) if vals else 0
+                if avg >= 3:
+                    ch = chars[3]
+                elif avg >= 2:
+                    ch = chars[2]
+                elif avg >= 1:
+                    ch = chars[1]
+                else:
+                    ch = chars[0]
+                cells.append(f"  {ch * 3}  ")
+            heatmap_lines.append(f"{day_names[day_idx]:>11s}  {''.join(cells)}")
+        heatmap_lines.append("")
+        heatmap_lines.append(
+            f"{chars[0]} <1 slot  {chars[1]} 1-2 slots  {chars[2]} 2-3 slots  {chars[3]} 3+ slots"
+        )
+
+        lines.append("**GPU Slot Allocation by Day/Time (avg)**\n")
+        lines.append("```text")
+        lines.extend(heatmap_lines)
+        lines.append("```")
+
+        # Busiest / quietest
+        if slot_avgs:
+            avg_by_slot = {k: sum(v) / len(v) for k, v in slot_avgs.items()}
+            busiest = max(avg_by_slot, key=avg_by_slot.get)
+            quietest = min(avg_by_slot, key=avg_by_slot.get)
+            lines.append(
+                f"\n- **Busiest period:** {busiest} (avg {avg_by_slot[busiest]:.1f} slots)"
+            )
+            lines.append(
+                f"- **Quietest period:** {quietest} (avg {avg_by_slot[quietest]:.1f} slots)"
+            )
+            summary["Busiest period"] = f"{busiest} (avg {avg_by_slot[busiest]:.1f} slots)"
+
+    # Daily GPU-hours bar chart
+    daily_data = prom_query_range(
+        "sum(increase(ds01:user_gpu_seconds[1d])) / 3600",
+        f"{month_start}T00:00:00Z",
+        f"{month_end}T23:59:59Z",
+        "1d",
+    )
+    if daily_data:
+        daily_hours: list[tuple[str, float]] = []
+        for series in daily_data:
+            for ts_str, val_str in series.get("values", []):
+                try:
+                    ts = datetime.fromtimestamp(float(ts_str), tz=timezone.utc)
+                    val = round(max(0, float(val_str)), 1)
+                    daily_hours.append((ts.strftime("%b %d"), val))
+                except (ValueError, IndexError):
+                    continue
+
+        if daily_hours:
+            max_hours = max(h for _, h in daily_hours) or 1
+            bar_width = 30
+            peak_day = max(daily_hours, key=lambda x: x[1])
+            chart_lines = []
+            block_full = "\u2588"
+            block_light = "\u2591"
+            for label, hours in daily_hours:
+                filled = int((hours / max_hours) * bar_width)
+                empty = bar_width - filled
+                suffix = "  <- peak" if hours == peak_day[1] and hours > 0 else ""
+                bar = block_full * filled + block_light * empty
+                chart_lines.append(f"{label}  {bar}  {hours:,.1f}h{suffix}")
+
+            lines.append("\n**GPU-Hours by Day**\n")
+            lines.append("```text")
+            lines.extend(chart_lines)
+            lines.append("```")
+
+    # Temperature & health
+    lines.append("\n### Temperature & Health\n")
+
+    avg_temp = prom_scalar(f"avg_over_time(ds01:system_gpu_temp_avg[{range_str}])", query_time)
+    peak_temp = prom_scalar(f"max_over_time(ds01:system_gpu_temp_max[{range_str}])", query_time)
+
+    if avg_temp is not None:
+        lines.append(f"- **Average GPU temperature:** {avg_temp:.0f}\u00b0C")
+        summary["Avg GPU temp"] = f"{avg_temp:.0f}\u00b0C"
+    if peak_temp is not None:
+        lines.append(f"- **Peak GPU temperature:** {peak_temp:.0f}\u00b0C")
+        summary["Peak GPU temp"] = f"{peak_temp:.0f}\u00b0C"
+
+    # Lifecycle events from event log (already scanned above)
+    lifecycle = {
+        LIFECYCLE_EVENT_TYPES[k]: v for k, v in event_counts.items() if k in LIFECYCLE_EVENT_TYPES
+    }
+    if lifecycle:
+        event_parts = [f"{k}: {v}" for k, v in sorted(lifecycle.items())]
+        lines.append(f"- **Lifecycle events:** {', '.join(event_parts)}")
+    else:
+        lines.append("- **Lifecycle events:** none")
+
+    return lines, summary
+
+
+def _section_support_tickets(
+    month_start: str,
+    month_end: str,
+) -> tuple[list[str], dict[str, str]]:
+    lines: list[str] = []
+    summary: dict[str, str] = {}
+
+    tickets = query_github_issues(month_start, month_end)
+    if tickets:
+        lines.append(f"- **Issues opened:** {tickets['opened']}")
+        summary["Issues opened"] = str(tickets["opened"])
+        lines.append(f"- **Issues closed:** {tickets['closed']}")
+        summary["Issues closed"] = str(tickets["closed"])
+        if tickets["resolution_days_mean"] is not None:
+            lines.append(f"- **Mean resolution time:** {tickets['resolution_days_mean']:.1f} days")
+            summary["Resolution mean"] = f"{tickets['resolution_days_mean']:.1f}d"
+        if tickets["resolution_days_median"] is not None:
+            lines.append(
+                f"- **Median resolution time:** {tickets['resolution_days_median']:.1f} days"
+            )
+            summary["Resolution median"] = f"{tickets['resolution_days_median']:.1f}d"
+
+        if tickets["by_label"]:
+            lines.append("\n### By Category\n")
+            lines.append("| Category | Opened | Closed |")
+            lines.append("|----------|--------|--------|")
+            for label, counts in sorted(
+                tickets["by_label"].items(),
+                key=lambda x: x[1]["opened"],
+                reverse=True,
+            ):
+                lines.append(f"| {label} | {counts['opened']} | {counts['closed']} |")
+    else:
+        lines.append("*GitHub Issues data not available (ensure `gh` CLI is authenticated).*")
+
+    return lines, summary
+
+
+# ============================================================================
+# Month-over-Month Trends
+# ============================================================================
+
+
+def _load_previous_summary(year: int, month: int) -> dict[str, float | int] | None:
+    """Load previous month's summary JSON sidecar."""
+    if month == 1:
+        prev_year, prev_month = year - 1, 12
+    else:
+        prev_year, prev_month = year, month - 1
+    path = REPORTS_DIR / f"{prev_year}-{prev_month:02d}-summary.json"
+    try:
+        data = json.loads(path.read_text())
+        return data.get("metrics", {})
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _trend_str(current: float, previous: float, is_pct: bool = False) -> str:
+    """Format a trend indicator: '15 (+3)' or '42.3% (-2.1pp)'.
+
+    Suppresses trend when change is negligible (rounds to zero).
+    """
+    delta = current - previous
+    if previous != 0:
+        pct_change = abs(delta / previous) * 100
+    else:
+        pct_change = 0
+
+    if is_pct:
+        # For percentage metrics, show pp change — suppress if <0.05pp
+        if abs(delta) < 0.05:
+            return f"{current:.1f}%"
+        arrow = "\u2191" if delta > 0 else "\u2193"
+        return f"{current:.1f}% ({arrow} {abs(delta):.1f}pp)"
+    elif abs(current) >= 100:
+        # For large numbers, show % change — suppress if rounds to 0%
+        if round(pct_change) == 0:
+            return f"{current:,.0f}"
+        arrow = "\u2191" if delta > 0 else "\u2193"
+        return f"{current:,.0f} ({arrow} {pct_change:.0f}%)"
+    else:
+        # For small numbers, show absolute change — suppress if rounds to 0
+        fmt = f"{current:,.1f}" if current != int(current) else str(int(current))
+        if round(abs(delta)) == 0:
+            return fmt
+        arrow = "\u2191" if delta > 0 else "\u2193"
+        delta_fmt = f"{abs(delta):,.1f}" if delta != int(delta) else str(abs(int(delta)))
+        return f"{fmt} ({arrow} {delta_fmt})"
+
+
+def _section_trends(
+    year: int,
+    month: int,
+    summary_data: dict[str, float | int | None],
+) -> tuple[list[str], dict[str, str]]:
+    lines: list[str] = []
+    summary: dict[str, str] = {}
+
+    prev = _load_previous_summary(year, month)
+    if prev is None:
+        lines.append("*Previous month's data not available. Trends will appear from next month.*")
+        return lines, summary
+
+    if month == 1:
+        prev_month_name = calendar.month_name[12]
+    else:
+        prev_month_name = calendar.month_name[month - 1]
+    lines.append(f"Compared to {prev_month_name}:\n")
+
+    trend_keys = [
+        ("active_gpu_users", "Active GPU users", False),
+        ("total_gpu_hours", "Total GPU-hours", False),
+        ("gpu_efficiency", "GPU efficiency", True),
+        ("avg_cpu_pct", "Average CPU utilisation", True),
+        ("total_members", "Total members", False),
+        ("new_users", "New users", False),
+        ("containers_created", "Containers created", False),
+        ("gpu_rejected", "GPU requests rejected", False),
+        ("issues_opened", "Issues opened", False),
+        ("issues_closed", "Issues closed", False),
+    ]
+
+    for key, label, is_pct in trend_keys:
+        curr = summary_data.get(key)
+        prev_val = prev.get(key)
+        if curr is not None and prev_val is not None:
+            lines.append(f"- **{label}:** {_trend_str(float(curr), float(prev_val), is_pct)}")
+
+    return lines, summary
+
+
+def generate_report(
+    year: int, month: int
+) -> tuple[str, dict[str, str], dict[str, float | int | None]]:
+    """Generate the full monthly report as Markdown.
+
+    Returns (report_md, summary_display, summary_data):
+    - report_md: full markdown report string
+    - summary_display: formatted strings for Teams card
+    - summary_data: numeric values for JSON sidecar + trends
+    """
+    days_in_month = calendar.monthrange(year, month)[1]
+    month_name = calendar.month_name[month]
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    # Time boundaries
+    month_start = f"{year}-{month:02d}-01"
+    month_end = f"{year}-{month:02d}-{days_in_month:02d}"
+    query_time = f"{year}-{month:02d}-{days_in_month:02d}T23:59:59Z"
+    range_str = f"{days_in_month}d"
+
+    # Timestamps for event log queries
+    start_ts = datetime(year, month, 1, tzinfo=timezone.utc).timestamp()
+    if month == 12:
+        end_ts = datetime(year + 1, 1, 1, tzinfo=timezone.utc).timestamp()
+    else:
+        end_ts = datetime(year, month + 1, 1, tzinfo=timezone.utc).timestamp()
+
+    # Load group membership
+    groups = load_group_membership()
+
+    # Single-pass event log scan for all needed event types
+    container_event_types = {
+        "container.create",
+        "detection.container_discovered",
+        "detection.container_exited",
+        "gpu.rejected",
+        "auth.denied",
+        "bare_metal.warning",
+    }
+    event_types_needed = {"user.added"} | set(LIFECYCLE_EVENT_TYPES.keys()) | container_event_types
+    container_events: dict[str, list[dict]] = {t: [] for t in container_event_types}
+    event_counts = count_events_in_range(start_ts, end_ts, event_types_needed, container_events)
+
+    # Query user-group mapping once for table lookups
+    # Index by both full (user@domain) and short (user) forms for cross-metric matching
+    user_group_map: dict[str, str] = {}
+    # Query current group membership (not at report time — metric may not have existed then)
+    for r in prom_query("ds01_user_group_info"):
+        m = r.get("metric", {})
+        user = m.get("user", "")
+        group = m.get("group", "")
+        user_group_map[user] = group
+        if "@" in user:
+            user_group_map[user.split("@")[0]] = group
+
+    lines: list[str] = []
+    summary: dict[str, str] = {}
+
+    # Header
+    lines.append(f"# DS01 Monthly Report -- {month_name} {year}")
+    lines.append("")
+    lines.append(f"**Period:** {month_start} to {month_end}")
+    lines.append(f"**Generated:** {generated_at}")
+    lines.append("")
+    lines.append("---")
+
+    # Sections (all data-gathering sections first)
+    sections: list[tuple[str, tuple[list[str], dict[str, str]]]] = [
+        (
+            "User Activity",
+            _section_user_activity(
+                query_time,
+                range_str,
+                month_start,
+                month_end,
+                groups,
+                event_counts,
+                user_group_map,
+            ),
+        ),
+        (
+            "GPU Resource Usage",
+            _section_gpu_usage(query_time, range_str, user_group_map),
+        ),
+        (
+            "CPU Resource Usage",
+            _section_cpu_usage(query_time, range_str, user_group_map),
+        ),
+        (
+            "Memory Usage",
+            _section_memory_usage(query_time, range_str, user_group_map),
+        ),
+        (
+            "Container Activity",
+            _section_container_activity(container_events),
+        ),
+        (
+            "System Load & Capacity",
+            _section_system_load(query_time, range_str, month_start, month_end, event_counts),
+        ),
+        ("Support Tickets", _section_support_tickets(month_start, month_end)),
+    ]
+
+    for title, (section_lines, section_summary) in sections:
+        lines.append(f"\n## {title}\n")
+        lines.extend(section_lines)
+        summary.update(section_summary)
+
+    # Build summary_data (numeric values for JSON sidecar + trends)
+    summary_data: dict[str, float | int | None] = {}
+
+    def _parse_num(key: str) -> float | None:
+        val = summary.get(key)
+        if val is None:
+            return None
+        try:
+            return float(val.replace(",", "").replace("%", ""))
+        except ValueError:
+            return None
+
+    summary_data["active_gpu_users"] = _parse_num("Active GPU users")
+    summary_data["total_gpu_hours"] = _parse_num("Total GPU-hours (allocated)")
+    summary_data["gpu_efficiency"] = _parse_num("GPU efficiency")
+    summary_data["avg_cpu_pct"] = _parse_num("Average system CPU utilisation")
+    summary_data["avg_memory_pct"] = _parse_num("Average memory utilisation")
+    summary_data["total_members"] = sum(len(m) for m in groups.values())
+    summary_data["members_by_group"] = {g: len(m) for g, m in groups.items()}
+    summary_data["new_users"] = event_counts.get("user.added", 0)
+    summary_data["containers_created"] = len(container_events.get("container.create", []))
+    summary_data["gpu_rejected"] = len(container_events.get("gpu.rejected", []))
+
+    # Parse ticket counts from summary
+    summary_data["issues_opened"] = _parse_num("Issues opened")
+    summary_data["issues_closed"] = _parse_num("Issues closed")
+
+    # Trends section (computed after all others)
+    trends_lines, trends_summary = _section_trends(year, month, summary_data)
+    lines.append("\n## Month-over-Month Trends\n")
+    lines.extend(trends_lines)
+    summary.update(trends_summary)
+
+    # Footer
+    lines.append("\n---")
+    lines.append(f"\n*Generated by ds01-monthly-report on {generated_at}*")
+
+    return "\n".join(lines) + "\n", summary, summary_data
+
+
+# ============================================================================
+# Teams Posting
+# ============================================================================
+
+
+GRAFANA_BASE_URL = os.environ.get("GRAFANA_URL", "http://localhost:3000")
+
+
+def build_teams_summary(
+    summary: dict[str, str],
+    summary_data: dict[str, float | int | None],
+    year: int,
+    month: int,
+) -> str:
+    """Build a rich Teams Adaptive Card with headline KPIs, facts, and highlights."""
+    month_name = calendar.month_name[month]
+    # Grafana link with month time range
+    start_epoch_ms = int(datetime(year, month, 1, tzinfo=timezone.utc).timestamp() * 1000)
+    if month == 12:
+        end_epoch_ms = int(datetime(year + 1, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
+    else:
+        end_epoch_ms = int(datetime(year, month + 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
+    grafana_url = f"{GRAFANA_BASE_URL}/d/ds01-monthly/?from={start_epoch_ms}&to={end_epoch_ms}"
+
+    # Load previous month for trend arrows
+    prev = _load_previous_summary(year, month)
+
+    def _val(key: str) -> str:
+        """Get display value from summary dict."""
+        return summary.get(key, "-")
+
+    def _trend(key: str, is_pct: bool = False) -> str:
+        """Get value with trend arrow if previous data exists."""
+        curr = summary_data.get(key)
+        if curr is None:
+            return _val(key) if not is_pct else "-"
+        if prev and key in prev and prev[key] is not None:
+            return _trend_str(float(curr), float(prev[key]), is_pct)
+        if is_pct:
+            return f"{curr:.1f}%"
+        return f"{int(curr)}" if curr == int(curr) else f"{curr:,.1f}"
+
+    # Headline KPI columns (with month-over-month trends)
+    kpi_columns = [
+        ("Active Users", _trend("active_gpu_users")),
+        ("GPU-Hours", _trend("total_gpu_hours")),
+        ("GPU Efficiency", _trend("gpu_efficiency", is_pct=True)),
+    ]
+    columns = []
+    for label, value in kpi_columns:
+        columns.append(
+            {
+                "type": "Column",
+                "width": "stretch",
+                "items": [
+                    {"type": "TextBlock", "text": label, "size": "Small", "isSubtle": True},
+                    {
+                        "type": "TextBlock",
+                        "text": str(value),
+                        "size": "ExtraLarge",
+                        "weight": "Bolder",
+                        "color": "Accent",
+                    },
+                ],
+            }
+        )
+
+    # Fact set — key metrics with month-over-month trends
+    facts = []
+    cpu_val = _trend("avg_cpu_pct", is_pct=True)
+    if cpu_val != "-":
+        facts.append({"title": "CPU utilisation", "value": cpu_val})
+    mem_val = _trend("avg_memory_pct", is_pct=True)
+    if mem_val != "-":
+        facts.append({"title": "RAM utilisation", "value": mem_val})
+    containers_val = _trend("containers_created")
+    if containers_val != "-":
+        facts.append({"title": "Containers created", "value": containers_val})
+    issues_opened = _trend("issues_opened")
+    issues_closed = _trend("issues_closed")
+    if issues_opened != "-" or issues_closed != "-":
+        facts.append(
+            {"title": "Issues", "value": f"{issues_opened} opened / {issues_closed} closed"}
+        )
+    res_mean = summary.get("Resolution mean", "")
+    res_median = summary.get("Resolution median", "")
+    if res_mean or res_median:
+        facts.append(
+            {"title": "Resolution time", "value": f"{res_mean} mean / {res_median} median"}
+        )
+
+    # Highlights
+    highlights = []
+    busiest = summary.get("Busiest period")
+    if busiest:
+        highlights.append(f"- Busiest: {busiest}")
+    new_users_count = summary_data.get("new_users", 0) or 0
+    if new_users_count > 0:
+        highlights.append(f"- {int(new_users_count)} new user(s) joined")
+    if prev:
+        gpu_curr = summary_data.get("total_gpu_hours")
+        gpu_prev = prev.get("total_gpu_hours")
+        if gpu_curr and gpu_prev and gpu_prev > 0:
+            pct = ((gpu_curr - gpu_prev) / gpu_prev) * 100
+            direction = "up" if pct > 0 else "down"
+            prev_name = calendar.month_name[12 if month == 1 else month - 1]
+            highlights.append(f"- GPU usage {direction} {abs(pct):.0f}% vs {prev_name}")
+
+    # Build card body
+    body: list[dict] = [
+        {
+            "type": "TextBlock",
+            "text": f"DS01 Monthly Report \u2014 {month_name} {year}",
+            "weight": "Bolder",
+            "size": "Large",
+        },
+        {
+            "type": "TextBlock",
+            "text": "Summary \u2014 full report follows below.",
+            "size": "Small",
+            "isSubtle": True,
+        },
+        {"type": "ColumnSet", "columns": columns},
+    ]
+    if facts:
+        body.append({"type": "FactSet", "facts": facts})
+    if highlights:
+        body.append({"type": "TextBlock", "text": "**Highlights**", "spacing": "Medium"})
+        body.append(
+            {"type": "TextBlock", "text": "\n".join(highlights), "wrap": True, "size": "Small"}
+        )
+
+    # Grafana link (internal for now)
+    body.append(
+        {
+            "type": "ActionSet",
+            "actions": [
+                {
+                    "type": "Action.OpenUrl",
+                    "title": "View in Grafana (internal)",
+                    "url": grafana_url,
+                }
+            ],
+        }
+    )
+    body.append(
+        {
+            "type": "TextBlock",
+            "text": (
+                "Full report posted below. "
+                "Grafana dashboard and email delivery coming soon "
+                "\u2014 external access via Cloudflare tunnel planned."
+            ),
+            "size": "Small",
+            "isSubtle": True,
+            "spacing": "Small",
+        }
+    )
+
+    card = {
+        "type": "message",
+        "attachments": [
+            {
+                "contentType": "application/vnd.microsoft.card.adaptive",
+                "contentVersion": "1.4",
+                "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": body,
+                },
+            }
+        ],
+    }
+    return json.dumps(card)
+
+
+def _post_webhook(url: str, payload: str, label: str = "Teams") -> bool:
+    """Post a JSON payload to a webhook URL."""
+    try:
+        req = urllib.request.Request(
+            url,
+            data=payload.encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            return resp.status in (200, 202)
+    except (urllib.error.URLError, OSError) as e:
+        print(f"  {label} post failed: {e}", file=sys.stderr)
+        return False
+
+
+def post_to_teams(summary_card: str, report_md: str | None = None) -> bool:
+    """Post summary card to Teams, optionally followed by full report as second message."""
+    url = _load_teams_webhook_url()
+    if not url:
+        print("  Teams webhook URL not configured -- skipping", file=sys.stderr)
+        return False
+
+    ok = _post_webhook(url, summary_card, "Teams summary card")
+    if ok and report_md:
+        # Post full report as a simple text message (Teams renders basic markdown)
+        text_payload = json.dumps({"text": report_md})
+        _post_webhook(url, text_payload, "Teams full report")
+    return ok
+
+
+# ============================================================================
+# Main
+# ============================================================================
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="DS01 Monthly Report Generator")
+    parser.add_argument(
+        "--month",
+        help="Month to report on (YYYY-MM). Defaults to previous month.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print report to stdout without saving or posting.",
+    )
+    parser.add_argument(
+        "--no-teams",
+        action="store_true",
+        help="Save report but don't post to Teams.",
+    )
+    args = parser.parse_args()
+
+    # Determine target month
+    if args.month:
+        try:
+            parts = args.month.split("-")
+            year, month = int(parts[0]), int(parts[1])
+            if not (1 <= month <= 12):
+                raise ValueError
+        except (ValueError, IndexError):
+            print(f"Invalid month format: {args.month} (expected YYYY-MM)")
+            sys.exit(1)
+    else:
+        # Previous month
+        now = datetime.now(timezone.utc)
+        if now.month == 1:
+            year, month = now.year - 1, 12
+        else:
+            year, month = now.year, now.month - 1
+
+    month_name = calendar.month_name[month]
+    print(f"Generating report for {month_name} {year}...")
+
+    # Generate
+    report, summary, summary_data = generate_report(year, month)
+
+    if args.dry_run:
+        print(report)
+        return
+
+    # Save report markdown
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    report_file = REPORTS_DIR / f"{year}-{month:02d}.md"
+    report_file.write_text(report)
+    latest_link = REPORTS_DIR / "_latest.md"
+    latest_link.unlink(missing_ok=True)
+    latest_link.symlink_to(report_file.name)
+    print(f"Report saved: {report_file}")
+
+    # Save JSON sidecar for month-over-month trends
+    sidecar = {
+        "version": 1,
+        "year": year,
+        "month": month,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "metrics": {k: v for k, v in summary_data.items() if v is not None},
+    }
+    sidecar_file = REPORTS_DIR / f"{year}-{month:02d}-summary.json"
+    sidecar_file.write_text(json.dumps(sidecar, indent=2) + "\n")
+    print(f"Summary saved: {sidecar_file}")
+
+    # Post to Teams (summary card + full report as second message)
+    if not args.no_teams:
+        print("Posting to Teams...")
+        card_payload = build_teams_summary(summary, summary_data, year, month)
+        if post_to_teams(card_payload, report):
+            print("Teams notification sent.")
+        else:
+            print("Teams notification skipped or failed.")
+
+    print("Done.")
+
+
+if __name__ == "__main__":
+    main()
