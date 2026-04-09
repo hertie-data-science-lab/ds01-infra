@@ -217,7 +217,7 @@ def query_github_issues(month_start: str, month_end: str) -> dict[str, Any] | No
         month_start: ISO date string (e.g., "2026-03-01")
         month_end: ISO date string (e.g., "2026-03-31")
 
-    Returns dict with keys: opened, closed, resolution_days, by_label, or None on failure.
+    Returns dict with keys: opened, closed, resolution_days_mean, resolution_days_median, by_label, or None on failure.
     """
     try:
         # Use --search with date qualifiers to scope server-side, avoiding the
@@ -292,11 +292,17 @@ def query_github_issues(month_start: str, month_end: str) -> dict[str, Any] | No
                 pass
 
     avg_resolution = sum(resolution_times) / len(resolution_times) if resolution_times else None
+    if resolution_times:
+        sorted_rt = sorted(resolution_times)
+        median_resolution = sorted_rt[len(sorted_rt) // 2]
+    else:
+        median_resolution = None
 
     return {
         "opened": opened,
         "closed": closed,
-        "resolution_days": avg_resolution,
+        "resolution_days_mean": avg_resolution,
+        "resolution_days_median": median_resolution,
         "by_label": dict(by_label),
     }
 
@@ -871,8 +877,12 @@ def _section_support_tickets(
         summary["Issues opened"] = str(tickets["opened"])
         lines.append(f"- **Issues closed:** {tickets['closed']}")
         summary["Issues closed"] = str(tickets["closed"])
-        if tickets["resolution_days"] is not None:
-            lines.append(f"- **Average resolution time:** {tickets['resolution_days']:.1f} days")
+        if tickets["resolution_days_mean"] is not None:
+            lines.append(f"- **Mean resolution time:** {tickets['resolution_days_mean']:.1f} days")
+        if tickets["resolution_days_median"] is not None:
+            lines.append(
+                f"- **Median resolution time:** {tickets['resolution_days_median']:.1f} days"
+            )
 
         if tickets["by_label"]:
             lines.append("\n### By Category\n")
