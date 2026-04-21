@@ -30,11 +30,11 @@ labels:
     notes: "Replaces aime.mlc.DS01_MANAGED"
 
   ds01.interface:
-    description: "Creation interface (orchestration, atomic, docker, vscode)"
+    description: "Creation interface (orchestration, atomic, api, docker, vscode)"
     type: "enum"
-    set_by: "container-create, mlc-patched.py, docker-wrapper.sh"
+    set_by: "container-create, mlc-patched.py, docker-wrapper.sh, ds01-jobs"
     example: "orchestration"
-    values: ["orchestration", "atomic", "docker", "vscode", "unknown"]
+    values: ["orchestration", "atomic", "api", "docker", "vscode", "unknown"]
 
   ds01.container_type:
     description: "Container type for resource enforcement (devcontainer, compose, docker)"

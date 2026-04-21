@@ -435,7 +435,7 @@ get_container_type_timeout() {
     local container_type="$1"
 
     case "$container_type" in
-        orchestration | atomic)
+        orchestration | atomic | api)
             # Use user's configured timeout
             echo "0.5"
             ;;
@@ -459,7 +459,7 @@ get_container_type_max_runtime() {
     local container_type="$1"
 
     case "$container_type" in
-        orchestration | atomic)
+        orchestration | atomic | api)
             echo "24"
             ;;
         devcontainer)
@@ -1104,13 +1104,13 @@ main() {
             log_debug "GPU request detected"
 
             # Check if GPU allocation should be skipped:
-            # 1. DS01 native containers (atomic/orchestration) handle their own allocation
+            # 1. DS01 native containers (atomic/orchestration/api) handle their own dispatch
             # 2. Specific device UUID already set (e.g. mlc temp containers with pre-allocated GPU)
             local gpu_value
             gpu_value=$(get_gpu_request_value "$@")
             local skip_gpu_alloc=false
 
-            if [[ $CONTAINER_TYPE == "orchestration" ]] || [[ $CONTAINER_TYPE == "atomic" ]]; then
+            if [[ $CONTAINER_TYPE == "orchestration" ]] || [[ $CONTAINER_TYPE == "atomic" ]] || [[ $CONTAINER_TYPE == "api" ]]; then
                 log_debug "DS01 native container - GPU allocation handled by ds01 layer"
                 skip_gpu_alloc=true
             elif [[ $gpu_value == device=MIG-* ]] || [[ $gpu_value == device=GPU-* ]]; then

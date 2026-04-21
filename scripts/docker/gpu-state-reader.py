@@ -28,6 +28,7 @@ DOCKER_BIN = "/usr/bin/docker"
 # Interface detection constants
 INTERFACE_ORCHESTRATION = "orchestration"
 INTERFACE_ATOMIC = "atomic"
+INTERFACE_API = "api"
 INTERFACE_DOCKER = "docker"
 INTERFACE_OTHER = "other"
 INTERFACE_UNMANAGED = "unmanaged"  # Containers outside DS01 tracking (bypass wrapper)
@@ -167,6 +168,8 @@ class GPUStateReader:
                 return INTERFACE_ORCHESTRATION
             elif interface_label == "atomic":
                 return INTERFACE_ATOMIC
+            elif interface_label == "api":
+                return INTERFACE_API
             # Other explicit values fall through
 
         # 2. DS01 managed label (from mlc-create-wrapper)
@@ -603,6 +606,7 @@ class GPUStateReader:
         Includes containers from all interfaces:
         - DS01 Orchestration (ds01.interface=orchestration)
         - DS01 Atomic (ds01.interface=atomic or name._.uid pattern)
+        - DS01 API (ds01.interface=api - ds01-jobs-submitted containers)
         - Docker (direct docker run, in ds01.slice)
         - Other (VS Code, Compose, etc., in ds01.slice)
         """

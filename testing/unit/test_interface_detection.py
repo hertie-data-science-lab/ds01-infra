@@ -17,6 +17,7 @@ class TestInterfaceDetection:
         def detect_interface(name: str, labels: dict) -> str:
             INTERFACE_ORCHESTRATION = "orchestration"
             INTERFACE_ATOMIC = "atomic"
+            INTERFACE_API = "api"
             INTERFACE_DOCKER = "docker"
             INTERFACE_OTHER = "other"
 
@@ -27,6 +28,8 @@ class TestInterfaceDetection:
                     return INTERFACE_ORCHESTRATION
                 elif interface_label == "atomic":
                     return INTERFACE_ATOMIC
+                elif interface_label == "api":
+                    return INTERFACE_API
 
             # 2. DS01 managed label
             if labels.get("ds01.managed") == "true":
@@ -81,6 +84,12 @@ class TestInterfaceDetection:
         """Container with ds01.interface=atomic detected correctly."""
         result = detector(name="test-container", labels={"ds01.interface": "atomic"})
         assert result == "atomic"
+
+    @pytest.mark.unit
+    def test_explicit_api_label(self, detector):
+        """Container with ds01.interface=api detected correctly."""
+        result = detector(name="ds01-job-abc123", labels={"ds01.interface": "api"})
+        assert result == "api"
 
     # =========================================================================
     # DS01 Managed Label Tests

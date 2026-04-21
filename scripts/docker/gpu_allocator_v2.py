@@ -26,6 +26,7 @@ import yaml
 # Interface constants (from gpu-state-reader.py)
 INTERFACE_ORCHESTRATION = "orchestration"
 INTERFACE_ATOMIC = "atomic"
+INTERFACE_API = "api"
 INTERFACE_DOCKER = "docker"
 INTERFACE_OTHER = "other"
 
@@ -359,7 +360,8 @@ class GPUAllocatorSmart:
     def _get_container_interface(self, container: str) -> str:
         """
         Get the interface a container was created with.
-        Returns: INTERFACE_ORCHESTRATION, INTERFACE_ATOMIC, INTERFACE_DOCKER, or INTERFACE_OTHER
+        Returns: INTERFACE_ORCHESTRATION, INTERFACE_ATOMIC, INTERFACE_API,
+        INTERFACE_DOCKER, or INTERFACE_OTHER
         """
         try:
             result = subprocess.run(
@@ -976,7 +978,7 @@ class GPUAllocatorSmart:
         Container removal automatically releases GPU (Docker labels gone = GPU freed).
 
         Interface-specific behavior:
-        - Orchestration: No hold timeout, stopped containers removed immediately
+        - Orchestration / API: No hold timeout, stopped containers removed immediately
         - Atomic/Docker/Other: Respect gpu_hold_after_stop timeout
 
         Args:
@@ -1088,19 +1090,22 @@ class GPUAllocatorSmart:
                     elapsed = now - stopped_at
 
                     # INTERFACE-SPECIFIC STATE HANDLING
-                    if interface == INTERFACE_ORCHESTRATION:
-                        # Orchestration Interface: Binary state model
-                        # Stopped containers should be removed immediately (no limbo state)
+                    if interface in (INTERFACE_ORCHESTRATION, INTERFACE_API):
+                        # Orchestration / API: Binary state model
+                        # Stopped containers should be removed immediately (no limbo state).
+                        # Both interfaces represent a higher-layer dispatcher (orchestration =
+                        # CLI/scripted, api = ds01-jobs HTTP API) that already serialises
+                        # access, so the wrapper's per-user GPU hold would just block back-
+                        # to-back jobs without adding isolation.
                         subprocess.run(["docker", "rm", "-f", container], check=True)
-                        removed.append(
-                            (container, "Orchestration interface - binary state (stopped→removed)")
-                        )
+                        reason = f"{interface} interface - binary state (stopped→removed)"
+                        removed.append((container, reason))
                         self._log_event(
                             "REMOVED_STALE",
                             user or "unknown",
                             container,
                             gpu_slot,
-                            reason="Orchestration binary state: stopped→removed",
+                            reason=f"{interface} binary state: stopped→removed",
                         )
                         continue
 
