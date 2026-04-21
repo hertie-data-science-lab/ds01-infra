@@ -143,6 +143,7 @@ class TestInterfaceConstants:
         # Import the module
         try:
             from gpu_allocator_v2 import (
+                INTERFACE_API,
                 INTERFACE_ATOMIC,
                 INTERFACE_DOCKER,
                 INTERFACE_ORCHESTRATION,
@@ -151,6 +152,7 @@ class TestInterfaceConstants:
 
             assert INTERFACE_ORCHESTRATION == "orchestration"
             assert INTERFACE_ATOMIC == "atomic"
+            assert INTERFACE_API == "api"
             assert INTERFACE_DOCKER == "docker"
             assert INTERFACE_OTHER == "other"
         except ImportError:
@@ -194,7 +196,17 @@ class TestGPUStateModel:
         interface = "orchestration"
 
         # Orchestration retires (removes) immediately - no hold needed
-        immediate_release = interface == "orchestration"
+        immediate_release = interface in ("orchestration", "api")
+        assert immediate_release is True
+
+    @pytest.mark.unit
+    def test_gpu_hold_not_for_api(self):
+        """GPU hold not needed for api (ds01-jobs serialises dispatch)."""
+        interface = "api"
+
+        # API interface (ds01-jobs) - the runner already serialises via
+        # get_available_gpu_count(); per-user hold would just block back-to-back jobs
+        immediate_release = interface in ("orchestration", "api")
         assert immediate_release is True
 
 
