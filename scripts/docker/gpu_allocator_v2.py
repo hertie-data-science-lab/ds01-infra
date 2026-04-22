@@ -613,27 +613,20 @@ class GPUAllocatorSmart:
             if max_mig_per_container is None or max_mig_per_container == "unlimited":
                 max_mig_per_container = 999
 
-            # Check per-container limit
+            # Static request-shape check (no self-heal helps here).
             if num_migs > max_mig_per_container:
                 reason = f"EXCEEDS_CONTAINER_LIMIT ({num_migs}>{max_mig_per_container})"
                 self._log_event("REJECTED", username, container, reason=reason)
                 return [], 0, reason
 
-            # FIRST LAYER: Check aggregate GPU quota (per-user total cap)
-            allowed, agg_error = self._check_aggregate_gpu_quota(username, num_migs)
-            if not allowed:
-                self._log_event("REJECTED", username, container, reason=agg_error)
-                return [], 0, agg_error
-
-            # SECOND LAYER: Check user's current usage (max_mig_instances)
-            user_allocs = self.state_reader.get_user_allocations(username)
-            current_mig_equiv = self._calculate_mig_equivalents(user_allocs, mig_per_gpu)
-            remaining_migs = max_mig_total - current_mig_equiv
-
-            if num_migs > remaining_migs:
-                reason = f"EXCEEDS_TOTAL_LIMIT ({num_migs}+{current_mig_equiv}>{max_mig_total})"
-                self._log_event("REJECTED", username, container, reason=reason)
-                return [], 0, reason
+            # Quota check with one self-heal retry (see allocate_external for rationale).
+            ok, err = self._check_multi_quotas(username, num_migs, max_mig_total, mig_per_gpu)
+            if not ok:
+                self.release_stale_allocations(username)
+                ok, err = self._check_multi_quotas(username, num_migs, max_mig_total, mig_per_gpu)
+            if not ok:
+                self._log_event("REJECTED", username, container, reason=err)
+                return [], 0, err
 
             # Check full GPU permission
             can_use_full = self._can_use_full_gpu(username)
@@ -890,6 +883,31 @@ class GPUAllocatorSmart:
                 return 999
             return int(max_mig)
 
+    def _check_external_quotas(
+        self, username: str, max_allowed: int, requested: int
+    ) -> Tuple[bool, Optional[str]]:
+        """Run both quota layers (aggregate + per-container-type)."""
+        allowed, agg_err = self._check_aggregate_gpu_quota(username, requested)
+        if not allowed:
+            return False, agg_err
+        current = self.get_user_gpu_count(username)
+        if current + requested > max_allowed:
+            return False, f"QUOTA_EXCEEDED:{current}/{max_allowed}"
+        return True, None
+
+    def _check_multi_quotas(
+        self, username: str, num_migs: int, max_mig_total: int, mig_per_gpu: int
+    ) -> Tuple[bool, Optional[str]]:
+        """Run both quota layers for multi-GPU allocation."""
+        allowed, agg_err = self._check_aggregate_gpu_quota(username, num_migs)
+        if not allowed:
+            return False, agg_err
+        user_allocs = self.state_reader.get_user_allocations(username)
+        current_mig_equiv = self._calculate_mig_equivalents(user_allocs, mig_per_gpu)
+        if num_migs > max_mig_total - current_mig_equiv:
+            return False, f"EXCEEDS_TOTAL_LIMIT ({num_migs}+{current_mig_equiv}>{max_mig_total})"
+        return True, None
+
     def allocate_external(self, username: str, container_type: str) -> Tuple[Optional[str], str]:
         """
         Allocate GPU for external container (devcontainer, compose, docker run, etc.).
@@ -913,21 +931,17 @@ class GPUAllocatorSmart:
             # Get user's MIG limit for this container type
             max_allowed = self._get_external_mig_limit(username, container_type)
 
-            # FIRST LAYER: Check aggregate GPU quota (per-user total cap)
-            allowed, agg_error = self._check_aggregate_gpu_quota(username, 1)
-            if not allowed:
-                # Convert to QUOTA_EXCEEDED format for docker-wrapper.sh
-                self._log_event(
-                    "REJECTED", username, f"external-{container_type}", reason=agg_error
-                )
-                return None, agg_error
-
-            # SECOND LAYER: Check per-container limit (immediate fail if at quota)
-            current_count = self.get_user_gpu_count(username)
-            if current_count >= max_allowed:
-                reason = f"QUOTA_EXCEEDED:{current_count}/{max_allowed}"
-                self._log_event("REJECTED", username, f"external-{container_type}", reason=reason)
-                return None, reason
+            # Quota check with one self-heal retry. If quota is exhausted, clear
+            # stale api/orchestration containers (binary-state cleanup on demand)
+            # and re-check before rejecting. Catches the case where a prior job's
+            # container wasn't rm'd by its dispatcher.
+            ok, err = self._check_external_quotas(username, max_allowed, 1)
+            if not ok:
+                self.release_stale_allocations(username)
+                ok, err = self._check_external_quotas(username, max_allowed, 1)
+            if not ok:
+                self._log_event("REJECTED", username, f"external-{container_type}", reason=err)
+                return None, err
 
             # Find available GPU using availability checker
             allow_full = self._can_use_full_gpu(username)
