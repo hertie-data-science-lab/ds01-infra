@@ -72,7 +72,7 @@ groups:
     # Members: config/groups/student.members
     # Note: Users not in any group file default to 'student' via default_group
     allow_full_gpu: true            # MIG disabled on hardware — students need full GPU access
-    max_mig_per_container: 3
+    max_mig_per_container: 2        # Max GPUs per single container (any submission path)
     # Per-user aggregate limits (systemd slice enforcement)
     aggregate:
       cpu_quota: "9600%"            # 32 CPUs × 3 containers = 96 CPUs (systemd format: 100% = 1 CPU)
@@ -91,7 +91,7 @@ groups:
     # Members: config/groups/researcher.members
     # PhD students, research assistants, staff with research needs
     allow_full_gpu: true            # Full GPU access for PhD work
-    max_mig_per_container: 4        # Up to 4 MIG-equivalents per container (= 1 full GPU)
+    max_mig_per_container: 3        # Max GPUs per single container (any submission path)
     max_mig_instances: 6            # Can use up to 6 MIG instances or equivalent
     max_cpus: 48                    # Increased for CPU-heavy workloads
     memory: 64g                     # Increased for large datasets
@@ -122,7 +122,7 @@ groups:
     # Members: config/groups/faculty.members
     # Professors and senior researchers - teaching + research needs
     allow_full_gpu: true            # Full GPU access
-    max_mig_per_container: 4        # Up to 4 MIG-equivalents per container
+    max_mig_per_container: 4        # Max GPUs per single container (any submission path)
     max_mig_instances: 8            # Can use up to 8 MIG instances
     max_cpus: 64                    # High for demanding workloads
     memory: 128g                    # Large memory for big models
@@ -152,7 +152,7 @@ groups:
   admin:
     # Members: config/groups/admin.members
     allow_full_gpu: true            # Admins CAN request full GPUs
-    max_mig_per_container: null     # Unlimited MIG-equivalents per container
+    max_mig_per_container: null     # Unlimited GPUs per container
     max_mig_instances: null         # Unlimited (can use all GPUs)
     max_cpus: 64
     memory: 128g
@@ -220,63 +220,40 @@ policies:
   # suggest_alternatives: true     # Suggest alternatives when resource unavailable
 
 # === Container type-specific settings (external containers) ===
-# These apply to containers created outside ds01 CLI (dev containers, compose, direct docker run)
-# Core principle: GPU access = ephemeral enforcement, No GPU = permanent OK
+# These apply to containers created outside ds01 CLI (dev containers, compose, direct docker run).
+# Only lifecycle policies live here — GPU quota is unified to the user profile
+# (groups.<group>.max_mig_per_container) so a user's budget is the same regardless
+# of submission path. Tune a user's GPU cap by changing their group profile, not here.
 container_types:
   # Dev containers (VS Code, Cursor, etc.) - development work
   devcontainer:
     idle_timeout_h: null             # Exempt from idle timeout (only subject to max_runtime_h)
     max_runtime_h: 168               # 1 week max
     sigterm_grace_s: 30              # Dev containers: K8s default
-    default_mig_count:             # Group-based MIG allocation for external containers
-      student: 1                   # Students get 1 MIG for dev containers
-      researcher: 2                # Researchers can have 2 MIGs in dev containers
-      faculty: 2                   # Faculty can have 2 MIGs in dev containers
-      admin: null                  # Unlimited for admins
 
   # Docker Compose containers
   compose:
     idle_timeout_h: 0.5
     max_runtime_h: 72               # 3 days max
     sigterm_grace_s: 45              # Compose: middle ground
-    default_mig_count:
-      student: 1
-      researcher: 2
-      faculty: 2
-      admin: null
 
   # Direct docker run commands
   docker:
     idle_timeout_h: 0.5
     max_runtime_h: 48               # 2 days max
     sigterm_grace_s: 60              # Direct docker: full minute (likely GPU)
-    default_mig_count:
-      student: 1
-      researcher: 1                # Slightly stricter for raw docker
-      faculty: 2
-      admin: null
 
   # ds01-jobs API containers (remote job submission)
   api:
     idle_timeout_h: null               # Jobs manage their own lifecycle
     max_runtime_h: 24                  # 1 day max
     sigterm_grace_s: 30
-    default_mig_count:
-      student: 1
-      researcher: 2
-      faculty: 2
-      admin: null
 
-  # Unrecognised containers (Portainer, SDK, etc.) - stricter limits
+  # Unrecognised containers (Portainer, SDK, etc.)
   unknown:
     idle_timeout_h: 0.25              # Short timeout for unidentified containers (15 min)
     max_runtime_h: 24                  # 1 day max
     sigterm_grace_s: 30                # Unknown: K8s default
-    default_mig_count:
-      student: 1
-      researcher: 1
-      faculty: 1
-      admin: null
 
 # === Monitoring configuration ===
 # Infrastructure containers excluded from unmanaged container detection
