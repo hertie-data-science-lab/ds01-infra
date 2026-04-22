@@ -1173,9 +1173,16 @@ main() {
                     effective_owner="$devcontainer_owner"
                 fi
 
-                # Extract container name (required by allocate-multi; allocate-external ignores it)
-                local alloc_container_name
+                # allocate-multi needs a container name as its state key. Auto-generate
+                # one when the caller omitted --name, and inject it further down so
+                # docker sees the same name we registered with the allocator.
+                local alloc_container_name auto_generated_name=""
                 alloc_container_name=$(get_container_name "$@" || echo "")
+                if [ -z "$alloc_container_name" ] && [ "$gpu_count" -gt 1 ]; then
+                    alloc_container_name="ds01-auto-$(date +%s)-$$"
+                    auto_generated_name="$alloc_container_name"
+                    log_debug "Auto-generated name for multi-GPU alloc: $alloc_container_name"
+                fi
 
                 # Allocate GPU(s)
                 local alloc_result
@@ -1250,6 +1257,12 @@ main() {
         if [ -n "$GPU_SLOT" ]; then
             INJECT_ARGS+=("--label" "ds01.gpu_slot=$GPU_SLOT")
             INJECT_ARGS+=("--label" "ds01.gpu_ephemeral=true")
+        fi
+
+        # Pass the auto-generated name into docker so the container matches the
+        # allocator's registered state key (only set for multi-GPU sans --name).
+        if [ -n "${auto_generated_name:-}" ]; then
+            INJECT_ARGS+=("--name" "$auto_generated_name")
         fi
 
         # Remove subcommand from args
