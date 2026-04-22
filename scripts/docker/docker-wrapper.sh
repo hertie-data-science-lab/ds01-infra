@@ -387,7 +387,7 @@ allocate_gpu_for_container() {
         # allocate-multi emits DOCKER_IDS=UUID1,UUID2,...; allocate-external emits DOCKER_ID=UUID.
         local result exit_code output_key
         if [ "$gpu_count" -gt 1 ]; then
-            result=$(python3 "$GPU_ALLOCATOR" allocate-multi "$user" "$container_name" "$gpu_count" 2>&1)
+            result=$(python3 "$GPU_ALLOCATOR" allocate-multi "$user" "$container_name" "$container_type" "$gpu_count" 2>&1)
             exit_code=$?
             output_key='DOCKER_IDS'
         else
