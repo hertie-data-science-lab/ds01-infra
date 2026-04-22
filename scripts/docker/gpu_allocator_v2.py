@@ -607,10 +607,8 @@ class GPUAllocatorSmart:
             gpu_config = self.config.get("gpu_allocation", {})
             mig_per_gpu = gpu_config.get("mig_instances_per_gpu", 4)
 
-            # Per-container cap: same source as allocate_external — container_types
-            # config, per-interface and per-group. Falls back to user.max_mig_per_container
-            # only when container_types has no entry for this type.
-            max_per_container = self._get_external_mig_limit(username, container_type)
+            # Per-container cap: user profile, interface-agnostic.
+            max_per_container = self._get_user_per_container_cap(username)
 
             if num_migs > max_per_container:
                 reason = f"EXCEEDS_CONTAINER_LIMIT ({num_migs}>{max_per_container})"
@@ -844,48 +842,22 @@ class GPUAllocatorSmart:
         user_allocs = self.state_reader.get_user_allocations(username)
         return len(user_allocs)
 
-    def _get_external_mig_limit(self, username: str, container_type: str) -> int:
+    def _get_user_per_container_cap(self, username: str) -> int:
         """
-        Get MIG limit for external containers based on user group.
+        Max GPU slots a single container may request for this user.
 
-        External containers (devcontainer, compose, docker) get limits
-        from container_types config, which varies by user group.
+        Single source of truth: the user's group profile (`max_mig_per_container`),
+        applied uniformly across all submission paths (api, devcontainer, compose,
+        docker, unknown). A user's budget is their budget regardless of how they
+        submitted the work — we don't want per-interface quota drift.
 
-        Args:
-            username: User requesting GPU
-            container_type: devcontainer, compose, docker, unknown
-
-        Returns:
-            Max MIG instances allowed for this user/container_type combo
+        Returns 999 for unlimited (admin).
         """
-        user_limits = self._get_user_limits(username)
-        user_group = user_limits.get("_group", "student")
-
-        # Get container type config from config file
-        container_types = self.config.get("container_types", {}) or {}
-        type_config = container_types.get(container_type, {}) or {}
-        mig_config = type_config.get("default_mig_count", {})
-
-        # Look up by group. `null` in YAML means unlimited; missing key means
-        # "fall back to student". Distinguish by presence, not truthiness.
-        if isinstance(mig_config, dict):
-            if user_group in mig_config:
-                limit = mig_config[user_group]
-            else:
-                limit = mig_config.get("student", 1)
-            if limit is None or limit == "unlimited":
-                return 999
-            return int(limit)
-        elif mig_config is None or mig_config == "unlimited":
+        limits = self._get_user_limits(username)
+        cap = limits.get("max_mig_per_container", limits.get("max_gpus_per_container", 1))
+        if cap is None or cap == "unlimited":
             return 999
-        elif mig_config:
-            return int(mig_config)
-        else:
-            # No container_types config - fall back to user's max_mig_instances
-            max_mig = user_limits.get("max_mig_instances", 1)
-            if max_mig is None or max_mig == "unlimited":
-                return 999
-            return int(max_mig)
+        return int(cap)
 
     def _check_external_quotas(
         self, username: str, max_allowed: int, requested: int
@@ -919,8 +891,8 @@ class GPUAllocatorSmart:
             # Acquire exclusive lock
             self._acquire_lock()
 
-            # Get user's MIG limit for this container type
-            max_allowed = self._get_external_mig_limit(username, container_type)
+            # Per-container cap: user profile, interface-agnostic.
+            max_allowed = self._get_user_per_container_cap(username)
 
             # Quota check with one self-heal retry. If quota is exhausted, clear
             # stale api/orchestration containers (binary-state cleanup on demand)
