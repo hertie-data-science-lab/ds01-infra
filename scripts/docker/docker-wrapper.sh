@@ -159,8 +159,7 @@ get_devcontainer_owner() {
     return 1
 }
 
-# Extract --name from docker args. Returns empty string if not set (Docker will
-# auto-generate a name). allocate-multi needs this for state tracking.
+# Extract --name value from docker args, or return empty if unset.
 get_container_name() {
     local prev_arg=""
     for arg in "$@"; do
@@ -353,10 +352,9 @@ show_gpu_error() {
 }
 
 # Attempt GPU allocation with blocking retry.
-# For gpu_count=1 uses allocate-external (existing path, no container name needed).
-# For gpu_count>1 uses allocate-multi, which requires the target container name.
-# Outputs on success: single UUID (N=1) or comma-joined UUIDs (N>1)
-# Outputs on failure: ERROR:TYPE:DETAILS (parsed by caller)
+# Dispatches to allocate-external (N=1) or allocate-multi (N>1, requires container_name).
+# Outputs on success: single UUID or comma-joined UUIDs.
+# Outputs on failure: ERROR:TYPE:DETAILS (parsed by caller).
 allocate_gpu_for_container() {
     local user="$1"
     local container_type="$2"
@@ -386,28 +384,23 @@ allocate_gpu_for_container() {
             return 1
         fi
 
-        # Call the allocator — dispatch on count
-        local result exit_code
+        # allocate-multi emits DOCKER_IDS=UUID1,UUID2,...; allocate-external emits DOCKER_ID=UUID.
+        local result exit_code output_key
         if [ "$gpu_count" -gt 1 ]; then
             result=$(python3 "$GPU_ALLOCATOR" allocate-multi "$user" "$container_name" "$gpu_count" 2>&1)
             exit_code=$?
+            output_key='DOCKER_IDS'
         else
             result=$(python3 "$GPU_ALLOCATOR" allocate-external "$user" "$container_type" 2>&1)
             exit_code=$?
+            output_key='DOCKER_ID'
         fi
 
         log_debug "Allocation attempt $attempt: exit=$exit_code result=$result"
 
-        # Parse result
         if [ $exit_code -eq 0 ]; then
             local gpu_uuids
-            if [ "$gpu_count" -gt 1 ]; then
-                # allocate-multi emits `DOCKER_IDS=UUID1,UUID2,...`
-                gpu_uuids=$(echo "$result" | grep -oP 'DOCKER_IDS=\K[^\s]+')
-            else
-                # allocate-external emits `DOCKER_ID=UUID`
-                gpu_uuids=$(echo "$result" | grep -oP 'DOCKER_ID=\K[^\s]+' || echo "$result" | grep -oP 'GPU-[a-f0-9-]+|MIG-[a-f0-9-]+')
-            fi
+            gpu_uuids=$(echo "$result" | grep -oP "${output_key}=\K[^\s]+")
             if [ -n "$gpu_uuids" ]; then
                 log_debug "GPU allocated: $gpu_uuids"
                 echo "$gpu_uuids"
