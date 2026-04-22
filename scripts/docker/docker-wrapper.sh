@@ -159,6 +159,23 @@ get_devcontainer_owner() {
     return 1
 }
 
+# Extract --name value from docker args, or return empty if unset.
+get_container_name() {
+    local prev_arg=""
+    for arg in "$@"; do
+        if [[ $arg == "--name="* ]]; then
+            echo "${arg#--name=}"
+            return 0
+        fi
+        if [[ $prev_arg == "--name" ]]; then
+            echo "$arg"
+            return 0
+        fi
+        prev_arg="$arg"
+    done
+    return 1
+}
+
 # ============================================================================
 # PHASE 1: GPU AND CONTAINER TYPE DETECTION
 # ============================================================================
@@ -334,18 +351,27 @@ show_gpu_error() {
     echo "" >&2
 }
 
-# Attempt GPU allocation with blocking retry
-# Outputs on success: GPU device UUID
-# Outputs on failure: ERROR:TYPE:DETAILS (parsed by caller)
+# Attempt GPU allocation with blocking retry.
+# Dispatches to allocate-external (N=1) or allocate-multi (N>1, requires container_name).
+# Outputs on success: single UUID or comma-joined UUIDs.
+# Outputs on failure: ERROR:TYPE:DETAILS (parsed by caller).
 allocate_gpu_for_container() {
     local user="$1"
     local container_type="$2"
+    local gpu_count="${3:-1}"
+    local container_name="${4:-}"
 
     local start_time=$(date +%s)
     local attempt=0
     local max_attempts=$((GPU_ALLOCATION_TIMEOUT / GPU_ALLOCATION_RETRY_INTERVAL))
 
-    log_debug "Starting GPU allocation for user=$user type=$container_type"
+    log_debug "Starting GPU allocation for user=$user type=$container_type count=$gpu_count"
+
+    # allocate-multi needs the target container name for state tracking
+    if [ "$gpu_count" -gt 1 ] && [ -z "$container_name" ]; then
+        echo "ERROR:MISSING_CONTAINER_NAME:multi-GPU allocation requires --name" >&2
+        return 1
+    fi
 
     while true; do
         attempt=$((attempt + 1))
@@ -358,27 +384,33 @@ allocate_gpu_for_container() {
             return 1
         fi
 
-        # Call the allocator
-        local result
-        result=$(python3 "$GPU_ALLOCATOR" allocate-external "$user" "$container_type" 2>&1)
-        local exit_code=$?
+        # allocate-multi emits DOCKER_IDS=UUID1,UUID2,...; allocate-external emits DOCKER_ID=UUID.
+        local result exit_code output_key
+        if [ "$gpu_count" -gt 1 ]; then
+            result=$(python3 "$GPU_ALLOCATOR" allocate-multi "$user" "$container_name" "$gpu_count" 2>&1)
+            exit_code=$?
+            output_key='DOCKER_IDS'
+        else
+            result=$(python3 "$GPU_ALLOCATOR" allocate-external "$user" "$container_type" 2>&1)
+            exit_code=$?
+            output_key='DOCKER_ID'
+        fi
 
         log_debug "Allocation attempt $attempt: exit=$exit_code result=$result"
 
-        # Parse result
         if [ $exit_code -eq 0 ]; then
-            # Success - extract GPU UUID
-            local gpu_uuid
-            gpu_uuid=$(echo "$result" | grep -oP 'DOCKER_ID=\K[^\s]+' || echo "$result" | grep -oP 'GPU-[a-f0-9-]+|MIG-[a-f0-9-]+')
-            if [ -n "$gpu_uuid" ]; then
-                log_debug "GPU allocated: $gpu_uuid"
-                echo "$gpu_uuid"
+            local gpu_uuids
+            gpu_uuids=$(echo "$result" | grep -oP "${output_key}=\K[^\s]+")
+            if [ -n "$gpu_uuids" ]; then
+                log_debug "GPU allocated: $gpu_uuids"
+                echo "$gpu_uuids"
                 return 0
             fi
         fi
 
-        # Check for quota exceeded (immediate fail, no retry)
-        if echo "$result" | grep -q "QUOTA_EXCEEDED\|USER_AT_LIMIT"; then
+        # Check for quota exceeded (immediate fail, no retry). allocate-multi emits
+        # EXCEEDS_TOTAL_LIMIT / EXCEEDS_CONTAINER_LIMIT; allocate-external emits QUOTA_EXCEEDED.
+        if echo "$result" | grep -qE "QUOTA_EXCEEDED|USER_AT_LIMIT|EXCEEDS_TOTAL_LIMIT|EXCEEDS_CONTAINER_LIMIT"; then
             local details
             details=$(echo "$result" | grep -oP '\(\K[^)]+' | head -1)
             log_debug "Quota exceeded: $details"
@@ -1104,13 +1136,17 @@ main() {
             log_debug "GPU request detected"
 
             # Check if GPU allocation should be skipped:
-            # 1. DS01 native containers (atomic/orchestration/api) handle their own dispatch
-            # 2. Specific device UUID already set (e.g. mlc temp containers with pre-allocated GPU)
+            # 1. Orchestration/atomic containers handle their own allocation at the
+            #    ds01 layer (e.g. mlc) and pass specific device UUIDs themselves.
+            # 2. Specific device UUID already set (e.g. mlc temp containers).
+            # api is NOT in this list — ds01-jobs wants the wrapper to allocate via
+            # gpu_allocator_v2 (external or multi); its hold-after-stop is bypassed
+            # via the INTERFACE_API binary state model in release_stale_allocations.
             local gpu_value
             gpu_value=$(get_gpu_request_value "$@")
             local skip_gpu_alloc=false
 
-            if [[ $CONTAINER_TYPE == "orchestration" ]] || [[ $CONTAINER_TYPE == "atomic" ]] || [[ $CONTAINER_TYPE == "api" ]]; then
+            if [[ $CONTAINER_TYPE == "orchestration" ]] || [[ $CONTAINER_TYPE == "atomic" ]]; then
                 log_debug "DS01 native container - GPU allocation handled by ds01 layer"
                 skip_gpu_alloc=true
             elif [[ $gpu_value == device=MIG-* ]] || [[ $gpu_value == device=GPU-* ]]; then
@@ -1118,9 +1154,16 @@ main() {
                 skip_gpu_alloc=true
             fi
 
+            # Parse numeric GPU count from --gpus N (defaults to 1 for "all" or unparseable).
+            # allocate-multi is used when count > 1.
+            local gpu_count=1
+            if [[ $gpu_value =~ ^[0-9]+$ ]]; then
+                gpu_count="$gpu_value"
+            fi
+
             if [[ $skip_gpu_alloc == "false" ]]; then
                 # External container requesting GPU - allocate through ds01
-                log_debug "External container requesting GPU - initiating allocation"
+                log_debug "External container requesting GPU - initiating allocation (count=$gpu_count)"
 
                 # Determine the effective owner
                 local effective_owner="$CURRENT_USER"
@@ -1130,9 +1173,13 @@ main() {
                     effective_owner="$devcontainer_owner"
                 fi
 
-                # Allocate GPU
+                # Extract container name (required by allocate-multi; allocate-external ignores it)
+                local alloc_container_name
+                alloc_container_name=$(get_container_name "$@" || echo "")
+
+                # Allocate GPU(s)
                 local alloc_result
-                alloc_result=$(allocate_gpu_for_container "$effective_owner" "$CONTAINER_TYPE")
+                alloc_result=$(allocate_gpu_for_container "$effective_owner" "$CONTAINER_TYPE" "$gpu_count" "$alloc_container_name")
                 local alloc_exit=$?
 
                 if [ $alloc_exit -ne 0 ]; then
