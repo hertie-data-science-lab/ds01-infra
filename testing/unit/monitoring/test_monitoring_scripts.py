@@ -10,7 +10,6 @@ Uses subprocess to invoke scripts and validate outputs.
 import os
 import subprocess
 from pathlib import Path
-from typing import Tuple
 
 import pytest
 
@@ -36,7 +35,7 @@ def run_script(
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
 
 
-def check_bash_syntax(script_path: Path) -> Tuple[bool, str]:
+def check_bash_syntax(script_path: Path) -> tuple[bool, str]:
     """Check if a bash script has valid syntax."""
     result = subprocess.run(["bash", "-n", str(script_path)], capture_output=True, text=True)
     return result.returncode == 0, result.stderr

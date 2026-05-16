@@ -10,7 +10,6 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict
 
 # Dynamic import for gpu-state-reader.py (hyphenated filename)
 SCRIPT_DIR = Path(__file__).parent
@@ -58,7 +57,7 @@ class GPUAvailabilityChecker:
         except (subprocess.CalledProcessError, FileNotFoundError):
             return ""
 
-    def _get_all_mig_instances(self) -> Dict[str, Dict]:
+    def _get_all_mig_instances(self) -> dict[str, dict]:
         """
         Get all available MIG instances from nvidia-smi.
         Returns dict: {"1.0": {...}, "1.2": {...}, etc.}
@@ -100,7 +99,7 @@ class GPUAvailabilityChecker:
 
         return mig_instances
 
-    def _get_physical_gpus(self) -> Dict[str, Dict]:
+    def _get_physical_gpus(self) -> dict[str, dict]:
         """
         Get all physical GPUs from nvidia-smi.
         Returns dict: {"0": {"uuid": "GPU-xxx", ...}, "1": {...}, etc.}
@@ -126,7 +125,7 @@ class GPUAvailabilityChecker:
 
         return physical_gpus
 
-    def _get_full_gpus_available(self) -> Dict[str, Dict]:
+    def _get_full_gpus_available(self) -> dict[str, dict]:
         """
         Get available full GPUs in priority order:
         1. Real unpartitioned GPUs (no MIG instances defined on them)
@@ -173,7 +172,7 @@ class GPUAvailabilityChecker:
 
         return full_available
 
-    def get_available_gpus(self) -> Dict[str, Dict]:
+    def get_available_gpus(self) -> dict[str, dict]:
         """
         Get all available (unallocated) GPUs.
         Returns dict of GPU slots that are free.
@@ -223,7 +222,7 @@ class GPUAvailabilityChecker:
             print(f"Error: GPU availability check failed: {e}", file=sys.stderr)
             return {}  # Fail-open: return empty dict on error
 
-    def get_user_available_gpus(self, username: str, max_gpus: int = None) -> Dict:
+    def get_user_available_gpus(self, username: str, max_gpus: int = None) -> dict:
         """
         Get available GPUs for a specific user, considering their current allocations and limits.
 
@@ -272,7 +271,7 @@ class GPUAvailabilityChecker:
         require_full_gpu: bool = False,
         allow_full_gpu: bool = False,
         exclude_slots: list = None,
-    ) -> Dict:
+    ) -> dict:
         """
         Suggest which GPU to allocate for a user.
         Uses least-allocated strategy with full GPU access control.
@@ -402,7 +401,7 @@ class GPUAvailabilityChecker:
             print(f"Error: GPU suggestion failed: {e}", file=sys.stderr)
             return {"success": False, "error": f"Internal error: {e}"}
 
-    def get_allocation_summary(self) -> Dict:
+    def get_allocation_summary(self) -> dict:
         """Get summary of GPU allocation status."""
         try:
             all_migs = self._get_all_mig_instances()

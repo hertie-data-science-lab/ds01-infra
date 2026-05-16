@@ -26,10 +26,11 @@ import pwd
 import signal
 import subprocess
 import sys
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 # Configuration
 OUTPUT_FILE = Path("/var/lib/ds01/opa/container-owners.json")
@@ -88,7 +89,7 @@ class ContainerOwnerTracker:
                     data = json.load(f)
                     log(f"Loaded {len(data.get('containers', {}))} existing entries")
                     return data
-            except (json.JSONDecodeError, IOError) as e:
+            except (OSError, json.JSONDecodeError) as e:
                 log(f"Warning: Could not load existing data: {e}", error=True)
         return {
             "containers": {},
@@ -113,7 +114,7 @@ class ContainerOwnerTracker:
                 os.chmod(OUTPUT_FILE, 0o644)
         except TimeoutError:
             log("Warning: Could not acquire lock, skipping save", error=True)
-        except IOError as e:
+        except OSError as e:
             log(f"Error saving ownership data: {e}", error=True)
 
     def _inspect_container(self, container_id: str) -> dict[str, Any] | None:

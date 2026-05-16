@@ -20,7 +20,6 @@ Functions tested:
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Optional
 
 import pytest
 
@@ -32,7 +31,7 @@ class TestInitShLibrary:
     """Tests for init.sh bash library initialization."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """
         Helper to run a bash function from init.sh and return result.
@@ -65,7 +64,7 @@ class TestPathVariables:
     """Tests for path variable exports."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -120,7 +119,7 @@ class TestColorVariables:
     """Tests for ANSI color code exports."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -182,7 +181,7 @@ class TestLoggingFunctions:
     """Tests for logging helper functions."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -229,7 +228,7 @@ class TestDSO1HelperFunctions:
     """Tests for ds01_* helper functions."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -290,7 +289,7 @@ class TestUIDrawingFunctions:
     """Tests for UI drawing functions."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -328,7 +327,7 @@ class TestResourceLimitFunctions:
     """
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -406,7 +405,7 @@ class TestDurationFunctions:
     """Tests for duration parsing and formatting functions."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -463,7 +462,7 @@ class TestLogWithTimestamp:
     """Tests for ds01_log function with timestamp."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -502,7 +501,7 @@ class TestRequireRoot:
     """Tests for ds01_require_root function."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""

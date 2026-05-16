@@ -8,7 +8,7 @@ Tests that YAML, JSON, and configuration files are valid and correctly structure
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 import yaml
@@ -29,7 +29,7 @@ GRAFANA_DIR = MONITORING_ROOT / "grafana"
 
 
 @pytest.fixture
-def prometheus_config() -> Dict[str, Any]:
+def prometheus_config() -> dict[str, Any]:
     """Load and return Prometheus configuration."""
     config_path = PROMETHEUS_DIR / "prometheus.yml"
     with open(config_path) as f:
@@ -37,7 +37,7 @@ def prometheus_config() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def alertmanager_config() -> Dict[str, Any]:
+def alertmanager_config() -> dict[str, Any]:
     """Load and return Alertmanager configuration."""
     config_path = ALERTMANAGER_DIR / "alertmanager.yml"
     with open(config_path) as f:
@@ -45,7 +45,7 @@ def alertmanager_config() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def alert_rules() -> Dict[str, Any]:
+def alert_rules() -> dict[str, Any]:
     """Load and return Prometheus alert rules."""
     rules_path = PROMETHEUS_DIR / "rules" / "ds01_alerts.yml"
     with open(rules_path) as f:
@@ -53,7 +53,7 @@ def alert_rules() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def grafana_datasources() -> Dict[str, Any]:
+def grafana_datasources() -> dict[str, Any]:
     """Load and return Grafana datasource provisioning config."""
     config_path = GRAFANA_DIR / "provisioning" / "datasources" / "prometheus.yml"
     with open(config_path) as f:
@@ -61,7 +61,7 @@ def grafana_datasources() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def grafana_dashboard_config() -> Dict[str, Any]:
+def grafana_dashboard_config() -> dict[str, Any]:
     """Load and return Grafana dashboard provisioning config."""
     config_path = GRAFANA_DIR / "provisioning" / "dashboards" / "default.yml"
     with open(config_path) as f:
@@ -69,7 +69,7 @@ def grafana_dashboard_config() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def grafana_dashboard() -> Dict[str, Any]:
+def grafana_dashboard() -> dict[str, Any]:
     """Load and return Grafana dashboard JSON."""
     dashboard_path = (
         GRAFANA_DIR / "provisioning" / "dashboards" / "dashboards" / "ds01_overview.json"
@@ -79,7 +79,7 @@ def grafana_dashboard() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def docker_compose() -> Dict[str, Any]:
+def docker_compose() -> dict[str, Any]:
     """Load and return docker-compose configuration."""
     compose_path = MONITORING_ROOT / "docker-compose.yaml"
     with open(compose_path) as f:

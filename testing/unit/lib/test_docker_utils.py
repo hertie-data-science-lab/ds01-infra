@@ -20,7 +20,6 @@ Functions tested:
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Optional
 
 import pytest
 
@@ -32,7 +31,7 @@ class TestDockerUtilsLibrary:
     """Tests for docker-utils.sh bash library functions."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """
         Helper to run a bash function from docker-utils.sh and return result.
@@ -72,7 +71,7 @@ class TestContainerNameHelpers:
     """Tests for container name transformation functions."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -136,7 +135,7 @@ class TestContainerDetection:
     """Tests for container type detection functions."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -185,7 +184,7 @@ class TestContainerStateFunctions:
     """
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -255,7 +254,7 @@ class TestUserContainerFunctions:
     """Tests for user container listing functions (requires Docker)."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -289,7 +288,7 @@ class TestGetContainerLabelFunction:
     """Tests for the ds01_get_container_label function behavior."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -329,7 +328,7 @@ class TestGPUSlotFunctions:
     """Tests for GPU slot retrieval functions."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -374,7 +373,7 @@ class TestContainerOwnerFunction:
     """Tests for ds01_get_container_owner function."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""
@@ -406,7 +405,7 @@ class TestContainerInterfaceFunction:
     """Tests for ds01_get_container_interface function."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[Dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash function."""
         script = f"""

@@ -15,7 +15,7 @@ def main():
     config_file = sys.argv[1]
 
     try:
-        with open(config_file, "r") as f:
+        with open(config_file) as f:
             config = yaml.safe_load(f)
 
         mig_config = config.get("gpu_allocation", {}).get("mig_gpus", {})

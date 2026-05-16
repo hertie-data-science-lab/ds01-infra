@@ -16,7 +16,6 @@ Key changes tested:
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Optional
 
 import pytest
 
@@ -28,7 +27,7 @@ class TestContainerSessionScript:
     """Tests for container-session.sh initialization and mode detection."""
 
     def run_bash_script(
-        self, script_content: str, env: Optional[Dict] = None
+        self, script_content: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash script content."""
         run_env = os.environ.copy()
@@ -185,7 +184,7 @@ class TestContainerSessionModes:
     """Tests for container-session.sh mode detection."""
 
     def run_bash_script(
-        self, script_content: str, env: Optional[Dict] = None
+        self, script_content: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run bash script content."""
         run_env = os.environ.copy()

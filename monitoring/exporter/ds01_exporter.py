@@ -214,7 +214,7 @@ def collect_event_counts() -> list[str]:
                 _event_cache_file_pos = 0
 
             # Read only new content since last position
-            with open(events_file, "r") as f:
+            with open(events_file) as f:
                 # If starting fresh, scan the whole file but only count recent events
                 if _event_cache_file_pos == 0:
                     event_counts: dict[str, int] = {}
@@ -870,7 +870,7 @@ class MetricsHandler(BaseHTTPRequestHandler):
                 self.send_response(500)
                 self.send_header("Content-Type", "text/plain")
                 self.end_headers()
-                self.wfile.write(f"Error: {e}\n".encode("utf-8"))
+                self.wfile.write(f"Error: {e}\n".encode())
 
         elif self.path == "/health":
             self.send_response(200)

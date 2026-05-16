@@ -24,7 +24,6 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Dict, List
 
 # Import shared event logging library
 sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
@@ -80,26 +79,26 @@ class EventReader:
     def __init__(self, log_file: Path = EVENTS_FILE):
         self.log_file = log_file
 
-    def tail(self, n: int = 20) -> List[Dict]:
+    def tail(self, n: int = 20) -> list[dict]:
         """Get last N events."""
         if not self.log_file.exists():
             return []
 
         events = []
         try:
-            with open(self.log_file, "r") as f:
+            with open(self.log_file) as f:
                 lines = f.readlines()
                 for line in lines[-n:]:
                     try:
                         events.append(json.loads(line.strip()))
                     except json.JSONDecodeError:
                         continue
-        except (IOError, OSError):
+        except OSError:
             pass
 
         return events
 
-    def search(self, pattern: str, limit: int = 100) -> List[Dict]:
+    def search(self, pattern: str, limit: int = 100) -> list[dict]:
         """Search events matching regex pattern."""
         if not self.log_file.exists():
             return []
@@ -108,7 +107,7 @@ class EventReader:
         regex = re.compile(pattern, re.IGNORECASE)
 
         try:
-            with open(self.log_file, "r") as f:
+            with open(self.log_file) as f:
                 for line in f:
                     if regex.search(line):
                         try:
@@ -117,16 +116,16 @@ class EventReader:
                                 break
                         except json.JSONDecodeError:
                             continue
-        except (IOError, OSError):
+        except OSError:
             pass
 
         return events
 
-    def get_events_for_container(self, container: str) -> List[Dict]:
+    def get_events_for_container(self, container: str) -> list[dict]:
         """Get all events for a specific container."""
         return self.search(f'"container":\\s*"{re.escape(container)}"')
 
-    def get_events_for_user(self, user: str) -> List[Dict]:
+    def get_events_for_user(self, user: str) -> list[dict]:
         """Get all events for a specific user."""
         return self.search(f'"user":\\s*"{re.escape(user)}"')
 
