@@ -24,7 +24,6 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
 
 INFRA_ROOT = Path("/opt/ds01-infra")
 EVENT_LOGGER = INFRA_ROOT / "scripts/docker/event-logger.py"
@@ -47,7 +46,7 @@ class StateValidator:
         except Exception:
             pass
 
-    def _get_nvidia_gpus(self) -> Dict[str, Dict]:
+    def _get_nvidia_gpus(self) -> dict[str, dict]:
         """Get all GPUs/MIG instances from nvidia-smi."""
         gpus = {}
 
@@ -93,7 +92,7 @@ class StateValidator:
 
         return gpus
 
-    def _get_docker_allocations(self) -> Dict[str, Dict]:
+    def _get_docker_allocations(self) -> dict[str, dict]:
         """Get GPU allocations from Docker container labels."""
         allocations = {}
 
@@ -143,7 +142,7 @@ class StateValidator:
 
         return allocations
 
-    def check_gpu_exists(self, nvidia_gpus: Dict, allocations: Dict):
+    def check_gpu_exists(self, nvidia_gpus: dict, allocations: dict):
         """Check that allocated GPUs actually exist."""
         for container, info in allocations.items():
             gpu_slot = info["gpu_slot"]
@@ -163,9 +162,9 @@ class StateValidator:
                 if self.repair and not info["running"]:
                     self._repair_clear_gpu_label(container)
 
-    def check_no_duplicates(self, allocations: Dict):
+    def check_no_duplicates(self, allocations: dict):
         """Check for duplicate GPU allocations."""
-        gpu_to_containers: Dict[str, List[str]] = {}
+        gpu_to_containers: dict[str, list[str]] = {}
 
         for container, info in allocations.items():
             gpu_slot = info["gpu_slot"]
@@ -195,7 +194,7 @@ class StateValidator:
                     for container in stopped:
                         self._repair_clear_gpu_label(container)
 
-    def check_label_format(self, allocations: Dict):
+    def check_label_format(self, allocations: dict):
         """Check that labels have valid format."""
         for container, info in allocations.items():
             gpu_slot = info["gpu_slot"]
@@ -212,7 +211,7 @@ class StateValidator:
                     }
                 )
 
-    def check_user_exists(self, allocations: Dict):
+    def check_user_exists(self, allocations: dict):
         """Check that container owners are valid users."""
         import pwd
 
@@ -262,7 +261,7 @@ class StateValidator:
                 }
             )
 
-    def validate(self) -> Dict:
+    def validate(self) -> dict:
         """Run all validation checks."""
         nvidia_gpus = self._get_nvidia_gpus()
         allocations = self._get_docker_allocations()

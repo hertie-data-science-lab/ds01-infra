@@ -29,7 +29,7 @@ Usage:
 
 import re
 import subprocess
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class Colors:
@@ -190,7 +190,7 @@ def format_duration(seconds: int) -> str:
     return " ".join(parts) if parts else "0s"
 
 
-def get_container_owner(container_name: str) -> Optional[str]:
+def get_container_owner(container_name: str) -> str | None:
     """
     Extract owner username from container name.
 
@@ -223,7 +223,7 @@ def get_container_owner(container_name: str) -> Optional[str]:
     return None
 
 
-def get_container_gpu(container_name: str) -> Optional[str]:
+def get_container_gpu(container_name: str) -> str | None:
     """
     Get GPU allocation for a container from Docker labels.
 
@@ -260,7 +260,7 @@ def get_container_gpu(container_name: str) -> Optional[str]:
     return None
 
 
-def get_user_containers(username: str = None) -> List[Dict[str, Any]]:
+def get_user_containers(username: str = None) -> list[dict[str, Any]]:
     """
     List containers, optionally filtered by username.
 
@@ -318,7 +318,7 @@ def get_user_containers(username: str = None) -> List[Dict[str, Any]]:
     return containers
 
 
-def run_docker_command(args: List[str], timeout: int = 30) -> subprocess.CompletedProcess:
+def run_docker_command(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
     """
     Run a docker command with consistent error handling.
 
@@ -338,7 +338,7 @@ def run_docker_command(args: List[str], timeout: int = 30) -> subprocess.Complet
     )
 
 
-def get_container_owner_from_labels(labels: Dict[str, str]) -> Optional[str]:
+def get_container_owner_from_labels(labels: dict[str, str]) -> str | None:
     """
     Get container owner from Docker labels with backward-compatible fallback.
 
@@ -367,7 +367,7 @@ def get_container_owner_from_labels(labels: Dict[str, str]) -> Optional[str]:
     return labels.get("aime.mlc.USER")
 
 
-def get_container_managed_from_labels(labels: Dict[str, str]) -> bool:
+def get_container_managed_from_labels(labels: dict[str, str]) -> bool:
     """
     Check if container is DS01-managed from labels.
 

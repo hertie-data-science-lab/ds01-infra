@@ -21,7 +21,6 @@ import ast
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List
 
 import pytest
 
@@ -34,7 +33,7 @@ GPU_STATE_READER_PATH = Path("/opt/ds01-infra/scripts/docker/gpu-state-reader.py
 class TestExceptionHandlingPatterns:
     """Tests for proper exception handling patterns in Python files."""
 
-    def get_except_handlers(self, file_path: Path) -> List[Dict]:
+    def get_except_handlers(self, file_path: Path) -> list[dict]:
         """
         Parse a Python file and extract all except handlers.
 

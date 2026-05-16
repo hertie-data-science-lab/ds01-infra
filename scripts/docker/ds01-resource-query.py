@@ -11,7 +11,6 @@ import json
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional
 
 # Dynamic import for hyphenated filenames
 SCRIPT_DIR = Path(__file__).parent
@@ -36,7 +35,7 @@ class DS01ResourceQuery:
         self.state_reader = GPUStateReader()
         self.availability_checker = GPUAvailabilityChecker()
 
-    def query_containers(self, user: Optional[str] = None, status: str = "all") -> List[Dict]:
+    def query_containers(self, user: str | None = None, status: str = "all") -> list[dict]:
         """
         Query containers with optional user and status filtering.
 
@@ -134,7 +133,7 @@ class DS01ResourceQuery:
 
         return containers
 
-    def query_gpus_status(self) -> Dict:
+    def query_gpus_status(self) -> dict:
         """
         Query GPU allocation status.
 
@@ -143,9 +142,7 @@ class DS01ResourceQuery:
         """
         return self.state_reader.get_all_allocations()
 
-    def query_available_gpus(
-        self, user: Optional[str] = None, max_gpus: Optional[int] = None
-    ) -> Dict:
+    def query_available_gpus(self, user: str | None = None, max_gpus: int | None = None) -> dict:
         """
         Query available GPUs for allocation.
 
@@ -162,7 +159,7 @@ class DS01ResourceQuery:
             available = self.availability_checker.get_available_gpus()
             return {"available_gpus": available, "count": len(available)}
 
-    def query_container(self, container_name: str) -> Optional[Dict]:
+    def query_container(self, container_name: str) -> dict | None:
         """
         Get detailed information about a specific container.
 
@@ -209,7 +206,7 @@ class DS01ResourceQuery:
 
         return metadata
 
-    def query_user_summary(self, user: str) -> Dict:
+    def query_user_summary(self, user: str) -> dict:
         """
         Get summary of user's resource usage.
 

@@ -16,7 +16,6 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
-from typing import Dict, List, Optional
 
 # Real Docker binary - bypasses the wrapper at /usr/local/bin/docker
 # The wrapper filters 'docker ps' for non-admin users, which would cause
@@ -60,7 +59,7 @@ class GPUStateReader:
                     self._config = yaml.safe_load(f)
             except FileNotFoundError:
                 self._config = {}
-            except (IOError, OSError) as e:
+            except OSError as e:
                 print(f"Warning: could not read config file: {e}", file=sys.stderr)
                 self._config = {}
             except yaml.YAMLError as e:
@@ -82,7 +81,7 @@ class GPUStateReader:
             return False
         return "." not in slot_str
 
-    def _get_mig_uuid_to_slot_mapping(self) -> Dict[str, str]:
+    def _get_mig_uuid_to_slot_mapping(self) -> dict[str, str]:
         """
         Get mapping of GPU/MIG UUIDs to slot IDs.
         Maps both physical GPU UUIDs (GPU-xxx → "0") and MIG UUIDs (MIG-xxx → "1.0").
@@ -135,7 +134,7 @@ class GPUStateReader:
         self._mig_uuid_to_slot_cache = mapping
         return mapping
 
-    def _get_container_inspect(self, container_name: str) -> Optional[Dict]:
+    def _get_container_inspect(self, container_name: str) -> dict | None:
         """Get docker inspect output for a container."""
         try:
             result = subprocess.run(
@@ -146,7 +145,7 @@ class GPUStateReader:
         except (subprocess.CalledProcessError, json.JSONDecodeError, IndexError):
             return None
 
-    def _detect_interface(self, container_data: Dict) -> str:
+    def _detect_interface(self, container_data: dict) -> str:
         """
         Detect which interface created this container.
 
@@ -210,7 +209,7 @@ class GPUStateReader:
         # 5. Default: Docker direct
         return INTERFACE_DOCKER
 
-    def _resolve_user_from_container_name(self, container_name: str) -> Optional[str]:
+    def _resolve_user_from_container_name(self, container_name: str) -> str | None:
         """Resolve username from AIME container name convention (name._.uid).
 
         Extracts the UID from the container name and resolves it to a username
@@ -246,7 +245,7 @@ class GPUStateReader:
 
         return None
 
-    def _extract_user_from_cgroup(self, cgroup_parent: str) -> Optional[str]:
+    def _extract_user_from_cgroup(self, cgroup_parent: str) -> str | None:
         """
         Extract (sanitized) username from cgroup path.
         Example: ds01-student-alice.slice -> alice
@@ -265,7 +264,7 @@ class GPUStateReader:
             return match.group(2)  # Return sanitized username
         return None
 
-    def _extract_gpu_from_container(self, container_data: Dict) -> Optional[Dict]:
+    def _extract_gpu_from_container(self, container_data: dict) -> dict | None:
         """
         Extract GPU assignment from Docker container inspect data.
         Returns dict with gpu_uuid, gpu_slot, interface, etc. or None if no GPU.
@@ -373,7 +372,7 @@ class GPUStateReader:
 
         return False
 
-    def _extract_owner_from_compose(self, labels: dict) -> Optional[str]:
+    def _extract_owner_from_compose(self, labels: dict) -> str | None:
         """Extract owner from compose project path or devcontainer.local_folder.
 
         For containers created via docker compose or dev containers, the owner
@@ -400,7 +399,7 @@ class GPUStateReader:
 
         return None
 
-    def _get_gpu_access_info(self, container_data: Dict) -> Optional[Dict]:
+    def _get_gpu_access_info(self, container_data: dict) -> dict | None:
         """Get GPU access information for a container.
 
         Returns dict with:
@@ -447,7 +446,7 @@ class GPUStateReader:
         except (KeyError, TypeError):
             return None
 
-    def get_unmanaged_gpu_containers(self) -> List[Dict]:
+    def get_unmanaged_gpu_containers(self) -> list[dict]:
         """Get ALL containers with GPU access that are NOT tracked by DS01.
 
         Unmanaged containers are:
@@ -534,7 +533,7 @@ class GPUStateReader:
 
         return unmanaged
 
-    def get_all_allocations(self) -> Dict:
+    def get_all_allocations(self) -> dict:
         """
         Get all GPU allocations by reading Docker containers.
         Now tracks ALL containers in ds01.slice (all interfaces).
@@ -600,7 +599,7 @@ class GPUStateReader:
 
         return result
 
-    def _get_all_ds01_containers(self) -> List[str]:
+    def _get_all_ds01_containers(self) -> list[str]:
         """
         Get ALL containers that should be tracked by DS01.
         Includes containers from all interfaces:
@@ -649,7 +648,7 @@ class GPUStateReader:
 
         return container_names
 
-    def get_all_containers_by_interface(self) -> Dict[str, List[Dict]]:
+    def get_all_containers_by_interface(self) -> dict[str, list[dict]]:
         """
         Get all containers grouped by interface.
         Returns dict with interface names as keys and container info lists as values.
@@ -703,14 +702,14 @@ class GPUStateReader:
 
         return by_interface
 
-    def get_container_gpu(self, container_name: str) -> Optional[Dict]:
+    def get_container_gpu(self, container_name: str) -> dict | None:
         """Get GPU assignment for a specific container."""
         container_data = self._get_container_inspect(container_name)
         if not container_data:
             return None
         return self._extract_gpu_from_container(container_data)
 
-    def get_user_allocations(self, username: str) -> List[Dict]:
+    def get_user_allocations(self, username: str) -> list[dict]:
         """
         Get all GPU allocations for a specific user.
         Now tracks all containers from all interfaces.
@@ -810,7 +809,7 @@ def get_reader() -> GPUStateReader:
     return _reader_instance
 
 
-def get_mig_allocations() -> List[Dict]:
+def get_mig_allocations() -> list[dict]:
     """
     Get all MIG allocations in a format compatible with monitors.
     Returns list of dicts with: container, user, mig_slot, mig_uuid
@@ -837,7 +836,7 @@ def get_mig_allocations() -> List[Dict]:
     return result
 
 
-def get_gpu_allocations() -> List[Dict]:
+def get_gpu_allocations() -> list[dict]:
     """
     Get all full GPU allocations (non-MIG) in a format compatible with monitors.
     Returns list of dicts with: container, user, gpu_slot, gpu_uuid
@@ -863,7 +862,7 @@ def get_gpu_allocations() -> List[Dict]:
     return result
 
 
-def get_all_gpu_allocations_by_slot() -> Dict:
+def get_all_gpu_allocations_by_slot() -> dict:
     """
     Get all GPU/MIG allocations indexed by slot.
     Returns the raw allocation dict from GPUStateReader.
@@ -871,7 +870,7 @@ def get_all_gpu_allocations_by_slot() -> Dict:
     return get_reader().get_all_allocations()
 
 
-def get_all_allocations_flat() -> List[Dict]:
+def get_all_allocations_flat() -> list[dict]:
     """
     Get ALL allocations (both MIG and full GPU) as a flat list.
     Returns list of dicts with: container, user, gpu_slot, gpu_uuid
@@ -897,7 +896,7 @@ def get_all_allocations_flat() -> List[Dict]:
     return result
 
 
-def get_unmanaged_gpu_containers() -> List[Dict]:
+def get_unmanaged_gpu_containers() -> list[dict]:
     """
     Get containers with GPU access that bypass DS01 tracking.
 

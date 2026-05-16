@@ -41,7 +41,7 @@ def load_queue():
         if not QUEUE_FILE.exists():
             return []
 
-        with open(QUEUE_FILE, "r") as f:
+        with open(QUEUE_FILE) as f:
             fcntl.flock(f.fileno(), fcntl.LOCK_SH)
             data = json.load(f)
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
@@ -50,7 +50,7 @@ def load_queue():
         print("Note: Cannot read queue file (permission denied)", file=sys.stderr)
         print("  The queue may be empty or requires admin access.", file=sys.stderr)
         return []
-    except (json.JSONDecodeError, IOError):
+    except (OSError, json.JSONDecodeError):
         return []
 
 
@@ -235,9 +235,9 @@ def create_notification(user, container, position):
     alerts = []
     if alerts_file.exists():
         try:
-            with open(alerts_file, "r") as f:
+            with open(alerts_file) as f:
                 alerts = json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             alerts = []
 
     # Check if similar alert already exists

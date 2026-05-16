@@ -12,7 +12,7 @@ import os
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -41,7 +41,7 @@ def load_exporter_module():
 
 
 @pytest.fixture
-def mock_gpu_data() -> List[Dict[str, Any]]:
+def mock_gpu_data() -> list[dict[str, Any]]:
     """Sample GPU utilization data from nvidia-smi."""
     return [
         {
@@ -66,7 +66,7 @@ def mock_gpu_data() -> List[Dict[str, Any]]:
 
 
 @pytest.fixture
-def mock_allocation_data() -> Dict[str, Any]:
+def mock_allocation_data() -> dict[str, Any]:
     """Sample GPU allocation data from gpu-state-reader."""
     return {
         "0.0": {
@@ -87,7 +87,7 @@ def mock_allocation_data() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def mock_containers_by_interface() -> Dict[str, List[Dict]]:
+def mock_containers_by_interface() -> dict[str, list[dict]]:
     """Sample containers grouped by interface."""
     return {
         "orchestration": [

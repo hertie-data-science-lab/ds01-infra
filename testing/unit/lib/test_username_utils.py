@@ -15,7 +15,6 @@ the canonical username in passwd (e.g., user@hertie-school.lan).
 import os
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import pytest
 
@@ -27,7 +26,7 @@ class TestUsernameUtilsLibrary:
     """Tests for username-utils.sh library basic functionality."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run a bash function from username-utils.sh."""
         script = f"""
@@ -71,7 +70,7 @@ class TestSanitizeUsernameForSlice:
     """Tests for sanitize_username_for_slice() function."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run a bash function from username-utils.sh."""
         script = f"""
@@ -156,7 +155,7 @@ class TestGetUserSliceName:
     """Tests for get_user_slice_name() function."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run a bash function from username-utils.sh."""
         script = f"""
@@ -202,7 +201,7 @@ class TestGetCanonicalUsername:
     """
 
     def run_bash_function(
-        self, function_call: str, env: Optional[dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run a bash function from username-utils.sh."""
         script = f"""
@@ -304,7 +303,7 @@ class TestCanonicalUsernameEdgeCases:
     """Edge case tests for get_canonical_username()."""
 
     def run_bash_function(
-        self, function_call: str, env: Optional[dict] = None
+        self, function_call: str, env: dict | None = None
     ) -> subprocess.CompletedProcess:
         """Helper to run a bash function from username-utils.sh."""
         script = f"""
