@@ -7,9 +7,9 @@ __pycache__/
 # Linux specific files
 *~
 
-# IDE specific files
-.vscode/
-.idea/
+# IDE specific files (match both file and directory variants)
+.vscode
+.idea
 
 # User dotfiles (accidentally in repo root)
 .bash_profile
