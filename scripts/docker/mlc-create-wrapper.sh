@@ -32,22 +32,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Helper functions
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Logging helpers (shared definitions in scripts/lib/logging.sh)
+# shellcheck source=../lib/logging.sh
+source "$INFRA_ROOT/scripts/lib/logging.sh"
 
 # Usage information
 print_usage() {
