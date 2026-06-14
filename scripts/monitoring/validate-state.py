@@ -43,7 +43,7 @@ class StateValidator:
                 args = ["python3", str(EVENT_LOGGER), "log", event_type]
                 for k, v in kwargs.items():
                     args.append(f"{k}={v}")
-                subprocess.run(args, capture_output=True, check=False)
+                subprocess.run(args, capture_output=True, check=False, timeout=10)
         except Exception:
             pass
 
@@ -53,7 +53,7 @@ class StateValidator:
 
         try:
             result = subprocess.run(
-                ["nvidia-smi", "-L"], capture_output=True, text=True, check=True
+                ["nvidia-smi", "-L"], capture_output=True, text=True, check=True, timeout=30
             )
 
             current_gpu = None
@@ -103,6 +103,7 @@ class StateValidator:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
             )
 
             for line in result.stdout.strip().split("\n"):

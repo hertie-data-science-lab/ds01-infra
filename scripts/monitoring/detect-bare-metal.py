@@ -358,6 +358,7 @@ def main():
                         ],
                         capture_output=True,
                         check=False,
+                        timeout=10,
                     )
         except Exception:
             pass  # Logging should never break detection

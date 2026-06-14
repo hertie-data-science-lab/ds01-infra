@@ -119,7 +119,9 @@ def get_admin_users() -> list:
 
     # Source 2: Linux group ds01-admin
     try:
-        result = subprocess.run(["getent", "group", "ds01-admin"], capture_output=True, text=True)
+        result = subprocess.run(
+            ["getent", "group", "ds01-admin"], capture_output=True, text=True, timeout=10
+        )
         if result.returncode == 0:
             # Format: ds01-admin:x:1234:user1,user2,user3
             parts = result.stdout.strip().split(":")
@@ -139,7 +141,10 @@ def get_all_containers() -> list:
     try:
         # Get all container IDs
         result = subprocess.run(
-            ["docker", "ps", "-a", "--format", "{{.ID}}"], capture_output=True, text=True
+            ["docker", "ps", "-a", "--format", "{{.ID}}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if result.returncode != 0:
             print(f"Error listing containers: {result.stderr}", file=sys.stderr)
@@ -153,7 +158,7 @@ def get_all_containers() -> list:
 
         # Inspect all containers at once
         result = subprocess.run(
-            ["docker", "inspect"] + container_ids, capture_output=True, text=True
+            ["docker", "inspect"] + container_ids, capture_output=True, text=True, timeout=10
         )
         if result.returncode != 0:
             print(f"Error inspecting containers: {result.stderr}", file=sys.stderr)
