@@ -225,21 +225,9 @@ ds01_allow_full_gpu() {
 # Logging Functions (for scripts that need log_info, log_error, etc.)
 # ============================================================================
 
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Defined in logging.sh so standalone scripts can reuse the same definitions.
+# shellcheck source=logging.sh
+source "$(dirname "${BASH_SOURCE[0]}")/logging.sh"
 
 # ============================================================================
 # UI Drawing Functions
