@@ -260,7 +260,7 @@ fi
 if [ -n "${SUDO_USER:-}" ]; then
     CURRENT_USER="$SUDO_USER"
     USER_ID=$(id -u "$SUDO_USER")
-    HOME=$(eval echo "~$SUDO_USER")
+    HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
     WORKSPACE_DIR="$HOME/workspace"
     log_warning "Running via sudo — resolving to user '$CURRENT_USER'. You don't need sudo for mlc-create."
 elif [ "$(whoami)" = "root" ]; then

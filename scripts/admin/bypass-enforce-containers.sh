@@ -2,7 +2,11 @@
 # Give admin ability to bypass enforcement
 
 USERNAME="${1:-$(whoami)}"
-USER_HOME=$(eval echo "~$USERNAME")
+USER_HOME=$(getent passwd "$USERNAME" | cut -d: -f6)
+if [ -z "$USER_HOME" ]; then
+    echo "Error: user '$USERNAME' not found" >&2
+    exit 1
+fi
 
 cat >>"$USER_HOME/.bashrc" <<'BYPASSEOF'
 
