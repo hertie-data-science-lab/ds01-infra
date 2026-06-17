@@ -38,6 +38,14 @@ for path in .planning .product hb_learning .dotconfigs; do
     fi
 done
 
+# Force-add per-user data: git-excluded in the org repo (origin), but the
+# full/downstream repo retains the complete copy.
+for path in config/runtime/groups config/runtime/user-overrides.yaml config/runtime/group-overrides.txt config/runtime/lifecycle-exemptions.yaml; do
+    if [ -e "$path" ]; then
+        git add --force "$path"
+    fi
+done
+
 # Add all CLAUDE.md and claude_*.md files anywhere in the repo
 find . -maxdepth 5 \( -name "CLAUDE.md" -o -name "claude_*.md" \) \
     -not -path "./.git/*" -exec git add --force {} + 2>/dev/null || true
