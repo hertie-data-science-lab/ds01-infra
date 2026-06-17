@@ -56,7 +56,8 @@ monitoring/.env
 monitoring/alertmanager/alertmanager-local.yml
 
 # Per-user data — retained only in the full/downstream repo, not the org repo.
-# (sync-downstream.sh force-adds these so the full repo keeps a complete copy.)
+# This list is the single source of truth: sync-downstream.sh force-adds
+# whatever is git-ignored under config/runtime/ into the downstream mirror.
 /config/runtime/groups/*.members
 /config/runtime/group-overrides.txt
 /config/runtime/user-overrides.yaml

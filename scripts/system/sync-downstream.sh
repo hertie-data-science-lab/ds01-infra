@@ -31,16 +31,20 @@ trap 'rm -f "$TEMP_INDEX"' EXIT
 # Start with the current HEAD tree (all tracked files)
 git read-tree HEAD
 
-# Force-add everything git-excluded from the org repo so the full/downstream
-# repo keeps a complete copy: dev/planning dirs and the per-user data
-# (member lists, overrides, exemptions) that origin no longer tracks.
-for path in .planning .product hb_learning .dotconfigs \
-    config/runtime/groups config/runtime/user-overrides.yaml \
-    config/runtime/group-overrides.txt config/runtime/lifecycle-exemptions.yaml; do
+# Force-add dev/planning artifacts kept out of the org repo.
+for path in .planning .product hb_learning .dotconfigs; do
     if [ -e "$path" ]; then
         git add --force "$path"
     fi
 done
+
+# Force-add per-user data so the full/downstream repo keeps a complete copy.
+# .gitignore is the single source of truth: whatever it git-excludes under
+# config/runtime/ is data the org repo drops but downstream must retain.
+git ls-files -z --others --ignored --exclude-standard -- config/runtime |
+    while IFS= read -r -d '' path; do
+        git add --force "$path"
+    done
 
 # Add all CLAUDE.md and claude_*.md files anywhere in the repo
 find . -maxdepth 5 \( -name "CLAUDE.md" -o -name "claude_*.md" \) \
