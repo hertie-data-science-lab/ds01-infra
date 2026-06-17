@@ -33,8 +33,8 @@ set -e
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INFRA_ROOT="${SCRIPT_DIR}/../.."
-GROUPS_DIR="${INFRA_ROOT}/config/groups"
-OVERRIDES_FILE="${INFRA_ROOT}/config/group-overrides.txt"
+GROUPS_DIR="${INFRA_ROOT}/config/runtime/groups"
+OVERRIDES_FILE="${INFRA_ROOT}/config/runtime/group-overrides.txt"
 ARCHIVED_FILE="${GROUPS_DIR}/archived.members"
 LOG_TAG="DS01-sync-groups"
 

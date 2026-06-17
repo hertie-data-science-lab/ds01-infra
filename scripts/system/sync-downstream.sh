@@ -31,12 +31,20 @@ trap 'rm -f "$TEMP_INDEX"' EXIT
 # Start with the current HEAD tree (all tracked files)
 git read-tree HEAD
 
-# Force-add all excluded directories and files
+# Force-add dev/planning artifacts kept out of the org repo.
 for path in .planning .product hb_learning .dotconfigs; do
     if [ -e "$path" ]; then
         git add --force "$path"
     fi
 done
+
+# Force-add per-user data so the full/downstream repo keeps a complete copy.
+# .gitignore is the single source of truth: whatever it git-excludes under
+# config/runtime/ is data the org repo drops but downstream must retain.
+git ls-files -z --others --ignored --exclude-standard -- config/runtime |
+    while IFS= read -r -d '' path; do
+        git add --force "$path"
+    done
 
 # Add all CLAUDE.md and claude_*.md files anywhere in the repo
 find . -maxdepth 5 \( -name "CLAUDE.md" -o -name "claude_*.md" \) \
