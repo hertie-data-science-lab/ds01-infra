@@ -500,6 +500,9 @@ class TestCLIFlags:
     @pytest.mark.unit
     def test_check_exemption_flag_exempt_user(self):
         """--check-exemption for exempt user outputs exempt: reason."""
+        exemptions_file = INFRA_ROOT / "config" / "runtime" / "lifecycle-exemptions.yaml"
+        if not exemptions_file.exists():
+            pytest.skip("lifecycle-exemptions.yaml is git-excluded from the org repo")
         result = subprocess.run(
             [
                 "python3",
