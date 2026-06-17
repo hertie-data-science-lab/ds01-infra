@@ -89,7 +89,7 @@ Subsystem READMEs live next to the code (`scripts/lib/`, `scripts/user/`, `monit
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). PRs use [Conventional Commits](https://www.conventionalcommits.org/) (`type(scope): subject`) and are squash-merged to `main`.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
