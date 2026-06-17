@@ -48,7 +48,7 @@ Or via the GitHub UI: Actions → Release → Run workflow → enter tag.
 
 ## Commit Messages
 
-Conventional Commits format is enforced by pre-commit hook. See [CONTRIBUTING.md](../CONTRIBUTING.md) for details.
+Conventional Commits format is enforced by pre-commit hook. See [CONTRIBUTING.md](/develop/contributing) for details.
 
 ## Pre-commit Setup
 
