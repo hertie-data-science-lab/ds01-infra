@@ -166,7 +166,7 @@ class GPUAllocatorSmart:
             print(f"Error: Config loading failed: {e}", file=sys.stderr)
             return {}
 
-        # Load group members from config/groups/{group}.members files
+        # Load group members from config/runtime/groups/{group}.members files
         groups_dir = self.config_path.parent / "groups"
         for group_name in config.get("groups") or {}:
             member_file = groups_dir / f"{group_name}.members"
