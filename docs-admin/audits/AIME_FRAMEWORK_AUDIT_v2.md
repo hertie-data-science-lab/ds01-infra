@@ -46,17 +46,17 @@ AIME ML Containers (v2) is a **Python-based** container management system provid
 
 | Command | Purpose | Used by DS01? | How? | v2 Changes |
 |---------|---------|---------------|------|------------|
-| `mlc create` | Create container | ✅ **YES** | Wrapped by `mlc-create-wrapper.sh` | Now Python-based, interactive mode |
-| `mlc open` | Enter container | ✅ **YES** | Called directly by `container-run` | Python-based, unchanged behavior |
-| `mlc stats` | Show stats | ✅ **YES** | Wrapped by `mlc-stats-wrapper.sh` | Python-based, improved formatting |
-| `mlc list` | List containers | ❌ **NO** | DS01 uses custom `container-list` | Python, more display options |
-| `mlc stop` | Stop container | ❌ **NO** | DS01 uses custom `container-stop` | Python-based |
-| `mlc start` | Start container | ❌ **NO** | Rarely needed (mlc-open auto-starts) | Python-based |
-| `mlc remove` | Remove container | ❌ **NO** | DS01 uses custom `container-cleanup` | Python-based |
-| `mlc export` | Export container | ❌ **NO** | Not used | **NEW in v2** |
-| `mlc import` | Import container | ❌ **NO** | Not used | **NEW in v2** |
-| `mlc update-sys` | Update system | ❌ **NO** | System admin only | Python-based |
-| `mlc -v/--version` | Show version | ❌ **NO** | Not used | **NEW in v2** |
+| `mlc create` | Create container | ✓ **YES** | Wrapped by `mlc-create-wrapper.sh` | Now Python-based, interactive mode |
+| `mlc open` | Enter container | ✓ **YES** | Called directly by `container-run` | Python-based, unchanged behavior |
+| `mlc stats` | Show stats | ✓ **YES** | Wrapped by `mlc-stats-wrapper.sh` | Python-based, improved formatting |
+| `mlc list` | List containers | ✗ **NO** | DS01 uses custom `container-list` | Python, more display options |
+| `mlc stop` | Stop container | ✗ **NO** | DS01 uses custom `container-stop` | Python-based |
+| `mlc start` | Start container | ✗ **NO** | Rarely needed (mlc-open auto-starts) | Python-based |
+| `mlc remove` | Remove container | ✗ **NO** | DS01 uses custom `container-cleanup` | Python-based |
+| `mlc export` | Export container | ✗ **NO** | Not used | **NEW in v2** |
+| `mlc import` | Import container | ✗ **NO** | Not used | **NEW in v2** |
+| `mlc update-sys` | Update system | ✗ **NO** | System admin only | Python-based |
+| `mlc -v/--version` | Show version | ✗ **NO** | Not used | **NEW in v2** |
 
 **v2 Architecture Notes:**
 - All `mlc-*` commands are thin bash wrappers that call `mlc <subcommand> $@`
@@ -69,7 +69,7 @@ Same as v1 - continue wrapping only what DS01 needs to customize (create, open, 
 AN ADDITIONAL AIM OF THE PLANNED REFACTOR: to properly integrate and use ALL of the of `mlc-*` commands into ds01 framework:
 - `container list` should call `mlc-list` in a customisable wrapper (which also provides GUI for selection if called without arguments - as is currently in ds01).
 - `container stop` should call `mlc-stop` in a customisable wrapper (which also provides GUI for selection if called without arguments - as is currently in ds01).
-- NEW CMDS: 
+- NEW CMDS:
    - `container start` that calls `mlc-start` in a customisable wrapper (which also provides GUI for selection if called without arguments - as is currently in ds01)
    - also wrap `mlc export` and `mlc import` in `container export` and `container import` customisable wrappers like all the others!
 - `container cleanup` / `container remove` should call `mlc-remove` in a customisable wrapper (which also provides GUI for selection if called without arguments - as is currently in ds01)
@@ -375,62 +375,62 @@ num_gpus = "all"  # All GPUs available to container!
 
 ### 5.1 What to Keep from AIME v2
 
-✅ **Expanded framework catalog** (`ml_images.repo`)
+✓ **Expanded framework catalog** (`ml_images.repo`)
 - **150+ pre-tested framework images** (up from 76 in v1)
 - **5 GPU architectures:** CUDA_BLACKWELL, CUDA_ADA, CUDA_AMPERE, ROCM6, ROCM5
 - Flexible architecture selection via `-arch` flag or `MLC_ARCH` env
 - Latest framework versions (PyTorch 2.8.0, Tensorflow 2.16.1)
 - **AMD GPU support** via ROCM images
 
-✅ **Container naming convention** (`name._.uid`)
+✓ **Container naming convention** (`name._.uid`)
 - Unchanged from v1
 - Multi-user isolation
 - Predictable container discovery
 
-✅ **Label system** (`aime.mlc.*`)
+✓ **Label system** (`aime.mlc.*`)
 - Container version 4 (adds models directory)
 - Backward compatible with v1 labels
 - All DS01 filtering continues to work
 
-✅ **Base image preparation workflow**
+✓ **Base image preparation workflow**
 - User creation with matching UID/GID
 - Passwordless sudo setup
 - Git installation
 - Now Python-based for better maintainability
 
-✅ **`mlc open` behavior**
+✓ **`mlc open` behavior**
 - Auto-start if stopped
 - Auto-stop when no sessions active
 - Simple `docker exec` entry
 - Unchanged from v1
 
-✅ **Interactive mode (NEW in v2)**
+✓ **Interactive mode (NEW in v2)**
 - Guided container creation workflow
 - Could be useful for educational purposes in DS01 ( I think ds01 does this better though; more robust)
 
 ### 5.2 What DS01 Must Continue to Add/Replace (unchanged from v1)
 
-🔧 **Custom image support**
+ **Custom image support**
 - Accept user-built images (not just framework catalog)
 - Allow Dockerfile-based customization
 - DS01's `image-create` & `image-update` workflow
 
-🔧 **Resource limits**
+ **Resource limits**
 - CPU/memory/GPU quotas from `resource-limits.yaml`
 - Cgroup integration via systemd slices
 - Fair scheduling enforcement
 
-🔧 **GPU allocation**
+ **GPU allocation**
 - MIG-aware allocation via `gpu_allocator.py`
 - Priority-based scheduling
 - State tracking (`gpu-state.json`)
 
-🔧 **Package customization**
+ **Package customization**
 - Tier package selection (Framework → Base Data Science defaults → Use case -> user-specified) - TAKE THIS FROM DS01 AS PRESENTLY IMPLEMENTED IN THE GUI
 - Dockerfile generation
 - Image build workflow with `image-create`
 
-🔧 **Lifecycle automation**
+ **Lifecycle automation**
 - Idle detection and auto-cleanup
 - Monitoring and metrics collection
 - Container lifecycle policies
@@ -466,11 +466,11 @@ GPU_ALLOCATION=$(python3 gpu_allocator.py allocate ...)
 ### 6.2 No Changes Needed for v2 Integration
 
 **Current wrapper approach continues to work:**
-- ✅ Wrapper intercepts `mlc create` call
-- ✅ Calls `get_resource_limits.py` to read YAML config
-- ✅ Calls `gpu_allocator.py` to assign GPU
-- ✅ Invokes original AIME create (now Python-based)
-- ✅ Applies additional limits via `docker update`
+- ✓ Wrapper intercepts `mlc create` call
+- ✓ Calls `get_resource_limits.py` to read YAML config
+- ✓ Calls `gpu_allocator.py` to assign GPU
+- ✓ Invokes original AIME create (now Python-based)
+- ✓ Applies additional limits via `docker update`
 
 **Benefits of v2 Python implementation:**
 - More maintainable AIME codebase
@@ -486,17 +486,17 @@ GPU_ALLOCATION=$(python3 gpu_allocator.py allocate ...)
 
 **DS01's current wrapper strategy remains valid with v2:**
 
-✅ **Wrapper intercepts AIME commands**
+✓ **Wrapper intercepts AIME commands**
 - `mlc-create-wrapper.sh` wraps `mlc create`
 - `mlc-stats-wrapper.sh` wraps `mlc stats`
 - `container-run` calls `mlc open` directly (no wrapper needed)
 
-✅ **DS01 adds resource management layer**
+✓ **DS01 adds resource management layer**
 - Reads `resource-limits.yaml` via `get_resource_limits.py`
 - Allocates GPUs via `gpu_allocator.py`
 - Applies limits via `docker update` after AIME creation
 
-✅ **No changes needed for v2 upgrade**
+✓ **No changes needed for v2 upgrade**
 - Python backend is transparent to wrappers
 - Same command-line interface
 - Same container creation workflow
@@ -507,7 +507,7 @@ GPU_ALLOCATION=$(python3 gpu_allocator.py allocate ...)
 **v2 opens new possibilities:**
 
 1. **Interactive mode integration**
-   - Could adapt AIME's interactive mode for DS01's `user-setup` 
+   - Could adapt AIME's interactive mode for DS01's `user-setup`
    - Educational prompts for framework selection
    - Currently DS01 has its own interactive workflows
    - (DS01 IS ALREADY VERY INTERACTIVE, JUST TAKE WHAT'S THERE WITH ALL THE GUIs AND ADAPT IT TO INTEGRATE PROPERLY WITH AIME!)
@@ -529,32 +529,32 @@ GPU_ALLOCATION=$(python3 gpu_allocator.py allocate ...)
 
 **Verify current wrappers work with v2:**
 
-1. ✅ **Test wrapper with framework from catalog**
+1. ✓ **Test wrapper with framework from catalog**
    ```bash
    /opt/ds01-infra/scripts/docker/mlc-create-wrapper.sh test1 pytorch 2.7.1
    # Should work with new Python backend
    ```
 
-2. ✅ **Verify resource limits applied**
+2. ✓ **Verify resource limits applied**
    ```bash
    docker inspect test1 | grep -i cpus
    docker inspect test1 | grep -i memory
    # Should show limits from resource-limits.yaml
    ```
 
-3. ✅ **Check GPU allocation**
+3. ✓ **Check GPU allocation**
    ```bash
    python3 /opt/ds01-infra/scripts/docker/gpu_allocator.py status
    # Should show GPU assigned to test1
    ```
 
-4. ✅ **Test mlc open integration**
+4. ✓ **Test mlc open integration**
    ```bash
    /opt/ds01-infra/scripts/user/container-run test1
    # Should call mlc open correctly (now Python-based)
    ```
 
-5. ✅ **Verify labels compatibility**
+5. ✓ **Verify labels compatibility**
    ```bash
    docker inspect test1 --format '{{json .Config.Labels}}' | jq | grep aime.mlc
    # Should show MLC_VERSION=4, models mount
@@ -565,15 +565,15 @@ GPU_ALLOCATION=$(python3 gpu_allocator.py allocate ...)
 ## 9. Conclusion
 
 ### AIME v2 Limitations (unchanged from v1)
-- ❌ No custom image support
-- ❌ No resource limits
-- ❌ No GPU management
-- ❌ No package customization workflow
-- ❌ No state management
+- ✗ No custom image support
+- ✗ No resource limits
+- ✗ No GPU management
+- ✗ No package customization workflow
+- ✗ No state management
 
 ### v2 Impact on DS01
 
-**⚠️ NO ACTION REQUIRED:**
+**NO ACTION REQUIRED:**
 - Current integration strategy remains optimal
 - Wrappers don't need updates for v2
 - DS01 resource management layer unchanged

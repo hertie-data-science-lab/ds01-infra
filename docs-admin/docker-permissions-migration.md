@@ -12,7 +12,7 @@ Migrated from an unstable custom Python socket proxy to a simpler approach using
 
 ## What Was Done
 
-### 1. Removed Socket Proxy ✅
+### 1. Removed Socket Proxy ✓
 
 **Problem**: Custom Python socket proxy (`docker-filter-proxy.py`) was:
 - 500+ lines of complex HTTP/gRPC handling
@@ -33,7 +33,7 @@ rm /opt/ds01-infra/scripts/docker/docker-socket-proxy.py
 sudo rm /etc/systemd/system/docker.service.d/ds01-socket.conf
 ```
 
-### 2. Fixed Docker Configuration ✅
+### 2. Fixed Docker Configuration ✓
 
 **Problem**: Docker was configured to use `docker-real.sock` for the proxy.
 
@@ -64,7 +64,7 @@ ExecStart=
 ExecStart=/usr/bin/dockerd --containerd=/run/containerd/containerd.sock
 ```
 
-### 3. Enhanced Docker Wrapper ✅
+### 3. Enhanced Docker Wrapper ✓
 
 **File**: `/opt/ds01-infra/scripts/docker/docker-wrapper.sh`
 **Deployed to**: `/usr/local/bin/docker`
@@ -90,7 +90,7 @@ filter_container_list() {
 }
 ```
 
-### 4. Installed OPA Authorization (Partially) ⚠️
+### 4. Installed OPA Authorization (Partially)
 
 **Installed**:
 - Go 1.21.5 at `/usr/local/go/bin`
@@ -150,11 +150,11 @@ The OPA policy uses `input.User` to identify the requesting user. This comes fro
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| Docker | ✅ Running | Standard socket at `/var/run/docker.sock` |
-| Socket Proxy | ❌ Removed | Files deleted, service disabled |
-| Wrapper | ✅ Active | Visibility filtering works |
-| OPA Plugin | ⚠️ Installed but disabled | Needs data loading solution |
-| Go 1.21.5 | ✅ Installed | At `/usr/local/go/bin` |
+| Docker | ✓ Running | Standard socket at `/var/run/docker.sock` |
+| Socket Proxy | ✗ Removed | Files deleted, service disabled |
+| Wrapper | ✓ Active | Visibility filtering works |
+| OPA Plugin | Installed but disabled | Needs data loading solution |
+| Go 1.21.5 | ✓ Installed | At `/usr/local/go/bin` |
 
 ### What Works
 
@@ -349,10 +349,10 @@ This works because:
 
 | Aspect | Wrapper | Authorization Plugin |
 |--------|---------|---------------------|
-| Visibility filtering | ✅ Works | Not applicable |
-| Operation blocking | ❌ No | ✅ Yes (if working) |
-| CLI users | ✅ Affected | ✅ Affected |
-| VS Code/other tools | ❌ Bypassed | ✅ Affected |
+| Visibility filtering | ✓ Works | Not applicable |
+| Operation blocking | ✗ No | ✓ Yes (if working) |
+| CLI users | ✓ Affected | ✓ Affected |
+| VS Code/other tools | ✗ Bypassed | ✓ Affected |
 | Complexity | Low | High |
 | Failure mode | Graceful | Docker won't start |
 

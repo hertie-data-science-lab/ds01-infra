@@ -14,14 +14,14 @@
 
 | Aspect | v1 (Bash) | v2 (Python) | Integration Impact |
 |--------|-----------|-------------|-------------------|
-| **Architecture** | Pure bash scripts | Python-based (mlc.py) | ✅ **Better:** More maintainable |
-| **Command structure** | Standalone bash scripts | Thin wrappers → mlc.py | ✅ **No change:** Same CLI |
-| **Image catalog** | 76 images | **150+ images** | ✅ **Better:** More choices |
-| **GPU architectures** | CUDA_ADA, CUDA_AMPERE | **+BLACKWELL, ROCM6, ROCM5** | ✅ **Better:** AMD support |
-| **Frameworks** | PyTorch, TF, MXNet | PyTorch, TF (MXNet dropped) | ⚠️ **Minimal impact** |
-| **Interactive mode** | Not available | ✅ Interactive prompts | ✅ **Better:** User-friendly |
-| **Container version** | 3 (workspace, data) | **4 (adds models dir)** | ✅ **Better:** 3-mount points |
-| **Export/Import** | Not available | ✅ New commands | ✅ **Better:** Container portability |
+| **Architecture** | Pure bash scripts | Python-based (mlc.py) | ✓ **Better:** More maintainable |
+| **Command structure** | Standalone bash scripts | Thin wrappers → mlc.py | ✓ **No change:** Same CLI |
+| **Image catalog** | 76 images | **150+ images** | ✓ **Better:** More choices |
+| **GPU architectures** | CUDA_ADA, CUDA_AMPERE | **+BLACKWELL, ROCM6, ROCM5** | ✓ **Better:** AMD support |
+| **Frameworks** | PyTorch, TF, MXNet | PyTorch, TF (MXNet dropped) | **Minimal impact** |
+| **Interactive mode** | Not available | ✓ Interactive prompts | ✓ **Better:** User-friendly |
+| **Container version** | 3 (workspace, data) | **4 (adds models dir)** | ✓ **Better:** 3-mount points |
+| **Export/Import** | Not available | ✓ New commands | ✓ **Better:** Container portability |
 
 ### Integration Strategy Change
 
@@ -31,10 +31,10 @@
 - Maintain separate patched version
 
 **v2 Plan (UPDATED - SIMPLER!):**
-- ✅ **NO PATCHING NEEDED** - Keep AIME v2 completely unchanged!
-- ✅ **Keep wrapper approach** - `mlc-create-wrapper.sh` continues to work
-- ✅ **Python backend transparent** - Wrappers don't care about internal implementation
-- ✅ **Less maintenance** - No need to sync patches with AIME updates
+- ✓ **NO PATCHING NEEDED** - Keep AIME v2 completely unchanged!
+- ✓ **Keep wrapper approach** - `mlc-create-wrapper.sh` continues to work
+- ✓ **Python backend transparent** - Wrappers don't care about internal implementation
+- ✓ **Less maintenance** - No need to sync patches with AIME updates
 
 **Why v2 is better for integration:**
 1. Python is more maintainable than bash (easier to understand AIME logic)
@@ -54,13 +54,13 @@ DS01 (Current):
 ┌─────────────────────────────────────┐
 │ image-create                         │
 │   ↓                                  │
-│ FROM pytorch/pytorch:2.5.1  ❌       │ Not using AIME!
+│ FROM pytorch/pytorch:2.5.1  ✗       │ Not using AIME!
 │   ↓                                  │
 │ Build custom Dockerfile              │
 │   ↓                                  │
 │ mlc-create-wrapper                   │
 │   ↓                                  │
-│ AIME mlc-create (fails on custom!) ❌ │
+│ AIME mlc-create (fails on custom!) ✗ │
 └─────────────────────────────────────┘
 ```
 
@@ -69,23 +69,23 @@ DS01 (Current):
 ```
 DS01 + AIME v2 (Integrated):
 ┌──────────────────────────────────────────────────────┐
-│ Tier 1: AIME v2 Framework (Base System) ✨ PYTHON    │
-│   • ml_images.repo (150+ frameworks) ✨ EXPANDED     │
+│ Tier 1: AIME v2 Framework (Base System) PYTHON    │
+│   • ml_images.repo (150+ frameworks) EXPANDED     │
 │   • mlc.py (2,400 lines Python core)                 │
 │   • mlc create/open/list/stats/etc (UNCHANGED)      │
-│   • aime.mlc.* labels (v4: adds models dir) ✨       │
+│   • aime.mlc.* labels (v4: adds models dir)       │
 │   • Container naming: name._.uid (UNCHANGED)         │
-│   • Multi-arch: BLACKWELL/ADA/AMPERE/ROCM ✨         │
+│   • Multi-arch: BLACKWELL/ADA/AMPERE/ROCM         │
 │   ↓                                                   │
 │   [Tier 1 = Engine, untouched by DS01]               │
 ├──────────────────────────────────────────────────────┤
 │ Tier 2: DS01 Modular Commands (Lightweight Wrappers)│
-│   • mlc-create-wrapper ✨ SIMPLIFIED                 │
+│   • mlc-create-wrapper SIMPLIFIED                 │
 │     - Calls AIME v2 `mlc create` (no patching!)     │
 │     - Adds: resource limits, GPU allocation          │
 │   • mlc-stats-wrapper (minimal)                      │
 │   • container-run → calls `mlc open` directly        │
-│   • image-create ✨ UPDATED                          │
+│   • image-create UPDATED                          │
 │     - Uses AIME catalog for base images              │
 │     - Builds on top: FROM aimehub/pytorch...         │
 |     - Adds custom packages (defaults from ds01 logic)|
@@ -103,19 +103,19 @@ DS01 + AIME v2 (Integrated):
 └──────────────────────────────────────────────────────┘
 
 KEY PRINCIPLES:
-✅ Tier 1 (AIME v2): Complete, untouched, Python-based engine
-✅ Tier 2 (DS01): Thin wrappers add resource mgmt + custom images
-✅ Tier 3 (DS01): High-level UX orchestrating Tier 2
-✅ No patching: AIME v2 stays pristine, easier to update
+✓ Tier 1 (AIME v2): Complete, untouched, Python-based engine
+✓ Tier 2 (DS01): Thin wrappers add resource mgmt + custom images
+✓ Tier 3 (DS01): High-level UX orchestrating Tier 2
+✓ No patching: AIME v2 stays pristine, easier to update
 ```
 
 **What's Different from v1 Plan:**
-- ❌ NO `mlc-create-patched` needed! => HENRY QUESTION EDIT: ARE YOU SURE `mlc.py` can handle custom images? if not what to do?
-- ✅ `mlc-create-wrapper` works with v2 Python backend 
+- ✗ NO `mlc-create-patched` needed! => HENRY QUESTION EDIT: ARE YOU SURE `mlc.py` can handle custom images? if not what to do?
+- ✓ `mlc-create-wrapper` works with v2 Python backend
 
 ### Unified Workflow
 
-✅ RESOLVED: Custom Image Support via mlc-patched.py
+✓ RESOLVED: Custom Image Support via mlc-patched.py
 - See docs/MLC_PATCH_STRATEGY.md for complete solution
 - Create mlc-patched.py with ~50 line patch (2.2% change) to add --image flag
 - Preserves 97.8% of AIME v2 logic unchanged
@@ -124,21 +124,21 @@ KEY PRINCIPLES:
 USER: image-create my-cv-project
 ┌─────────────────────────────────────────────────────────┐
 │ 1. Framework Selection → Looks up in ml_images.repo     │
-│    Result: aimehub/pytorch-2.5.1-aime-cuda12.1.1 ✅     │
+│    Result: aimehub/pytorch-2.5.1-aime-cuda12.1.1 ✓     │
 ├─────────────────────────────────────────────────────────┤
 │ 2. Generate Dockerfile                                  │
-│    FROM aimehub/pytorch-2.5.1-aime-cuda12.1.1 ✅        │
+│    FROM aimehub/pytorch-2.5.1-aime-cuda12.1.1 ✓        │
 │    + adds custom: RUN pip install jupyter pandas ... (DS01 3-tier)     │
 ├─────────────────────────────────────────────────────────┤
 │ 3. Build Custom Image                                   │
 |    Either using mlc.py, or if that's not possible then  |
 │    docker build -t my-cv-project-{user-name}            │
-│    Result: AIME base + DS01 customization ✅            │
+│    Result: AIME base + DS01 customization ✓            │
 └─────────────────────────────────────────────────────────┘
 USER: container-create my-cv-project
 ┌─────────────────────────────────────────────────────────┐
 │ 1. Detect Custom Image Exists                           │
-│    docker images | grep my-cv-project-john-image ✅     │
+│    docker images | grep my-cv-project-john-image ✓     │
 ├─────────────────────────────────────────────────────────┤
 │ 2. Get Resource Limits                                  │
 │    get_resource_limits.py john --docker-args            │
@@ -146,15 +146,15 @@ USER: container-create my-cv-project
 ├─────────────────────────────────────────────────────────┤
 │ 3. Allocate GPU                                         │
 │    gpu_allocator.py allocate john my-cv-project 1 10    │
-│    → GPU 0:1 (MIG instance) ✅                          │
+│    → GPU 0:1 (MIG instance) ✓                          │
 ├─────────────────────────────────────────────────────────┤
 │ 4. Create Container (mlc-create-patched)                │
 │    mlc-create-patched my-cv-project pytorch \           │
 │      --image=my-cv-project-john-image \                 │
 │      --cpus=16 --memory=32g --shm-size=16g \            │
-│      --gpu=0:1 --cgroup-parent=ds01-student.slice ✅    │
+│      --gpu=0:1 --cgroup-parent=ds01-student.slice ✓    │
 ├─────────────────────────────────────────────────────────┤
-│ Container Created! ✅                                    │
+│ Container Created! ✓                                    │
 │   • Based on AIME framework                             │
 │   • Customized with DS01 packages                       │
 │   • Resource limits enforced                            │
@@ -169,7 +169,7 @@ OR ARE THERE MORE PARTS OF `MLC.PY` THAT CAN BE USED HERE? IF NOT LET'S PERHAPS 
 
 ### Principle 1: Maximum AIME Reuse
 
-✅ **Use AIME for:**
+✓ **Use AIME for:**
 - Framework catalog (`ml_images.repo`)
 - Base image selection
 - Container naming convention (`name._.uid`)
@@ -177,27 +177,27 @@ OR ARE THERE MORE PARTS OF `MLC.PY` THAT CAN BE USED HERE? IF NOT LET'S PERHAPS 
 - User environment setup (UID/GID matching)
 - Lifecycle management (`mlc-open` unchanged)
 
-❌ **Don't reinvent AIME:**
+✗ **Don't reinvent AIME:**
 - No custom framework catalog
 - No custom naming scheme
 - No custom label namespace
 
 ### Principle 2: Minimal DS01 Patches
 
-✅ **Add to AIME only what's essential:**
+✓ **Add to AIME only what's essential:**
 - Custom image support (bypass catalog)
 - Resource limit application (at creation)
 - GPU allocation integration
 => perhaps we'll need a `mlc-patched.py` that stays close to mlc.py but deviates where necessary.
 
-❌ **Don't over-engineer:**
+✗ **Don't over-engineer:**
 - Keep patches small where possible
 - Document every deviation
 - Maintain AIME compatibility
 
 ### Principle 3: Preserve DS01 UX
 
-✅ **Keep what works:**
+✓ **Keep what works:**
 - 3-tier package system (framework → base → use case → custom)
 - Interactive wizards (`--guided` mode) with lots of useful explanation and formatting ALREADY DONE, whereever possible keep existing work here
 - Phase-based workflows (1/3, 2/3, 3/3)
@@ -217,11 +217,11 @@ OR ARE THERE MORE PARTS OF `MLC.PY` THAT CAN BE USED HERE? IF NOT LET'S PERHAPS 
 5. Standardize labels
 
 **v2 Plan Has (SIMPLER!):**
-1. ~~Create mlc-create-patched~~ ❌ NOT NEEDED!
-2. Update `image-create` to use AIME v2 catalog ✅ SAME
-3. ~~Simplify mlc-create-wrapper~~ ✅ ALREADY WORKS!
-4. ~~Update container-create~~ ✅ ALREADY WORKS!
-5. Standardize labels ✅ SAME (optional improvement)
+1. ~~Create mlc-create-patched~~ ✗ NOT NEEDED!
+2. Update `image-create` to use AIME v2 catalog ✓ SAME
+3. ~~Simplify mlc-create-wrapper~~ ✓ ALREADY WORKS!
+4. ~~Update container-create~~ ✓ ALREADY WORKS!
+5. Standardize labels ✓ SAME (optional improvement)
 
 **Why Fewer Changes:**
 - v2's Python backend doesn't change the CLI interface => EDIT: since mlc.py doesn't accept custom images we may need to patch this!
@@ -234,7 +234,7 @@ OR ARE THERE MORE PARTS OF `MLC.PY` THAT CAN BE USED HERE? IF NOT LET'S PERHAPS 
 
 **File:** `scripts/user/image-create`
 
-**Status:** ⚠️ **ONLY REQUIRED CHANGE**
+**Status:** **ONLY REQUIRED CHANGE**
 
 **Before:**
 ```bash
@@ -302,11 +302,11 @@ get_base_image() {
 ```
 
 **Changes from v1 plan:**
-- ✅ Catalog path SAME: `/opt/aime-ml-containers/ml_images.repo`
-- ✅ CSV format SAME: `Framework, Version, Arch, Repo`
-- ✨ NEW: Support `MLC_ARCH` env variable for architecture selection
-- ✨ NEW: 150+ images available (PyTorch 2.8.0, TF 2.16.1, etc.)
-- ✨ NEW: AMD ROCM support
+- ✓ Catalog path SAME: `/opt/aime-ml-containers/ml_images.repo`
+- ✓ CSV format SAME: `Framework, Version, Arch, Repo`
+- NEW: Support `MLC_ARCH` env variable for architecture selection
+- NEW: 150+ images available (PyTorch 2.8.0, TF 2.16.1, etc.)
+- NEW: AMD ROCM support
 
 **Lines Changed:** ~15 lines (same as v1 plan)
 **Risk:** Low (fallback to Docker Hub if AIME unavailable)
@@ -314,9 +314,9 @@ get_base_image() {
 
 ---
 
-### Change 2: ~~Create `mlc-create-patched`~~ ❌ NOT NEEDED IN V2!
+### Change 2: ~~Create `mlc-create-patched`~~ ✗ NOT NEEDED IN V2!
 
-**Status:** ✅ **SKIPPED - Wrapper approach works perfectly!**
+**Status:** ✓ **SKIPPED - Wrapper approach works perfectly!**
 
 **Why v1 needed this:**
 - v1 was bash scripts with logic embedded in each file
@@ -324,10 +324,10 @@ get_base_image() {
 - Created a modified 238-line script with ~65 lines of changes
 
 **Why v2 doesn't need this:**
-- ✅ v2 is Python-based - all logic in `mlc.py`
-- ✅ CLI interface unchanged - `mlc create` accepts same args
-- ✅ Our wrapper can pre-process and call AIME directly
-- ✅ No need to maintain a forked/patched version!
+- ✓ v2 is Python-based - all logic in `mlc.py`
+- ✓ CLI interface unchanged - `mlc create` accepts same args
+- ✓ Our wrapper can pre-process and call AIME directly
+- ✓ No need to maintain a forked/patched version!
 
 **How it works with v2 (CURRENT SYSTEM - ALREADY IMPLEMENTED!):**
 
@@ -362,10 +362,10 @@ User: container-create my-project
 ```
 
 **Key Insight:**
-- ✅ **DS01's current wrapper ALREADY does this!**
-- ✅ **No need to patch AIME v2 code**
-- ✅ **Wrapper handles custom images separately from AIME catalog**
-- ✅ **For catalog images, just call `mlc create` directly**
+- ✓ **DS01's current wrapper ALREADY does this!**
+- ✓ **No need to patch AIME v2 code**
+- ✓ **Wrapper handles custom images separately from AIME catalog**
+- ✓ **For catalog images, just call `mlc create` directly**
 
 **What needs updating:**
 - Just the base image lookup in `image-create` (Change 1)
@@ -373,17 +373,17 @@ User: container-create my-project
 
 ---
 
-### Change 3: ~~Integrate GPU Allocation~~ ✅ ALREADY WORKS!
+### Change 3: ~~Integrate GPU Allocation~~ ✓ ALREADY WORKS!
 
 **File:** `scripts/docker/mlc-create-wrapper.sh`
 
-**Status:** ✅ **NO CHANGES NEEDED - Already compatible with v2**
+**Status:** ✓ **NO CHANGES NEEDED - Already compatible with v2**
 
 **Current implementation ALREADY:**
-- ✅ Calls `get_resource_limits.py` for resource quotas
-- ✅ Calls `gpu_allocator.py` for GPU assignment
-- ✅ Can call AIME `mlc create` OR create containers directly
-- ✅ Works with v2 Python backend (transparent)
+- ✓ Calls `get_resource_limits.py` for resource quotas
+- ✓ Calls `gpu_allocator.py` for GPU assignment
+- ✓ Can call AIME `mlc create` OR create containers directly
+- ✓ Works with v2 Python backend (transparent)
 
 **v2 Compatibility:**
 - Python backend is transparent to wrapper
@@ -400,17 +400,17 @@ User: container-create my-project
 
 ---
 
-### Change 4: ~~Update `container-create`~~ ✅ ALREADY WORKS!
+### Change 4: ~~Update `container-create`~~ ✓ ALREADY WORKS!
 
 **File:** `scripts/user/container-create`
 
-**Status:** ✅ **NO CHANGES NEEDED - Already compatible with v2**
+**Status:** ✓ **NO CHANGES NEEDED - Already compatible with v2**
 
 **Current implementation:**
-- ✅ Calls `mlc-create-wrapper.sh`
-- ✅ Passes custom image name when available
-- ✅ Works with AIME catalog when no custom image
-- ✅ v2's Python backend is transparent
+- ✓ Calls `mlc-create-wrapper.sh`
+- ✓ Passes custom image name when available
+- ✓ Works with AIME catalog when no custom image
+- ✓ v2's Python backend is transparent
 
 **v2 Compatibility:**
 - When wrapper calls `mlc create`, it now calls Python mlc.py
@@ -426,7 +426,7 @@ User: container-create my-project
 
 **Files:** Multiple
 
-**Status:** ⚠️ **OPTIONAL** - Not required for v2 compatibility, but good practice
+**Status:** **OPTIONAL** - Not required for v2 compatibility, but good practice
 
 **Strategy:** Use `aime.mlc.*` namespace consistently (v2 uses this already)
 
@@ -469,7 +469,7 @@ User: container-create my-project
 
 ### Phase 1: Minimal Required Changes (30 minutes)
 
-✅ **Task 1.1:** Update `image-create` to use AIME v2 catalog
+✓ **Task 1.1:** Update `image-create` to use AIME v2 catalog
 - Modify `get_base_image()` function (~15 lines)
 - Add AIME v2 catalog lookup with architecture support
 - Test with PyTorch 2.7.1, Tensorflow 2.16.1
@@ -481,13 +481,13 @@ User: container-create my-project
 
 ### Phase 2: Testing & Verification (30 minutes)
 
-✅ **Task 2.1:** Test end-to-end workflow
+✓ **Task 2.1:** Test end-to-end workflow
 - `image-create my-test` → uses AIME v2 base
 - `container-create my-test` → wrapper works with v2
 - `container-run my-test` → mlc open works
 - Verify labels show MLC_VERSION=4
 
-✅ **Task 2.2:** Test resource limits still applied
+✓ **Task 2.2:** Test resource limits still applied
 - Check CPU, memory, shm-size limits
 - Verify GPU allocation works
 - Confirm cgroup slices correct
@@ -499,17 +499,17 @@ User: container-create my-project
 
 ### Phase 3: Optional Improvements (1-2 hours, as needed)
 
-⚠️ **Task 3.1:** Standardize labels (optional)
+**Task 3.1:** Standardize labels (optional)
 - Update scripts to use `aime.mlc.*` consistently
 - Remove any `ds01.*` label references
 - Test filtering still works
 
-⚠️ **Task 3.2:** Add v2-specific features (optional)
+**Task 3.2:** Add v2-specific features (optional)
 - Support for models directory (`-m` flag)
 - Architecture selection UI (CUDA_BLACKWELL, ROCM, etc.)
 - Interactive mode integration
 
-⚠️ **Task 3.3:** Update documentation
+**Task 3.3:** Update documentation
 - Update README.md with v2 details
 - Note v2 features available
 
@@ -669,7 +669,7 @@ If integration fails:
 
 ## 9. Success Criteria
 
-✅ **Integration successful if:**
+✓ **Integration successful if:**
 
 1. **AIME base images used**
    - All new containers use `aimehub/*` images

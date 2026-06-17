@@ -22,8 +22,8 @@ TODO: UPDATE BASED ON NEW RESOURCE LIMITS
 | **Admin** | unlimited | 90 (high) | 64 | 128G | 2T workspace |
 
 **Important:** Limits are PER USER across all containers
-- Student can have 2 containers each with 1 GPU = ✅ OK
-- Student cannot have 3 containers with GPUs = ❌ REJECTED
+- Student can have 2 containers each with 1 GPU = ✓ OK
+- Student cannot have 3 containers with GPUs = ✗ REJECTED
 
 ---
 
@@ -121,20 +121,20 @@ tail /var/log/ds01/gpu-allocations.log
 
 # Container 1
 mlc-create training1 pytorch
-# ✅ SUCCESS: MIG 0:1 allocated (1/2 GPUs)
+# ✓ SUCCESS: MIG 0:1 allocated (1/2 GPUs)
 
 # Container 2
 mlc-create training2 pytorch
-# ✅ SUCCESS: MIG 2:0 allocated (2/2 GPUs)
+# ✓ SUCCESS: MIG 2:0 allocated (2/2 GPUs)
 
 # Container 3
 mlc-create training3 pytorch
-# ❌ REJECTED: "USER_AT_LIMIT (2/2)"
+# ✗ REJECTED: "USER_AT_LIMIT (2/2)"
 # Graceful error message shown in wizard
 
 # CPU-only container (doesn't count against GPU limit)
 mlc-create preprocess pytorch --cpu-only
-# ✅ SUCCESS (no GPU)
+# ✓ SUCCESS (no GPU)
 ```
 
 ### Scenario 2: Priority Allocation
@@ -240,7 +240,7 @@ Configured in `/opt/ds01-infra/config/resource-limits.yaml`:
 
 **GPU limit exceeded:**
 ```
-❌ GPU Limit Exceeded
+✗ GPU Limit Exceeded
 
 You requested 1 GPU, but your limit is 2 GPUs.
 You currently have 2 GPUs allocated.
@@ -254,7 +254,7 @@ Check your allocations: ds01-gpu-status
 
 **No GPU available:**
 ```
-⚠️ No GPUs Available
+No GPUs Available
 
 All 12 MIG instances are currently allocated.
 
@@ -266,7 +266,7 @@ Options:
 
 **Reservation conflict:**
 ```
-❌ MIG Instance Reserved
+✗ MIG Instance Reserved
 
 MIG 0:0 is reserved for john_doe until 2025-11-08.
 Reason: Thesis deadline

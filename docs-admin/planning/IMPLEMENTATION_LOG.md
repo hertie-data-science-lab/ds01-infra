@@ -5,7 +5,7 @@
 
 ---
 
-## Phase 1: Strategy & Planning ✅ COMPLETE
+## Phase 1: Strategy & Planning ✓ COMPLETE
 
 - [x] Audit AIME v1 (docs/AIME_FRAMEWORK_AUDIT_v1.md)
 - [x] Audit AIME v2 (docs/AIME_FRAMEWORK_AUDIT_v2.md)
@@ -18,9 +18,9 @@
 
 ---
 
-## Phase 2: Core Implementation 🔄 IN PROGRESS
+## Phase 2: Core Implementation  IN PROGRESS
 
-### Task 2.1: Create mlc-patched.py ✅ COMPLETE
+### Task 2.1: Create mlc-patched.py ✓ COMPLETE
 - [x] Copy mlc.py → mlc-patched.py
 - [x] Add header documentation (patch description)
 - [x] Add --image argument to parser
@@ -36,7 +36,7 @@
 - Preserves 97.5% of AIME v2 logic unchanged
 - Syntax validated with py_compile
 
-### Task 2.2: Update image-create ✅ COMPLETE
+### Task 2.2: Update image-create ✓ COMPLETE
 - [x] Add AIME v2 catalog lookup in get_base_image()
 - [x] Support MLC_ARCH environment variable
 - [x] Add fallback to Docker Hub
@@ -49,7 +49,7 @@
 - Maintains backward compatibility with Docker Hub fallback
 - Custom images (FROM aimehub/pytorch...) will now use AIME base
 
-### Task 2.3: Update mlc-create-wrapper.sh ✅ COMPLETE
+### Task 2.3: Update mlc-create-wrapper.sh ✓ COMPLETE
 - [x] Call mlc-patched.py instead of mlc (python3 vs bash)
 - [x] Pass --image flag when custom image exists
 - [x] Add script mode (-s) for non-interactive operation
@@ -71,18 +71,18 @@
 
 ---
 
-## Phase 3: Testing & Validation 🔄 IN PROGRESS
+## Phase 3: Testing & Validation  IN PROGRESS
 
 ### Test Suite
 
-**Test 1: AIME v2 Catalog Integration** ✅ PASSED
+**Test 1: AIME v2 Catalog Integration** ✓ PASSED
 - [x] AIME catalog exists at correct path
 - [x] Catalog format verified (150+ images with [CUDA_ADA] brackets)
 - [x] AWK parsing fixed for bracket format
 - [x] PyTorch lookup: `aimehub/pytorch-2.8.0-aime-cuda12.6.3`
 - [x] TensorFlow lookup: `aimehub/tensorflow-2.16.1-cuda12.3`
 
-**Test 2: mlc-patched.py Functionality** ✅ PASSED
+**Test 2: mlc-patched.py Functionality** ✓ PASSED
 - [x] Python syntax valid (py_compile passed)
 - [x] Version shows: AIME MLC 2.1.2
 - [x] Help displays --image flag correctly
