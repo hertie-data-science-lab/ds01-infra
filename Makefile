@@ -8,7 +8,7 @@ SHELL := /bin/bash
 SH_FILES := $(shell find scripts/ -name '*.sh' -not -path '*/aime-ml-containers/*' -not -path '*__pycache__*' 2>/dev/null)
 SHFMT_FLAGS := -i 4 -ci -s
 
-.PHONY: help lint lint-python lint-shell fmt fmt-python fmt-shell test test-all check
+.PHONY: help lint lint-python lint-shell fmt fmt-python fmt-shell test test-all check docs-serve docs-build docs-check
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -48,3 +48,14 @@ test-all: ## Run all tests including system (requires sudo + GPU)
 # ── CI mirror ─────────────────────────────────────────────────────────
 
 check: lint test ## Run full CI check locally (lint + test)
+
+# ── Docs site (Docusaurus, full site → /ds01-infra/) ──────────────────
+
+docs-serve: ## Run the docs dev server with live reload
+	npm --prefix website start
+
+docs-build: ## Production build of the docs site
+	npm --prefix website ci
+	npm --prefix website run build
+
+docs-check: docs-build ## Build the docs site with the broken-link gate (mirrors CI)

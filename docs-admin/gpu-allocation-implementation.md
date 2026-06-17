@@ -5,7 +5,7 @@
 Hybrid resource management system with MIG support:
 - **cgroups (systemd slices)**: CPU/RAM/task limits (kernel enforcement)
 - **Dynamic GPU/MIG allocation**: Per-container, priority-aware, on-demand
-- **Storage quotas**: Per-user workspace/data limits  
+- **Storage quotas**: Per-user workspace/data limits
 - **Single YAML config**: Source of truth for all limits
 - **MIG partitioning**: Multiple students per physical GPU (A100s)
 
@@ -32,11 +32,11 @@ Result:
 - users can work simultaneously
 - Hard memory isolation (can't crash each other)
 ```
-TODO: 
-- need to also handle robust GPU memory isolation 
+TODO:
+- need to also handle robust GPU memory isolation
   - -> this would allow students to work on same MIG isntance if really full?
-- make system robust to whole GPUs vs MIG patitions. 
-  - MIG partitions are the priority unit, we expect each GPU to be partitioned, but if not, allow graceful failover to working with unparitioned GPUs (in which case students get 1 GPU access, researchers up to 2 GPUs). 
+- make system robust to whole GPUs vs MIG patitions.
+  - MIG partitions are the priority unit, we expect each GPU to be partitioned, but if not, allow graceful failover to working with unparitioned GPUs (in which case students get 1 GPU access, researchers up to 2 GPUs).
   - 1GPU should in general count for 4 MIG instances
   - in overrides we may want to be able to allocate specifically workign with full unparitioned GPU (device=0), rather than across 4 MIG instances.
 
@@ -86,29 +86,29 @@ TODO:
 # 1. Launch first container with GPU
 container run training1 pytorch
 # → Gets MIG instance 0:1
-# → Alice MIG count: 1/2 ✅
+# → Alice MIG count: 1/2 ✓
 
 # 2. Launch second container with GPU
 container run training2 pytorch
 # → Gets MIG instance 2:0
-# → Alice MIG count: 2/2 ✅
+# → Alice MIG count: 2/2 ✓
 
 # 3. Try third container with GPU
 container run training3 pytorch
-# ❌ REJECTED: "USER_AT_LIMIT (2/2)"
+# ✗ REJECTED: "USER_AT_LIMIT (2/2)"
 # → Error message shown in wizard
 
 # 4. Try third container WITHOUT GPU (CPU-only)
 container run preprocessing pytorch --cpu-only
-# ✅ SUCCESS (doesn't count against GPU limit)
+# ✓ SUCCESS (doesn't count against GPU limit)
 
 # 5. Container tries to use 20 CPU cores
-# ⚠️ cgroups throttles to 16 cores (CPUQuota=1600%)
+# cgroups throttles to 16 cores (CPUQuota=1600%)
 ```
 
 **What changed from old doc:**
-- ✅ Alice CAN have 2 containers each with 1 MIG instance (total 2)
-- ❌ Alice CANNOT have 3 containers with MIG instances (exceeds limit)
+- ✓ Alice CAN have 2 containers each with 1 MIG instance (total 2)
+- ✗ Alice CANNOT have 3 containers with MIG instances (exceeds limit)
 
 ### Scenario 2: Priority Allocation
 
@@ -151,7 +151,7 @@ user_overrides:
 
 **Effect:**
 - During reservation: GPU 0 only available to john_doe
-- Others see: "❌ GPU Reserved for john_doe until 2025-11-08"
+- Others see: "✗ GPU Reserved for john_doe until 2025-11-08"
 - After reservation ends: GPU 0 returns to normal pool
 
 ---
@@ -183,11 +183,11 @@ nvidia-smi mig -lgi
 cd /opt/ds01-infra
 git pull
 
-# EDIT: BELOW DELETED, BUT ALREADY. IMPLEMENTED: 
+# EDIT: BELOW DELETED, BUT ALREADY. IMPLEMENTED:
 sudo chmod +x scripts/system/setup-var-directories.sh
 sudo ./scripts/system/setup-var-directories.sh
 ```
-TODO: 
+TODO:
 - Make sure all these var logging directories configs are documented
 - add easy access link(s) in /opt/ds01-infra/logs (same format as links already there)
 
@@ -252,7 +252,7 @@ ds01-gpu-status
                    │
                    ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ 1. Check user's current MIG/GPU count (0/2) ✅                   │
+│ 1. Check user's current MIG/GPU count (0/2) ✓                   │
 │ 2. Get user's priority (student = 10)                       │
 │ 3. Check for reservations (none active)                     │
 └──────────────────┬──────────────────────────────────────────┘
@@ -289,14 +289,14 @@ ds01-gpu-status
 
 | Resource | Enforcement | Tool | Scope |
 |----------|-------------|------|-------|
-| **CPU** | ✅ Hard limit | cgroups | Per container |
-| **Memory** | ✅ Hard limit | cgroups | Per container |
-| **GPU device** | ✅ MIG instance | Docker --gpus | Per container |
-| **GPU count** | ✅ Max per user | gpu_allocator.py | Per user |
-| **GPU memory** | ✅ MIG partition | Hardware | Per MIG instance |
-| **Containers** | ✅ Max per user | wrapper check | Per user |
-| **Priority** | ✅ Allocation order | gpu_allocator.py | Per user |
-| **Reservations** | ✅ Time-based lock | gpu_allocator.py | Per GPU/MIG |
+| **CPU** | ✓ Hard limit | cgroups | Per container |
+| **Memory** | ✓ Hard limit | cgroups | Per container |
+| **GPU device** | ✓ MIG instance | Docker --gpus | Per container |
+| **GPU count** | ✓ Max per user | gpu_allocator.py | Per user |
+| **GPU memory** | ✓ MIG partition | Hardware | Per MIG instance |
+| **Containers** | ✓ Max per user | wrapper check | Per user |
+| **Priority** | ✓ Allocation order | gpu_allocator.py | Per user |
+| **Reservations** | ✓ Time-based lock | gpu_allocator.py | Per GPU/MIG |
 
 ---
 
@@ -323,21 +323,21 @@ ds01-gpu-status
 
 # Sample output:
 # ======================================================================
-#              DS01 GPU SERVER STATUS (MIG ENABLED)
+# DS01 GPU SERVER STATUS (MIG ENABLED)
 # ======================================================================
-# 
+#
 # MIG 0:0: 1 container
-#   Util: 85% | Mem: 18000/20480 MB
-#     - alice-training (alice, priority=10, 2h 15m)
-# 
+# Util: 85% | Mem: 18000/20480 MB
+# - alice-training (alice, priority=10, 2h 15m)
+#
 # MIG 0:1: 2 containers
-#   Util: 92% | Mem: 19500/20480 MB
-#     - bob-inference (bob, priority=10, 45m)
-#     - carol-test (carol, priority=10, 12m)
-# 
+# Util: 92% | Mem: 19500/20480 MB
+# - bob-inference (bob, priority=10, 45m)
+# - carol-test (carol, priority=10, 12m)
+#
 # MIG 0:2: 0 containers
-#   Util: 0% | Mem: 0/20480 MB
-#   🟢 AVAILABLE
+# Util: 0% | Mem: 0/20480 MB
+# AVAILABLE
 # ...
 
 # NVIDIA MIG list
@@ -357,11 +357,11 @@ systemd-cgtop --depth=3
 wizard:
   error_messages:
     gpu_limit_exceeded: |
-      ❌ GPU Limit Exceeded
-      
+      ✗ GPU Limit Exceeded
+
       You requested {requested} MIG instances, but your limit is {max}.
       You currently have {current} MIG instances allocated.
-      
+
       Options:
       1. Reduce MIG/GPU request to {available} or fewer
       2. Stop an existing container
@@ -474,14 +474,14 @@ python3 /opt/ds01-infra/testing/functional/test_gpu_allocator_functional.py
 
 ## Next Steps
 
-1. ✅ **Setup MIG first** (see mig-setup-guide.md)
-2. ✅ Setup /var directories
-3. ✅ Create systemd slices
-4. ✅ Initialize GPU allocator (MIG-aware)
-5. ✅ Test thoroughly - **COMPLETE (Nov 2025)**
-6. ✅ Fix MIG compatibility bugs - **COMPLETE (Nov 2025)**
-7. ⚠️ Update mlc-create-wrapper.sh (integrate allocator)
-8. ⚠️ Setup storage quotas
-9. ⚠️ Implement idle detection
+1. ✓ **Setup MIG first** (see mig-setup-guide.md)
+2. ✓ Setup /var directories
+3. ✓ Create systemd slices
+4. ✓ Initialize GPU allocator (MIG-aware)
+5. ✓ Test thoroughly - **COMPLETE (Nov 2025)**
+6. ✓ Fix MIG compatibility bugs - **COMPLETE (Nov 2025)**
+7. Update mlc-create-wrapper.sh (integrate allocator)
+8. Setup storage quotas
+9. Implement idle detection
 
 ---

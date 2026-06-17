@@ -148,7 +148,7 @@ Three tiers, mapped to CI:
 
 Tier 1 runs `pytest -m "not system"` (791 tests). Tier 2 runs everything (823 tests).
 
-See [testing/README.md](../testing/README.md) for test details.
+See [testing/README.md](https://github.com/hertie-data-science-lab/ds01-infra/blob/main/testing/README.md) for test details.
 
 ## Troubleshooting
 

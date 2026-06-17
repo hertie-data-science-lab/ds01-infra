@@ -1,6 +1,6 @@
 # DS01 Infrastructure
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/) [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff) [![Docs](https://img.shields.io/badge/docs-end%20user%20docs-blue)](https://github.com/hertie-data-science-lab/ds01-hub/tree/main/docs)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/) [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff) [![Docs](https://img.shields.io/badge/docs-end%20user%20docs-blue)](https://hertie-data-science-lab.github.io/ds01/)
 
 **Multi-user containerised ML workload management for data science research labs** 
 
@@ -46,7 +46,7 @@ sudo scripts/system/add-user-to-docker.sh alice
 
 ### For End Users
 
-See the [End User Quickstart Guide](https://github.com/hertie-data-science-lab/ds01-hub/blob/main/docs/quickstart.md) for getting started with DS01.
+See the [End User Quickstart Guide](https://hertie-data-science-lab.github.io/ds01/quickstart) for getting started with DS01.
 
 ```bash
 user-setup              # Guided onboarding
@@ -271,4 +271,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 **Developed by [Henry Baker](https://henrycgbaker.github.io/) for the [Hertie School Data Science Lab](https://www.hertie-school.org/en/datasciencelab)**
 
-📖 [User Documentation](https://github.com/hertie-data-science-lab/ds01-hub/tree/main/docs) · 🐛 [Report Issues](https://github.com/hertie-data-science-lab/ds01-hub/issues)
+📖 [User Documentation](https://hertie-data-science-lab.github.io/ds01/) · 🐛 [Report Issues](https://github.com/hertie-data-science-lab/ds01-hub/issues)

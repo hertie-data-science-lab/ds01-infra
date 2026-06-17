@@ -31,15 +31,15 @@ AIME ML Containers (v1) is a **deprecated but functional** container management 
 
 | Command | Purpose | Used by DS01? | How? |
 |---------|---------|---------------|------|
-| `mlc-create` | Create container | ✅ **YES** | Wrapped by `mlc-create-wrapper.sh` |
-| `mlc-open` | Enter container | ✅ **YES** | Called directly by `container-run` |
-| `mlc-stats` | Show stats | ✅ **YES** | Wrapped by `mlc-stats-wrapper.sh` |
-| `mlc-list` | List containers | ❌ **NO** | DS01 uses custom `container-list` |
-| `mlc-stop` | Stop container | ❌ **NO** | DS01 uses custom `container-stop` |
-| `mlc-start` | Start container | ❌ **NO** | Rarely needed (mlc-open auto-starts) |
-| `mlc-remove` | Remove container | ❌ **NO** | DS01 uses custom `container-cleanup` |
-| `mlc-update-sys` | Update system | ❌ **NO** | System admin only |
-| `mlc-upgrade-sys` | Upgrade system | ❌ **NO** | System admin only |
+| `mlc-create` | Create container | ✓ **YES** | Wrapped by `mlc-create-wrapper.sh` |
+| `mlc-open` | Enter container | ✓ **YES** | Called directly by `container-run` |
+| `mlc-stats` | Show stats | ✓ **YES** | Wrapped by `mlc-stats-wrapper.sh` |
+| `mlc-list` | List containers | ✗ **NO** | DS01 uses custom `container-list` |
+| `mlc-stop` | Stop container | ✗ **NO** | DS01 uses custom `container-stop` |
+| `mlc-start` | Start container | ✗ **NO** | Rarely needed (mlc-open auto-starts) |
+| `mlc-remove` | Remove container | ✗ **NO** | DS01 uses custom `container-cleanup` |
+| `mlc-update-sys` | Update system | ✗ **NO** | System admin only |
+| `mlc-upgrade-sys` | Upgrade system | ✗ **NO** | System admin only |
 
 ONE AIM OF THE PLANNED REFACTOR: to properly integrate and use all of rest of `mlc-*` commands in ds01 (either wrapped if needed, or directly called).
 - `container list` should call `mlc-list` in a customisable wrapper (which also provides GUI for selection if called without arguments - as is currently in ds01).
@@ -325,48 +325,48 @@ AIME is **stateless** - no tracking of:
 
 ### 5.1 What to Keep from AIME
 
-✅ **Framework catalog system** (`ml_images.repo`)
+✓ **Framework catalog system** (`ml_images.repo`)
 - 76 pre-tested framework images
 - Architecture-aware selection (CUDA_ADA for Ada GPUs)
 - Version management
 
-✅ **Container naming convention** (`name._.uid`)
+✓ **Container naming convention** (`name._.uid`)
 - Multi-user isolation
 - Predictable container discovery
 
-✅ **Label system** (`aime.mlc.*`)
+✓ **Label system** (`aime.mlc.*`)
 - Container identification
 - Metadata storage
 - Filtering in docker commands
 
-✅ **Base image preparation workflow**
+✓ **Base image preparation workflow**
 - User creation with matching UID/GID
 - Passwordless sudo setup
 - Git installation
 
-✅ **`mlc-open` behavior**
+✓ **`mlc-open` behavior**
 - Auto-start if stopped
 - Auto-stop if inactive
 - Simple `docker exec` entry
 
 ### 5.2 What DS01 Must Add/Replace
 
-🔧 **Custom image support**
+ **Custom image support**
 - Accept user-built images (not just framework catalog)
 - Allow Dockerfile-based customization
 - Support both: AIME base → custom layers
 
-🔧 **Resource limits**
+ **Resource limits**
 - CPU/memory/GPU quotas from `resource-limits.yaml`
 - Cgroup integration
 - Fair scheduling
 
-🔧 **GPU allocation**
+ **GPU allocation**
 - MIG-aware allocation
 - Priority-based scheduling
 - State tracking (`gpu-state.json`)
 
-🔧 **Package customization**
+ **Package customization**
 - Framework → Base packages → Use case packages → User packages
 - Dockerfile generation
 - Image build workflow
@@ -501,32 +501,32 @@ docker create -it $VOLUMES -w $WORKSPACE \
 
 Before deploying patched version:
 
-1. ✅ **AIME base workflow still works**
+1. ✓ **AIME base workflow still works**
    ```bash
    mlc-create-patched test1 pytorch 2.5.1
    # Should work identically to original
    ```
 
-2. ✅ **Custom image workflow works**
+2. ✓ **Custom image workflow works**
    ```bash
    mlc-create-patched test2 pytorch --image=my-custom-image
    # Should accept custom image
    ```
 
-3. ✅ **Resource limits applied**
+3. ✓ **Resource limits applied**
    ```bash
    docker inspect test2 | grep -i memory
    docker inspect test2 | grep -i cpus
    # Should show limits from resource-limits.yaml
    ```
 
-4. ✅ **GPU allocation tracked**
+4. ✓ **GPU allocation tracked**
    ```bash
    python3 gpu_allocator.py status
    # Should show GPU assigned to test2
    ```
 
-5. ✅ **Labels preserved**
+5. ✓ **Labels preserved**
    ```bash
    docker inspect test2 --format '{{json .Config.Labels}}' | jq
    # Should show all aime.mlc.* labels
@@ -537,17 +537,17 @@ Before deploying patched version:
 ## 10. Conclusion
 
 ### AIME Strengths
-- ✅ Stable, battle-tested framework
-- ✅ Excellent framework catalog (76 images)
-- ✅ Clean multi-user isolation
-- ✅ Simple, understandable bash scripts
-- ✅ Good label-based organization
+- ✓ Stable, battle-tested framework
+- ✓ Excellent framework catalog (76 images)
+- ✓ Clean multi-user isolation
+- ✓ Simple, understandable bash scripts
+- ✓ Good label-based organization
 
 ### AIME Limitations (for DS01)
-- ❌ No custom image support
-- ❌ No resource limits
-- ❌ No GPU management
-- ❌ No package customization workflow
+- ✗ No custom image support
+- ✗ No resource limits
+- ✗ No GPU management
+- ✗ No package customization workflow
 
 ### Integration Recommendation
 

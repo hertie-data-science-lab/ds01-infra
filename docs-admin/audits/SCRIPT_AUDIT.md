@@ -18,11 +18,11 @@ This document audits all scripts in `/opt/ds01-infra/scripts/user/` and classifi
 
 | Script | Status | Action | Notes |
 |--------|--------|--------|-------|
-| `user-setup` | ✅ KEEP & REFACTOR | Refactor as `user-init` wizard | 29KB - Complete onboarding (SSH + VS Code + project) |
-| `project-init` | ✅ KEEP & REFACTOR | Refactor as orchestrator | 28KB - Main project workflow, calls Tier 2 modules |
-| `new-project` | ⚠️ DEPRECATE | Keep as legacy alias | 28KB - Near-duplicate of project-init, maintain symlink |
-| `project-init-beginner` | ⚠️ DEPRECATE | Merge into project-init --guided | 31KB - Now handled by --guided flag |
-| `student-setup.sh` | ❌ DEPRECATE | Superseded by user-setup | Old onboarding script, keep for legacy |
+| `user-setup` | ✓ KEEP & REFACTOR | Refactor as `user-init` wizard | 29KB - Complete onboarding (SSH + VS Code + project) |
+| `project-init` | ✓ KEEP & REFACTOR | Refactor as orchestrator | 28KB - Main project workflow, calls Tier 2 modules |
+| `new-project` | DEPRECATE | Keep as legacy alias | 28KB - Near-duplicate of project-init, maintain symlink |
+| `project-init-beginner` | DEPRECATE | Merge into project-init --guided | 31KB - Now handled by --guided flag |
+| `student-setup.sh` | ✗ DEPRECATE | Superseded by user-setup | Old onboarding script, keep for legacy |
 
 **Refactoring Plan:**
 1. **user-setup** → **user-init**: Extract ssh-setup + vscode-setup, then orchestrate
@@ -36,10 +36,10 @@ This document audits all scripts in `/opt/ds01-infra/scripts/user/` and classifi
 
 | Script | Status | Action | Notes |
 |--------|--------|--------|-------|
-| `container-dispatcher.sh` | ✅ KEEP AS-IS | Add --guided passthrough | Routes `container <subcommand>` to `container-*` scripts |
-| `image-dispatcher.sh` | ✅ KEEP AS-IS | Add --guided passthrough | Routes `image <subcommand>` to `image-*` scripts |
-| `project-dispatcher.sh` | ✅ KEEP AS-IS | Add --guided passthrough | Routes `project <subcommand>` to project scripts |
-| `user-dispatcher.sh` | ✅ KEEP AS-IS | Add --guided passthrough | Routes `user <subcommand>` to user scripts |
+| `container-dispatcher.sh` | ✓ KEEP AS-IS | Add --guided passthrough | Routes `container <subcommand>` to `container-*` scripts |
+| `image-dispatcher.sh` | ✓ KEEP AS-IS | Add --guided passthrough | Routes `image <subcommand>` to `image-*` scripts |
+| `project-dispatcher.sh` | ✓ KEEP AS-IS | Add --guided passthrough | Routes `project <subcommand>` to project scripts |
+| `user-dispatcher.sh` | ✓ KEEP AS-IS | Add --guided passthrough | Routes `user <subcommand>` to user scripts |
 
 **How Dispatchers Work:**
 ```bash
@@ -67,13 +67,13 @@ container-create my-project  # Direct symlink to script
 
 | Script | Size | Status | Action | Notes |
 |--------|------|--------|--------|-------|
-| `container-create` | 15KB | ✅ KEEP & REFACTOR | Add --guided, call mlc-create-wrapper | Currently uses direct docker create |
-| `container-run` | 9.5KB | ✅ KEEP & REFACTOR | Add --guided, call mlc-open | Currently uses direct docker exec |
-| `container-stop` | 7.5KB | ✅ KEEP & REFACTOR | Add --guided explanations | Good standalone command |
-| `container-list` | 9.4KB | ✅ KEEP AS-IS | Minor polish | Already good |
-| `container-stats` | 7.9KB | ✅ KEEP AS-IS | Minor polish | Already good |
-| `container-cleanup` | 11KB | ✅ KEEP AS-IS | Minor polish | Already good |
-| `container-exit` | 4.4KB | ✅ KEEP AS-IS | Fix Ctrl+P/Ctrl+Q docs | Info command (not executable action) |
+| `container-create` | 15KB | ✓ KEEP & REFACTOR | Add --guided, call mlc-create-wrapper | Currently uses direct docker create |
+| `container-run` | 9.5KB | ✓ KEEP & REFACTOR | Add --guided, call mlc-open | Currently uses direct docker exec |
+| `container-stop` | 7.5KB | ✓ KEEP & REFACTOR | Add --guided explanations | Good standalone command |
+| `container-list` | 9.4KB | ✓ KEEP AS-IS | Minor polish | Already good |
+| `container-stats` | 7.9KB | ✓ KEEP AS-IS | Minor polish | Already good |
+| `container-cleanup` | 11KB | ✓ KEEP AS-IS | Minor polish | Already good |
+| `container-exit` | 4.4KB | ✓ KEEP AS-IS | Fix Ctrl+P/Ctrl+Q docs | Info command (not executable action) |
 
 **Key Refactoring:**
 1. **container-create**:
@@ -98,13 +98,13 @@ container-create my-project  # Direct symlink to script
 
 | Script | Size | Status | Action | Notes |
 |--------|------|--------|--------|-------|
-| `image-create` | 12KB | ✅ KEEP & REFACTOR | Add --guided flag | Main image creation command |
-| `image-list` | 5.1KB | ✅ KEEP AS-IS | Minor polish | Already good |
-| `image-update` | 6.8KB | ✅ KEEP AS-IS | Minor polish | Already good |
-| `image-delete` | 6.9KB | ✅ KEEP AS-IS | Minor polish | Already good |
-| `create-custom-image.sh` | ? | ⚠️ DEPRECATE | Superseded by image-create | Old version, different UX |
-| `manage-images.sh` | ? | ⚠️ DEPRECATE | Superseded by image-* commands | Old version |
-| `install-to-image.sh` | ? | ⚠️ DEPRECATE | Functionality in image-update | Old helper script |
+| `image-create` | 12KB | ✓ KEEP & REFACTOR | Add --guided flag | Main image creation command |
+| `image-list` | 5.1KB | ✓ KEEP AS-IS | Minor polish | Already good |
+| `image-update` | 6.8KB | ✓ KEEP AS-IS | Minor polish | Already good |
+| `image-delete` | 6.9KB | ✓ KEEP AS-IS | Minor polish | Already good |
+| `create-custom-image.sh` | ? | DEPRECATE | Superseded by image-create | Old version, different UX |
+| `manage-images.sh` | ? | DEPRECATE | Superseded by image-* commands | Old version |
+| `install-to-image.sh` | ? | DEPRECATE | Functionality in image-update | Old helper script |
 
 **Key Refactoring:**
 1. **image-create**:
@@ -142,10 +142,10 @@ container-create my-project  # Direct symlink to script
 
 | Script | Size | Status | Action | Notes |
 |--------|------|--------|--------|-------|
-| `ds01-status` | ? | ✅ KEEP AS-IS | Polish | System status dashboard |
-| `ds01-run` | ? | ✅ KEEP AS-IS | Review integration | Standalone container launcher |
-| `ssh-config` | ? | ✅ KEEP AS-IS | Fold into ssh-setup? | SSH configuration helper |
-| `git-ml-repo-setup.sh` | ? | ⚠️ DEPRECATE | Fold into git-init? | Git + LFS setup |
+| `ds01-status` | ? | ✓ KEEP AS-IS | Polish | System status dashboard |
+| `ds01-run` | ? | ✓ KEEP AS-IS | Review integration | Standalone container launcher |
+| `ssh-config` | ? | ✓ KEEP AS-IS | Fold into ssh-setup? | SSH configuration helper |
+| `git-ml-repo-setup.sh` | ? | DEPRECATE | Fold into git-init? | Git + LFS setup |
 
 ---
 
@@ -153,7 +153,7 @@ container-create my-project  # Direct symlink to script
 
 | Script | Status | Action | Reason |
 |--------|--------|--------|--------|
-| `project-init.bak` | ❌ DELETE | Remove after refactoring complete | Backup file |
+| `project-init.bak` | ✗ DELETE | Remove after refactoring complete | Backup file |
 
 ---
 
@@ -298,7 +298,7 @@ exec "$SUBCOMMAND_SCRIPT" "$@"  # Pass ALL remaining args
 
 **Location**: `/opt/ds01-infra/config/container-aliases.sh`
 
-**Status**: ✅ KEEP, but FIX documentation
+**Status**: ✓ KEEP, but FIX documentation
 
 **Issues to Fix:**
 
@@ -310,7 +310,7 @@ exec "$SUBCOMMAND_SCRIPT" "$@"  # Pass ALL remaining args
 
 ```bash
 # REMOVE (misleading):
-alias detach='echo -e "💡 To detach without stopping: Press Ctrl+P, then Ctrl+Q"'
+alias detach='echo -e " To detach without stopping: Press Ctrl+P, then Ctrl+Q"'
 
 # FIX:
 alias exit-help='echo -e "━━━ Exit Options ━━━
@@ -319,7 +319,7 @@ alias exit-help='echo -e "━━━ Exit Options ━━━
   • Re-enter: container-run <name> on host"'
 
 # ADD:
-alias stop-this='echo -e "💡 To stop this container:
+alias stop-this='echo -e " To stop this container:
   1. Exit this session (type: exit)
   2. Run on host: container-stop <name>"'
 ```
@@ -332,11 +332,11 @@ alias stop-this='echo -e "💡 To stop this container:
 
 | Command | Script Location | Status | Notes |
 |---------|----------------|--------|-------|
-| `ds01-dashboard` | scripts/admin/ds01-dashboard | ✅ Keep | System overview |
-| `ds01-logs` | scripts/admin/ds01-logs | ✅ Keep | Infrastructure logs |
-| `ds01-users` | scripts/admin/ds01-users | ✅ Keep | Active users |
-| `alias-list` | scripts/admin/alias-list | ✅ Keep | Command reference |
-| `alias-create` | scripts/admin/alias-create | ✅ Keep | Custom aliases |
+| `ds01-dashboard` | scripts/admin/ds01-dashboard | ✓ Keep | System overview |
+| `ds01-logs` | scripts/admin/ds01-logs | ✓ Keep | Infrastructure logs |
+| `ds01-users` | scripts/admin/ds01-users | ✓ Keep | Active users |
+| `alias-list` | scripts/admin/alias-list | ✓ Keep | Command reference |
+| `alias-create` | scripts/admin/alias-create | ✓ Keep | Custom aliases |
 
 **No refactoring needed** - these are admin-only utilities.
 
@@ -586,51 +586,51 @@ user-init --guided
 ```
 /opt/ds01-infra/scripts/user/
 ├── Tier 4: Wizards
-│   ├── user-init                    ✅ NEW (refactored from user-setup)
-│   └── project-init                 ♻️ REFACTORED (orchestrator)
+│   ├── user-init                    ✓ NEW (refactored from user-setup)
+│   └── project-init                 REFACTORED (orchestrator)
 │
 ├── Tier 3: Dispatchers
-│   ├── container-dispatcher.sh      ✅ KEEP
-│   ├── image-dispatcher.sh          ✅ KEEP
-│   ├── project-dispatcher.sh        ✅ KEEP
-│   └── user-dispatcher.sh           ✅ KEEP
+│   ├── container-dispatcher.sh      ✓ KEEP
+│   ├── image-dispatcher.sh          ✓ KEEP
+│   ├── project-dispatcher.sh        ✓ KEEP
+│   └── user-dispatcher.sh           ✓ KEEP
 │
 ├── Tier 2: Container Commands
-│   ├── container-create             ♻️ REFACTORED (call mlc-create-wrapper)
-│   ├── container-run                ♻️ REFACTORED (call mlc-open)
-│   ├── container-stop               ✅ KEEP
-│   ├── container-list               ✅ KEEP
-│   ├── container-stats              ✅ KEEP
-│   ├── container-cleanup            ✅ KEEP
-│   └── container-exit               ♻️ FIX (documentation)
+│   ├── container-create             REFACTORED (call mlc-create-wrapper)
+│   ├── container-run                REFACTORED (call mlc-open)
+│   ├── container-stop               ✓ KEEP
+│   ├── container-list               ✓ KEEP
+│   ├── container-stats              ✓ KEEP
+│   ├── container-cleanup            ✓ KEEP
+│   └── container-exit               FIX (documentation)
 │
 ├── Tier 2: Image Commands
-│   ├── image-create                 ♻️ REFACTORED (add --guided)
-│   ├── image-list                   ✅ KEEP
-│   ├── image-update                 ✅ KEEP
-│   └── image-delete                 ✅ KEEP
+│   ├── image-create                 REFACTORED (add --guided)
+│   ├── image-list                   ✓ KEEP
+│   ├── image-update                 ✓ KEEP
+│   └── image-delete                 ✓ KEEP
 │
 ├── Tier 2: New Modular Commands
-│   ├── dir-create                   ✅ NEW (extracted from project-init)
-│   ├── git-init                     ✅ NEW (extracted from project-init)
-│   ├── readme-create                ✅ NEW (extracted from project-init)
-│   ├── ssh-setup                    ✅ NEW (extracted from user-setup)
-│   └── vscode-setup                 ✅ NEW (extracted from user-setup)
+│   ├── dir-create                   ✓ NEW (extracted from project-init)
+│   ├── git-init                     ✓ NEW (extracted from project-init)
+│   ├── readme-create                ✓ NEW (extracted from project-init)
+│   ├── ssh-setup                    ✓ NEW (extracted from user-setup)
+│   └── vscode-setup                 ✓ NEW (extracted from user-setup)
 │
 ├── Utilities
-│   ├── ds01-status                  ✅ KEEP
-│   └── ds01-run                     ✅ KEEP
+│   ├── ds01-status                  ✓ KEEP
+│   └── ds01-run                     ✓ KEEP
 │
 └── Deprecated (moved to archive/)
-    ├── new-project                  ⚠️ DEPRECATED (symlink to project-init)
-    ├── project-init-beginner        ⚠️ DEPRECATED (use project-init --guided)
-    ├── user-setup                   ⚠️ DEPRECATED (renamed to user-init)
-    ├── student-setup.sh             ❌ DEPRECATED (superseded)
-    ├── create-custom-image.sh       ❌ DEPRECATED (superseded)
-    ├── manage-images.sh             ❌ DEPRECATED (superseded)
-    ├── install-to-image.sh          ❌ DEPRECATED (superseded)
-    ├── git-ml-repo-setup.sh         ❌ DEPRECATED (folded into git-init)
-    └── project-init.bak             ❌ DELETE
+    ├── new-project                  DEPRECATED (symlink to project-init)
+    ├── project-init-beginner        DEPRECATED (use project-init --guided)
+    ├── user-setup                   DEPRECATED (renamed to user-init)
+    ├── student-setup.sh             ✗ DEPRECATED (superseded)
+    ├── create-custom-image.sh       ✗ DEPRECATED (superseded)
+    ├── manage-images.sh             ✗ DEPRECATED (superseded)
+    ├── install-to-image.sh          ✗ DEPRECATED (superseded)
+    ├── git-ml-repo-setup.sh         ✗ DEPRECATED (folded into git-init)
+    └── project-init.bak             ✗ DELETE
 ```
 
 ---

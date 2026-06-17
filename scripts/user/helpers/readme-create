@@ -240,7 +240,7 @@ check-limits               # View your resource quotas
 - Save all your work here
 - Use Git for version control
 
-**Full documentation:** https://github.com/hertie-data-science-lab/ds01-user-docs
+**Full documentation:** https://hertie-data-science-lab.github.io/ds01/
 
 READMEEOF
 else
@@ -354,7 +354,7 @@ torch.save(model.state_dict(), 'models/checkpoints/model_epoch_10.pth')
 - Move production code to scripts/
 - Commit often with Git
 
-**Full documentation:** https://github.com/hertie-data-science-lab/ds01-user-docs
+**Full documentation:** https://hertie-data-science-lab.github.io/ds01/
 
 READMEEOF
 fi

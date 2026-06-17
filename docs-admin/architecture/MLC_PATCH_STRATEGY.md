@@ -253,12 +253,12 @@ mlc open test2
 ## Decision: Proceed with mlc-patched.py
 
 **Rationale:**
-- ✅ Minimal change (2.2% of codebase)
-- ✅ Maximum AIME reuse (97.8%)
-- ✅ Maintainable (50 lines to sync on updates)
-- ✅ Clean separation (AIME submodule untouched)
-- ✅ Backward compatible (catalog workflow unchanged)
-- ✅ No duplication (vs 2000+ line wrapper)
+- ✓ Minimal change (2.2% of codebase)
+- ✓ Maximum AIME reuse (97.8%)
+- ✓ Maintainable (50 lines to sync on updates)
+- ✓ Clean separation (AIME submodule untouched)
+- ✓ Backward compatible (catalog workflow unchanged)
+- ✓ No duplication (vs 2000+ line wrapper)
 
 **Next Steps:**
 1. Create mlc-patched.py

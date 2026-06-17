@@ -22,11 +22,11 @@ There are **two ways** to use VS Code with DS01 containers. Choose based on your
 # 1. In VS Code, install "Remote - SSH" extension
 
 # 2. Connect to DS01
-#    Cmd+Shift+P → "Remote-SSH: Connect to Host"
-#    Enter: username@ds01-server
+# Cmd+Shift+P → "Remote-SSH: Connect to Host"
+# Enter: username@ds01-server
 
 # 3. Open your project folder
-#    File → Open Folder → ~/workspace/your-project
+# File → Open Folder → ~/workspace/your-project
 
 # 4. To run code, open terminal and enter container:
 container-run my-project
@@ -52,7 +52,7 @@ container-run my-project
 - Entire IDE session runs inside container
 - Python interpreter, debugger, Jupyter ALL use container
 - GPU-accelerated code execution
-- **TRUE CONTAINERIZED WORKFLOW** ✅
+- **TRUE CONTAINERIZED WORKFLOW** ✓
 
 ### Setup Steps:
 
@@ -142,7 +142,7 @@ print(torch.cuda.is_available())  # Should be True
 
 ## Verifying Your Setup
 
-### ✅ Correct Setup (Running in Container):
+### ✓ Correct Setup (Running in Container):
 
 ```bash
 # Check prompt
@@ -161,7 +161,7 @@ ls /workspace
 # Shows your project files
 ```
 
-### ❌ Wrong Setup (Running on Host):
+### ✗ Wrong Setup (Running on Host):
 
 ```bash
 # Check prompt
@@ -224,16 +224,16 @@ python -c "import torch; print(torch.cuda.is_available())"
 ## Summary
 
 **For true containerized ML workflows:**
-✅ Use **Dev Containers** extension
-✅ Attach to running container
-✅ Verify with `hostname` and `which python`
-✅ All code runs in container with GPU access
-✅ All DS01 commands work inside containers (container-list, image-list, etc.)
+✓ Use **Dev Containers** extension
+✓ Attach to running container
+✓ Verify with `hostname` and `which python`
+✓ All code runs in container with GPU access
+✓ All DS01 commands work inside containers (container-list, image-list, etc.)
 
 **Quick editing across projects:**
-✅ Use **Remote SSH**
-✅ Enter containers manually when running code
-✅ Can still manage containers from inside with `container-list`, `container-run`
+✓ Use **Remote SSH**
+✓ Enter containers manually when running code
+✓ Can still manage containers from inside with `container-list`, `container-run`
 
 **Note:** As of latest updates, ALL host commands are available inside containers through docker socket mounting. This means you can manage containers from within containers, list images, etc. - providing a consistent command experience regardless of context.
 

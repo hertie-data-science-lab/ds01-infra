@@ -15,13 +15,13 @@ DS01 (Current):
 ┌─────────────────────────────────────┐
 │ image-create                         │
 │   ↓                                  │
-│ FROM pytorch/pytorch:2.5.1  ❌       │ Not using AIME!
+│ FROM pytorch/pytorch:2.5.1  ✗       │ Not using AIME!
 │   ↓                                  │
 │ Build custom Dockerfile              │
 │   ↓                                  │
 │ mlc-create-wrapper                   │
 │   ↓                                  │
-│ AIME mlc-create (fails on custom!) ❌ │
+│ AIME mlc-create (fails on custom!) ✗ │
 └─────────────────────────────────────┘
 ```
 
@@ -32,14 +32,14 @@ DS01 (Integrated):
 ┌──────────────────────────────────────────┐
 │ Tier 1: AIME Framework (Base System)     │
 │   • ml_images.repo (76 frameworks)       │
-│   • mlc-create-patched ✨ NEW            │
+│   • mlc-create-patched NEW            │
 │   • mlc-open (unchanged)                 │
 |   * the rest of mlc-* commands           |
 │   • aime.mlc.* labels                    │
 ├──────────────────────────────────────────┤
 │ Tier 2: DS01 Modular Commands            │
-│   • image-create (uses AIME base) ✨      │
-│   • container-create (calls patched) ✨   │
+│   • image-create (uses AIME base)      │
+│   • container-create (calls patched)   │
 │   • resource limits (get_resource_*.py)  │
 │   • GPU allocation (gpu_allocator.py)    │
 |   * all Tier 2 call on Tier 1 mlc-* commands
@@ -61,21 +61,21 @@ TO CHANGE: make sure all Tier 1 AIME functionality is leveraged by ds01! Current
 USER: image-create my-cv-project
 ┌─────────────────────────────────────────────────────────┐
 │ 1. Framework Selection → Looks up in ml_images.repo     │
-│    Result: aimehub/pytorch-2.5.1-aime-cuda12.1.1 ✅     │
+│    Result: aimehub/pytorch-2.5.1-aime-cuda12.1.1 ✓     │
 ├─────────────────────────────────────────────────────────┤
 │ 2. Generate Dockerfile                                  │
-│    FROM aimehub/pytorch-2.5.1-aime-cuda12.1.1 ✅        │
+│    FROM aimehub/pytorch-2.5.1-aime-cuda12.1.1 ✓        │
 │    RUN pip install jupyter pandas ... (DS01 3-tier)     │
 ├─────────────────────────────────────────────────────────┤
 │ 3. Build Custom Image                                   │
 │    docker build -t my-cv-project-john-image             │
-│    Result: AIME base + DS01 customization ✅            │
+│    Result: AIME base + DS01 customization ✓            │
 └─────────────────────────────────────────────────────────┘
 
 USER: container-create my-cv-project
 ┌─────────────────────────────────────────────────────────┐
 │ 1. Detect Custom Image Exists                           │
-│    docker images | grep my-cv-project-john-image ✅     │
+│    docker images | grep my-cv-project-john-image ✓     │
 ├─────────────────────────────────────────────────────────┤
 │ 2. Get Resource Limits                                  │
 │    get_resource_limits.py john --docker-args            │
@@ -83,15 +83,15 @@ USER: container-create my-cv-project
 ├─────────────────────────────────────────────────────────┤
 │ 3. Allocate GPU                                         │
 │    gpu_allocator.py allocate john my-cv-project 1 10    │
-│    → GPU 0:1 (MIG instance) ✅                          │
+│    → GPU 0:1 (MIG instance) ✓                          │
 ├─────────────────────────────────────────────────────────┤
 │ 4. Create Container (mlc-create-patched)                │
 │    mlc-create-patched my-cv-project pytorch \           │
 │      --image=my-cv-project-john-image \                 │
 │      --cpus=16 --memory=32g --shm-size=16g \            │
-│      --gpu=0:1 --cgroup-parent=ds01-student.slice ✅    │
+│      --gpu=0:1 --cgroup-parent=ds01-student.slice ✓    │
 ├─────────────────────────────────────────────────────────┤
-│ Container Created! ✅                                    │
+│ Container Created! ✓                                    │
 │   • Based on AIME framework                             │
 │   • Customized with DS01 packages                       │
 │   • Resource limits enforced                            │
@@ -105,7 +105,7 @@ USER: container-create my-cv-project
 
 ### Principle 1: Maximum AIME Reuse
 
-✅ **Use AIME for:**
+✓ **Use AIME for:**
 - Framework catalog (`ml_images.repo`)
 - Base image selection
 - Container naming convention (`name._.uid`)
@@ -113,32 +113,32 @@ USER: container-create my-cv-project
 - User environment setup (UID/GID matching)
 - Lifecycle management (`mlc-open` unchanged)
 
-❌ **Don't reinvent AIME:**
+✗ **Don't reinvent AIME:**
 - No custom framework catalog
 - No custom naming scheme
 - No custom label namespace
 
 ### Principle 2: Minimal DS01 Patches
 
-✅ **Add to AIME only what's essential:**
+✓ **Add to AIME only what's essential:**
 - Custom image support (bypass catalog)
 - Resource limit application (at creation)
 - GPU allocation integration
 
-❌ **Don't over-engineer:**
+✗ **Don't over-engineer:**
 - Keep patches small (<100 lines)
 - Document every deviation
 - Maintain AIME compatibility
 
 ### Principle 3: Preserve DS01 UX
 
-✅ **Keep what works:**
+✓ **Keep what works:**
 - 3-tier package system (framework → base → use case → custom)
 - Interactive wizards (`--guided` mode)
 - Phase-based workflows (1/3, 2/3, 3/3)
 - Clear educational prompts
 
-❌ **Don't break existing:**
+✗ **Don't break existing:**
 - All current DS01 commands work unchanged
 - No breaking changes to user workflows
 - Backward compatible (can recreate old containers)
@@ -354,33 +354,33 @@ OUT=$(docker create -it \
 # Original AIME code is preserved wherever possible.
 #
 # DS01 ADDITIONS:
-#   1. Custom image support (--image flag)
-#      - Allows using user-built Docker images
-#      - Falls back to AIME catalog if not specified
+# 1. Custom image support (--image flag)
+# - Allows using user-built Docker images
+# - Falls back to AIME catalog if not specified
 #
-#   2. Resource limits (--cpus, --memory, --shm-size, etc.)
-#      - Applied at container creation (not post-update)
-#      - Integrated with resource-limits.yaml
+# 2. Resource limits (--cpus, --memory, --shm-size, etc.)
+# - Applied at container creation (not post-update)
+# - Integrated with resource-limits.yaml
 #
-#   3. GPU allocation integration
-#      - Receives specific GPU ID from gpu_allocator.py
-#      - Supports MIG instances (e.g., --gpus=device=0:1)
+# 3. GPU allocation integration
+# - Receives specific GPU ID from gpu_allocator.py
+# - Supports MIG instances (e.g., --gpus=device=0:1)
 #
 # COMPATIBILITY:
-#   - 100% backward compatible with original mlc-create
-#   - All AIME commands (mlc-open, etc.) work unchanged
-#   - Uses same naming convention (name._.uid)
-#   - Uses same label system (aime.mlc.*)
+# - 100% backward compatible with original mlc-create
+# - All AIME commands (mlc-open, etc.) work unchanged
+# - Uses same naming convention (name._.uid)
+# - Uses same label system (aime.mlc.*)
 #
 # DEVIATIONS FROM AIME:
-#   Lines 108-128: Custom image support added
-#   Lines 176-195: Image resolution modified
-#   Lines 230-250: Resource limits added to docker create
+# Lines 108-128: Custom image support added
+# Lines 176-195: Image resolution modified
+# Lines 230-250: Resource limits added to docker create
 #
 # TOTAL CHANGES: ~65 lines added/modified out of 238
 #
 # UPSTREAM: To contribute back to AIME, these changes could be
-#           upstreamed as optional flags (--image, --cpus, etc.)
+# upstreamed as optional flags (--image, --cpus, etc.)
 #
 # ===========================================================
 
@@ -529,17 +529,17 @@ fi
 
 ### Phase 1: Foundation (1-2 hours)
 
-✅ **Task 1.1:** Create `mlc-create-patched`
+✓ **Task 1.1:** Create `mlc-create-patched`
 - Copy `aime-ml-containers/mlc-create` to `scripts/docker/mlc-create-patched`
 - Add header documentation
 - Test: `bash mlc-create-patched test pytorch 2.5.1` (should work like original)
 
-✅ **Task 1.2:** Add custom image support to `mlc-create-patched`
+✓ **Task 1.2:** Add custom image support to `mlc-create-patched`
 - Add `--image` flag parsing
 - Modify image resolution logic
 - Test: `bash mlc-create-patched test pytorch --image=pytorch/pytorch:2.5.1`
 
-✅ **Task 1.3:** Add resource limits to `mlc-create-patched`
+✓ **Task 1.3:** Add resource limits to `mlc-create-patched`
 - Add `--cpus`, `--memory`, etc. flag parsing
 - Pass to `docker create`
 - Test: `bash mlc-create-patched test pytorch --cpus=8 --memory=16g`
@@ -550,17 +550,17 @@ fi
 
 ### Phase 2: Integration (2-3 hours)
 
-✅ **Task 2.1:** Update `image-create` to use AIME catalog
+✓ **Task 2.1:** Update `image-create` to use AIME catalog
 - Modify `get_base_image()` function
 - Add AIME catalog lookup
 - Test: `image-create test-img` (should use AIME base)
 
-✅ **Task 2.2:** Simplify `mlc-create-wrapper`
+✓ **Task 2.2:** Simplify `mlc-create-wrapper`
 - Rewrite to call `mlc-create-patched` directly
 - Integrate GPU allocator
 - Test: `bash mlc-create-wrapper test-container pytorch`
 
-✅ **Task 2.3:** Update `container-create`
+✓ **Task 2.3:** Update `container-create`
 - Pass custom image to wrapper
 - Test full workflow: `container-create test`
 
@@ -570,16 +570,16 @@ fi
 
 ### Phase 3: Polish (1-2 hours)
 
-✅ **Task 3.1:** Standardize labels
+✓ **Task 3.1:** Standardize labels
 - Update all scripts to use `aime.mlc.*`
 - Remove `ds01.*` labels
 - Test: `docker inspect` shows correct labels
 
-✅ **Task 3.2:** Update documentation
+✓ **Task 3.2:** Update documentation
 - README.md
 - Command help text
 
-✅ **Task 3.3:** Test matrix
+✓ **Task 3.3:** Test matrix
 - [ ] AIME catalog workflow (pytorch, tensorflow)
 - [ ] Custom image workflow
 - [ ] Resource limits applied
@@ -592,13 +592,13 @@ fi
 
 ### Phase 4: Validation (1 hour)
 
-✅ **Task 4.1:** User acceptance testing
+✓ **Task 4.1:** User acceptance testing
 - Run through `user-setup` wizard
 - Create project with custom image
 - Verify resource limits
 - Check GPU allocation
 
-✅ **Task 4.2:** Backward compatibility
+✓ **Task 4.2:** Backward compatibility
 - Test that old containers still work
 - Verify `mlc-open` works on old + new containers
 - Check monitoring scripts work
@@ -819,7 +819,7 @@ If integration fails:
 
 ## 9. Success Criteria
 
-✅ **Integration successful if:**
+✓ **Integration successful if:**
 
 1. **AIME base images used**
    - All new containers use `aimehub/*` images

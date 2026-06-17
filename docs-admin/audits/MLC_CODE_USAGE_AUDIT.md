@@ -16,7 +16,7 @@
 - **~15% is bypassed** only when using custom images (--image flag)
 - **DS01 additions:** ~60 lines of new logic, rest is documentation/comments
 
-**Verdict:** ✅ **Good integration** - DS01 leverages AIME's battle-tested code extensively
+**Verdict:** ✓ **Good integration** - DS01 leverages AIME's battle-tested code extensively
 
 ---
 
@@ -24,15 +24,15 @@
 
 | Command | AIME mlc.py | DS01 Usage | % of Code Used |
 |---------|-------------|------------|----------------|
-| **create** | 500 lines | ✅ Full (catalog path) OR 85% (custom image path) | 85-100% |
-| **open** | 150 lines | ✅ Direct call (container-run) | 100% |
-| **list** | 80 lines | ✅ Wrapped (container-list) | 100% |
-| **stats** | 100 lines | ✅ Wrapped (mlc-stats-wrapper) | 100% |
-| **stop** | 200 lines | ✅ Wrapped (container-stop) | 100% |
-| **start** | 150 lines | ✅ Wrapped (container-start) | 100% |
-| **remove** | 180 lines | ✅ Wrapped (container-cleanup) | 100% |
-| **update-sys** | 100 lines | ❌ Not used | 0% |
-| **export/import** | 50 lines | ❌ Not implemented in v2 | 0% |
+| **create** | 500 lines | ✓ Full (catalog path) OR 85% (custom image path) | 85-100% |
+| **open** | 150 lines | ✓ Direct call (container-run) | 100% |
+| **list** | 80 lines | ✓ Wrapped (container-list) | 100% |
+| **stats** | 100 lines | ✓ Wrapped (mlc-stats-wrapper) | 100% |
+| **stop** | 200 lines | ✓ Wrapped (container-stop) | 100% |
+| **start** | 150 lines | ✓ Wrapped (container-start) | 100% |
+| **remove** | 180 lines | ✓ Wrapped (container-cleanup) | 100% |
+| **update-sys** | 100 lines | ✗ Not used | 0% |
+| **export/import** | 50 lines | ✗ Not implemented in v2 | 0% |
 
 **Total Commands:** 7/9 used (78%)
 
@@ -56,36 +56,36 @@ python3 mlc-patched.py create my-container pytorch 2.8.0 \
 #### PATH 1: Custom Image (DS01 Workflow) - 85% Usage
 
 **BYPASSED Sections (Lines 1661-1745, ~85 lines):**
-- ❌ Catalog parsing (`extract_from_ml_images()`)
-- ❌ Framework selection (`set_framework()`)
-- ❌ Version selection (`set_version()`)
-- ❌ Docker image lookup (`get_docker_image()`)
+- ✗ Catalog parsing (`extract_from_ml_images()`)
+- ✗ Framework selection (`set_framework()`)
+- ✗ Version selection (`set_version()`)
+- ✗ Docker image lookup (`get_docker_image()`)
 
 **STILL USED Sections (~415 lines):**
-- ✅ Argument parsing (`get_flags()`) - Lines 92-380
-- ✅ User/group ID detection - Lines 1600-1602
-- ✅ GPU architecture detection (`get_host_gpu_architecture()`) - Lines 754-836
-- ✅ Container name validation (`get_container_name()`) - Lines 696-730
-- ✅ Existing container check (`existing_user_containers()`) - Lines 532-556
-- ✅ Workspace/data/models directory setup - Lines 1748-1920
-- ✅ Container tag generation - Lines 1946-1948
-- ✅ Duplicate container check (`check_container_exists()`) - Lines 1950-1954
-- ✅ Image pull logic - Lines 1959-1973 (with DS01 local check patch)
-- ✅ Docker command building (`build_docker_run_command()`) - Lines 1463-1569
-- ✅ Container creation workflow - Lines 1987-2055
-- ✅ Volume mounting logic - Lines 2002-2011
-- ✅ Label application - Lines 2018-2035
-- ✅ UID/GID matching - Lines 1972-1985
+- ✓ Argument parsing (`get_flags()`) - Lines 92-380
+- ✓ User/group ID detection - Lines 1600-1602
+- ✓ GPU architecture detection (`get_host_gpu_architecture()`) - Lines 754-836
+- ✓ Container name validation (`get_container_name()`) - Lines 696-730
+- ✓ Existing container check (`existing_user_containers()`) - Lines 532-556
+- ✓ Workspace/data/models directory setup - Lines 1748-1920
+- ✓ Container tag generation - Lines 1946-1948
+- ✓ Duplicate container check (`check_container_exists()`) - Lines 1950-1954
+- ✓ Image pull logic - Lines 1959-1973 (with DS01 local check patch)
+- ✓ Docker command building (`build_docker_run_command()`) - Lines 1463-1569
+- ✓ Container creation workflow - Lines 1987-2055
+- ✓ Volume mounting logic - Lines 2002-2011
+- ✓ Label application - Lines 2018-2035
+- ✓ UID/GID matching - Lines 1972-1985
 
 **Result:** ~85% of create command code still executes
 
 #### PATH 2: AIME Catalog (Standard Workflow) - 100% Usage
 
 When `--image` NOT provided (pure AIME workflow):
-- ✅ ALL catalog logic executes
-- ✅ ALL interactive framework/version selection
-- ✅ Full ml_images.repo parsing
-- ✅ **100% of AIME create code used**
+- ✓ ALL catalog logic executes
+- ✓ ALL interactive framework/version selection
+- ✓ Full ml_images.repo parsing
+- ✓ **100% of AIME create code used**
 
 ---
 
@@ -95,16 +95,16 @@ When `--image` NOT provided (pure AIME workflow):
 
 | Function | Lines | Used? | Purpose |
 |----------|-------|-------|---------|
-| `get_flags()` | 92-380 | ✅ Yes | Parse CLI arguments (enhanced with --image, --shm-size, --cgroup-parent) |
-| `existing_user_containers()` | 532-556 | ✅ Yes | List user's containers |
-| `get_container_name()` | 696-730 | ✅ Yes | Validate and format container name |
-| `check_container_exists()` | 425-437 | ✅ Yes | Prevent duplicates |
-| `get_host_gpu_architecture()` | 754-836 | ✅ Yes | Detect CUDA/ROCM |
-| `build_docker_run_command()` | 1463-1569 | ✅ Yes | **CRITICAL** - Constructs docker run command |
-| `build_docker_create_command()` | 1138-1456 | ✅ Yes | **CRITICAL** - Constructs docker create command |
-| `run_docker_command()` | 942-959 | ✅ Yes | Execute docker commands |
-| `short_home_path()` | 1122-1136 | ✅ Yes | Display ~/... instead of /home/user/... |
-| `are_you_sure()` | 381-423 | ✅ Yes | Confirmation prompts |
+| `get_flags()` | 92-380 | ✓ Yes | Parse CLI arguments (enhanced with --image, --shm-size, --cgroup-parent) |
+| `existing_user_containers()` | 532-556 | ✓ Yes | List user's containers |
+| `get_container_name()` | 696-730 | ✓ Yes | Validate and format container name |
+| `check_container_exists()` | 425-437 | ✓ Yes | Prevent duplicates |
+| `get_host_gpu_architecture()` | 754-836 | ✓ Yes | Detect CUDA/ROCM |
+| `build_docker_run_command()` | 1463-1569 | ✓ Yes | **CRITICAL** - Constructs docker run command |
+| `build_docker_create_command()` | 1138-1456 | ✓ Yes | **CRITICAL** - Constructs docker create command |
+| `run_docker_command()` | 942-959 | ✓ Yes | Execute docker commands |
+| `short_home_path()` | 1122-1136 | ✓ Yes | Display ~/... instead of /home/user/... |
+| `are_you_sure()` | 381-423 | ✓ Yes | Confirmation prompts |
 
 ### AIME Functions Conditionally Used
 
@@ -272,7 +272,7 @@ container_tag = f"{validated_container_name}._.{user_id}"
 
 ## Recommendations
 
-### ✅ Current State is Good
+### ✓ Current State is Good
 
 **Strengths:**
 1. **Maximum code reuse** - 85-100% of AIME code actively used
@@ -287,7 +287,7 @@ container_tag = f"{validated_container_name}._.{user_id}"
 - Cgroup integration enables systemd slices
 - **All additions are necessary and well-integrated**
 
-### 📊 Code Reuse Score: 92/100
+### Code Reuse Score: 92/100
 
 **Calculation:**
 - create command (most used): 85% usage (custom path) to 100% (catalog path)
@@ -296,7 +296,7 @@ container_tag = f"{validated_container_name}._.{user_id}"
 - Deduct for unused commands (update-sys, export/import): -4.6%
 - **Final Score: 92%** - Excellent code reuse
 
-### 🎯 No Changes Needed
+### No Changes Needed
 
 **Conclusion:**
 The current integration is **nearly optimal**. DS01:
@@ -338,27 +338,27 @@ The current integration is **nearly optimal**. DS01:
 
 **Executed AIME Code:**
 ```
-Lines 92-380   ✅ get_flags() - Parse arguments
-Lines 1588-1594 ✅ Find ml_images.repo (DS01 patch)
-Lines 1597-1602 ✅ Get GPU architecture
-Lines 1605-1618 ✅ Validate architecture
-Lines 1622-1659 🔷 DS01 CUSTOM IMAGE PATH (bypass catalog)
-Lines 1648     ✅ existing_user_containers()
-Lines 1651-1653 ✅ get_container_name()
-Lines 1748-1920 ✅ Directory setup (workspace/data/models)
-Lines 1946-1948 ✅ Container tag generation
-Lines 1950-1954 ✅ check_container_exists()
-Lines 1961-1973 🔷 DS01 LOCAL IMAGE CHECK
-Lines 1975-2055 ✅ Container creation workflow
-  - Lines 1972-1985 ✅ User/group ID setup
-  - Lines 1987-2000 ✅ build_docker_run_command() call
-  - Lines 2002-2011 ✅ Volume mounting
-  - Lines 2013-2055 ✅ build_docker_create_command() + execution
+Lines 92-380   ✓ get_flags() - Parse arguments
+Lines 1588-1594 ✓ Find ml_images.repo (DS01 patch)
+Lines 1597-1602 ✓ Get GPU architecture
+Lines 1605-1618 ✓ Validate architecture
+Lines 1622-1659  DS01 CUSTOM IMAGE PATH (bypass catalog)
+Lines 1648     ✓ existing_user_containers()
+Lines 1651-1653 ✓ get_container_name()
+Lines 1748-1920 ✓ Directory setup (workspace/data/models)
+Lines 1946-1948 ✓ Container tag generation
+Lines 1950-1954 ✓ check_container_exists()
+Lines 1961-1973  DS01 LOCAL IMAGE CHECK
+Lines 1975-2055 ✓ Container creation workflow
+  - Lines 1972-1985 ✓ User/group ID setup
+  - Lines 1987-2000 ✓ build_docker_run_command() call
+  - Lines 2002-2011 ✓ Volume mounting
+  - Lines 2013-2055 ✓ build_docker_create_command() + execution
 ```
 
 **Bypassed AIME Code (Only When --image Used):**
 ```
-Lines 1661-1745 ❌ Catalog workflow
+Lines 1661-1745 ✗ Catalog workflow
   - extract_from_ml_images()
   - set_framework()
   - set_version()

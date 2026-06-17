@@ -579,7 +579,7 @@ fi
    ```bash
    # Compare Dockerfile timestamp vs image creation time
    if [ "$DOCKERFILE_MODIFIED" -gt "$IMAGE_CREATED" ]; then
-     echo "⚠ Dockerfile newer than image - rebuild recommended"
+     echo "Dockerfile newer than image - rebuild recommended"
    fi
    ```
 
@@ -664,7 +664,7 @@ bash "$ORIGINAL_MLC" ... -g=$GPU_ID
 
 ## 9. What Works Well in DS01
 
-### 9.1 ✅ 3-Tier Package System
+### 9.1 ✓ 3-Tier Package System
 
 Framework → Base → Use Case → Custom is **excellent UX**:
 - Users understand the progression
@@ -673,7 +673,7 @@ Framework → Base → Use Case → Custom is **excellent UX**:
 
 **Keep this!**
 
-### 9.2 ✅ Interactive Wizards
+### 9.2 ✓ Interactive Wizards
 
 `image-create` and `container-create` have great interactive modes:
 - Guided prompts
@@ -683,7 +683,7 @@ Framework → Base → Use Case → Custom is **excellent UX**:
 
 **Keep this!**
 
-### 9.3 ✅ Resource Limits Architecture
+### 9.3 ✓ Resource Limits Architecture
 
 - `resource-limits.yaml` is well-designed
 - Priority system is robust
@@ -692,7 +692,7 @@ Framework → Base → Use Case → Custom is **excellent UX**:
 
 **Keep this!**
 
-### 9.4 ✅ GPU Allocator Design
+### 9.4 ✓ GPU Allocator Design
 
 - State-based tracking
 - MIG-aware
@@ -701,7 +701,7 @@ Framework → Base → Use Case → Custom is **excellent UX**:
 
 **Keep this!**
 
-### 9.5 ✅ Dockerfile Storage Strategy
+### 9.5 ✓ Dockerfile Storage Strategy
 
 Centralized `~/dockerfiles/` with per-project option is smart:
 - Reduces duplication (one Dockerfile → many containers)
@@ -716,32 +716,32 @@ Centralized `~/dockerfiles/` with per-project option is smart:
 
 ### Critical Changes
 
-1. **✅ Start with AIME base images** instead of Docker Hub
+1. **✓ Start with AIME base images** instead of Docker Hub
    - `FROM aimehub/pytorch-2.5.1` not `FROM pytorch/pytorch:2.5.1`
 
-2. **✅ Create mlc-create-patched** that accepts custom images
+2. **✓ Create mlc-create-patched** that accepts custom images
    - Check if custom image provided → use it
    - Else → use AIME catalog
 
-3. **✅ Integrate GPU allocation** into container creation
+3. **✓ Integrate GPU allocation** into container creation
    - Call `gpu_allocator.py` BEFORE creating container
    - Pass specific GPU ID to mlc-create-patched
 
-4. **✅ Apply resource limits** at creation time
+4. **✓ Apply resource limits** at creation time
    - Pass all limits to mlc-create-patched
    - Don't rely on `docker update` afterward
 
-5. **✅ Standardize on aime.mlc labels**
+5. **✓ Standardize on aime.mlc labels**
    - Remove `ds01.*` labels
    - Use `aime.mlc.*` everywhere for compatibility
 
 ### Keep Unchanged
 
-1. ✅ **image-create workflow** (just change FROM line)
-2. ✅ **3-tier package system** (framework → base → use case → custom)
-3. ✅ **Interactive wizards** (excellent UX)
-4. ✅ **Resource management** (YAML parser, GPU allocator)
-5. ✅ **Tier 2/3/4 architecture** (modular commands → orchestrators → wizards)
+1. ✓ **image-create workflow** (just change FROM line)
+2. ✓ **3-tier package system** (framework → base → use case → custom)
+3. ✓ **Interactive wizards** (excellent UX)
+4. ✓ **Resource management** (YAML parser, GPU allocator)
+5. ✓ **Tier 2/3/4 architecture** (modular commands → orchestrators → wizards)
 
 ---
 

@@ -81,7 +81,7 @@ Key Pre-installed Packages:
   • numpy 2.2.6, pillow, tqdm
   • conda, ipython, psutil
 
-📋 View full package list? [y/N]:
+ View full package list? [y/N]:
 ```
 
 **Phase 2: Core Python & Interactive (Jupyter)**
@@ -114,7 +114,7 @@ Essential libraries for data analysis:
   • scikit-learn - Traditional ML algorithms
   • matplotlib, seaborn - Visualization
 
-⚠️  Note: These are NOT in AIME base (only numpy included)
+ Note: These are NOT in AIME base (only numpy included)
 
 Default packages: pandas scipy scikit-learn matplotlib seaborn
 

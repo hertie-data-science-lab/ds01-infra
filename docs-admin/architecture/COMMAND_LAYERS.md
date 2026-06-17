@@ -80,15 +80,15 @@ A framework-focused container management layer built on top of Docker. Focuses o
 
 | Command | What It Does | Docker Commands It Wraps | DS01 Usage |
 |---------|-------------|--------------------------|------------|
-| **mlc-create** | Creates container with specific framework/version | `docker pull` → `docker run` → `docker commit` → `docker create` | ✅ **WRAPPED** by `mlc-create-wrapper.sh` |
-| **mlc-open** | Opens shell to container (auto-starts if needed) | `docker start` → `docker exec` | ✅ **CALLED DIRECTLY** by `container-run` |
-| **mlc-list** | Lists user's containers with framework info | `docker ps -a --filter label=aime.mlc` | ❌ **NOT USED** - DS01 built custom |
-| **mlc-stats** | Shows CPU/memory usage of running containers | `docker stats --format` | ✅ **WRAPPED** by `mlc-stats-wrapper.sh` |
-| **mlc-start** | Starts container without opening shell | `docker start` | ❌ **NOT USED** - DS01 uses `docker start` directly |
-| **mlc-stop** | Stops running container (with confirmation) | `docker stop` | ❌ **NOT USED** - DS01 built custom |
-| **mlc-remove** | Deletes container and its committed image | `docker rm` → `docker rmi` | ❌ **NOT USED** - DS01 built custom |
-| **mlc-update-sys** | Updates MLC system via git pull | Git operations | ❌ **NOT USED** - Not needed |
-| **mlc-upgrade-sys** | Upgrades from MLC v1 to v2 | Git operations | ❌ **NOT USED** - DS01 uses v1 intentionally |
+| **mlc-create** | Creates container with specific framework/version | `docker pull` → `docker run` → `docker commit` → `docker create` | ✓ **WRAPPED** by `mlc-create-wrapper.sh` |
+| **mlc-open** | Opens shell to container (auto-starts if needed) | `docker start` → `docker exec` | ✓ **CALLED DIRECTLY** by `container-run` |
+| **mlc-list** | Lists user's containers with framework info | `docker ps -a --filter label=aime.mlc` | ✗ **NOT USED** - DS01 built custom |
+| **mlc-stats** | Shows CPU/memory usage of running containers | `docker stats --format` | ✓ **WRAPPED** by `mlc-stats-wrapper.sh` |
+| **mlc-start** | Starts container without opening shell | `docker start` | ✗ **NOT USED** - DS01 uses `docker start` directly |
+| **mlc-stop** | Stops running container (with confirmation) | `docker stop` | ✗ **NOT USED** - DS01 built custom |
+| **mlc-remove** | Deletes container and its committed image | `docker rm` → `docker rmi` | ✗ **NOT USED** - DS01 built custom |
+| **mlc-update-sys** | Updates MLC system via git pull | Git operations | ✗ **NOT USED** - Not needed |
+| **mlc-upgrade-sys** | Upgrades from MLC v1 to v2 | Git operations | ✗ **NOT USED** - DS01 uses v1 intentionally |
 
 ### AIME MLC Features
 
@@ -115,7 +115,7 @@ A framework-focused container management layer built on top of Docker. Focuses o
 
 ### Why DS01 Uses Only 3 of 9 MLC Commands
 
-**✅ Commands DS01 Uses:**
+**✓ Commands DS01 Uses:**
 
 1. **mlc-create** - WRAPPED because:
    - Excellent framework version selection
@@ -131,7 +131,7 @@ A framework-focused container management layer built on top of Docker. Focuses o
    - Good basic stats display
    - But needs GPU process information added
 
-**❌ Commands DS01 Does NOT Use:**
+**✗ Commands DS01 Does NOT Use:**
 
 | MLC Command | Why DS01 Built Custom |
 |-------------|----------------------|
