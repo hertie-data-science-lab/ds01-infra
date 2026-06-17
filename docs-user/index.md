@@ -1,5 +1,13 @@
 # DS01 User Documentation
 
+**New here? Pick a path:**
+
+| [**Deploy in ~30 minutes →**](quickstart.md) | [**Explore the full guide →**](getting-started/) |
+|:---|:---|
+| Get straight to a running GPU container: connect via SSH, set up your keys, and deploy your first containerised project. | Work through the docs properly — setup, key concepts, daily workflow, then intermediate and advanced topics at your own pace. |
+
+---
+
 ## Documentation Structure
 
 ```
