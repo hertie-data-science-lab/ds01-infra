@@ -31,16 +31,12 @@ trap 'rm -f "$TEMP_INDEX"' EXIT
 # Start with the current HEAD tree (all tracked files)
 git read-tree HEAD
 
-# Force-add all excluded directories and files
-for path in .planning .product hb_learning .dotconfigs; do
-    if [ -e "$path" ]; then
-        git add --force "$path"
-    fi
-done
-
-# Force-add per-user data: git-excluded in the org repo (origin), but the
-# full/downstream repo retains the complete copy.
-for path in config/runtime/groups config/runtime/user-overrides.yaml config/runtime/group-overrides.txt config/runtime/lifecycle-exemptions.yaml; do
+# Force-add everything git-excluded from the org repo so the full/downstream
+# repo keeps a complete copy: dev/planning dirs and the per-user data
+# (member lists, overrides, exemptions) that origin no longer tracks.
+for path in .planning .product hb_learning .dotconfigs \
+    config/runtime/groups config/runtime/user-overrides.yaml \
+    config/runtime/group-overrides.txt config/runtime/lifecycle-exemptions.yaml; do
     if [ -e "$path" ]; then
         git add --force "$path"
     fi
