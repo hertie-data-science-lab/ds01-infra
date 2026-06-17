@@ -13,7 +13,7 @@ Hybrid resource management system with MIG support:
 
 ## Key Design Decisions
 
-### 1. **MIG Partitioning for Fair GPU Sharing** ⭐
+### 1. **MIG Partitioning for Fair GPU Sharing**
 
 **Problem:** 4 GPUs, many users, episodic workloads
 
@@ -158,7 +158,7 @@ user_overrides:
 
 ## Implementation Steps
 
-### **Step 1: Setup MIG (CRITICAL)** ⭐
+### **Step 1: Setup MIG (CRITICAL)**
 
 ```bash
 # Enable MIG on all A100s

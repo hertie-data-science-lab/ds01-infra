@@ -27,7 +27,7 @@ docs/
 ### Path 1: Beginner (Students, First-Time Users)
 **"I just want to work on my thesis"**
 
-> **⏱ In a hurry?** Try the [Quickstart](quickstart.md) for a condensed intro (~30 min).
+> **In a hurry?** Try the [Quickstart](quickstart.md) for a condensed intro (~30 min).
 
 **Essential (do these first):**
 1. [Prerequisites](getting-started/prerequisites.md) - Check what you need

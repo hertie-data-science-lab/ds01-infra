@@ -1,10 +1,19 @@
 # DS01 Infrastructure
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/) [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff) [![Docs](https://img.shields.io/badge/docs-end%20user%20docs-blue)](https://hertie-data-science-lab.github.io/ds01/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Code style: Ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff) [![Docs](https://img.shields.io/badge/docs-live-blue)](https://hertie-data-science-lab.github.io/ds01-infra/)
 
-**Multi-user containerised ML workload management for data science research labs** 
+**Multi-user containerised ML workload management for data science research labs.**
 
 DS01 brings container-based compute allocation, per-user resource limits, and automated lifecycle management to small-to-medium research organisations running shared GPU servers.
+
+## Documentation
+
+| Site | For | |
+|------|-----|---|
+| **[Full documentation](https://hertie-data-science-lab.github.io/ds01-infra/)** | Users, admins & contributors | install, operations, architecture, internals |
+| **[User guide](https://hertie-data-science-lab.github.io/ds01/)** | Researchers & students | get a container running in ~30 minutes |
+
+Everything below is a quick orientation for people browsing this repository — the sites above are the source of truth for usage and operations.
 
 ## Why DS01?
 
@@ -14,103 +23,45 @@ DS01 brings container-based compute allocation, per-user resource limits, and au
 | **Resource hogging** | Per-user/group limits via YAML + systemd cgroups |
 | **Stale containers** | Automated idle detection and cleanup |
 | **Complex onboarding** | Educational wizards guide new users |
-| **Container sprawl** | Ephemeral model - GPUs freed on retire |
-| **Observsability stack** | Prometheus & Grafana dashboard configs |
-| **Green Computing** | Energy use & carbon emission estimation tracking |
+| **Container sprawl** | Ephemeral model — GPUs freed on retire |
+| **Observability** | Prometheus & Grafana dashboard configs |
+| **Green computing** | Energy use & carbon emission tracking |
 
-**Built on proven foundations:**
-- [AIME ML Containers](https://github.com/aime-team/aime-ml-containers) for container management
-- Docker + NVIDIA Container Toolkit for GPU passthrough
-- VS Code Dev Containers for IDE integration
-- systemd cgroups for resource isolation
-- Prometheus + Grafana for monitoring and metrics
-
-## Quick Start
-
-### For Administrators
-
-TODO: this is out of date
-
-```bash
-# Clone to standard location
-sudo git clone https://github.com/hertie-data-science-lab/ds01-infra /opt/ds01-infra
-cd /opt/ds01-infra
-
-# Deploy commands and configure slices
-sudo scripts/system/deploy-commands.sh
-sudo scripts/system/setup-resource-slices.sh
-
-# Add a user
-sudo scripts/system/add-user-to-docker.sh alice
-```
-
-### For End Users
-
-See the [End User Quickstart Guide](https://hertie-data-science-lab.github.io/ds01/quickstart) for getting started with DS01.
-
-```bash
-user-setup              # Guided onboarding
-project init my-thesis  # Create project with Dockerfile
-container deploy        # Launch container with GPU
-```
-
-## Features
-
-### GPU Resource Management
-- **MIG-aware allocation** - Track and assign MIG instances or full GPUs
-- **Priority scheduling** - Admins/researchers get priority over students
-- **Access control** - Students get MIG only, researchers get full GPUs
-- **Automatic release** - GPUs freed when containers stop
-
-### Per-User Resource Limits
-```yaml
-# config/resource-limits.yaml
-defaults:
-  max_mig_instances: 1
-  max_cpus: 8
-  memory: "32g"
-  idle_timeout: "48h"
-
-groups:
-  researchers:
-    max_mig_instances: 2
-    memory: "64g"
-    allow_full_gpu: true
-```
-
-### Container Lifecycle Automation
-- **Idle detection** - Auto-stop containers below CPU threshold
-- **Runtime limits** - Enforce maximum container runtime
-- **GPU cleanup** - Release allocations from stopped containers
-- **Container removal** - Auto-remove stale stopped containers
-
-### User-Friendly Workflows
-- **4-tier help system** - `--help`, `--info`, `--concepts`, `--guided`
-- **Interactive wizards** - Guide users through complex operations
-- **Project-centric model** - Dockerfiles persist, containers are ephemeral
+**Built on:** [AIME ML Containers](https://github.com/aime-team/aime-ml-containers) · Docker + NVIDIA Container Toolkit · VS Code Dev Containers · systemd cgroups · Prometheus + Grafana.
 
 ## Architecture
 
-DS01 uses a **5-layer modular architecture**:
+DS01 wraps (rather than replaces) AIME MLC in a 5-layer command stack:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ L4: Wizards      user-setup, project-init, project-launch       │
-├─────────────────────────────────────────────────────────────────┤
-│ L3: Orchestrators   container deploy, container retire          │
-├─────────────────────────────────────────────────────────────────┤
-│ L2: Atomic          container-*, image-*                        │
-├─────────────────────────────────────────────────────────────────┤
-│ L1: MLC             mlc-patched.py (AIME + custom images)       │
-├─────────────────────────────────────────────────────────────────┤
-│ L0: Docker          Foundation runtime                          │
-└─────────────────────────────────────────────────────────────────┘
+L4: Wizards        user-setup, project-init, project-launch
+L3: Orchestrators  container deploy, container retire
+L2: Atomic         container-*, image-*
+L1: MLC            mlc-patched.py (AIME + custom images)
+L0: Docker         foundation runtime
 ```
 
-**Design principles:**
-- Wrap AIME, don't replace it (2.5% patch for custom image support)
-- Single-purpose commands compose into workflows
-- Universal enforcement via Docker wrapper + systemd cgroups
+Single-purpose commands compose into workflows; enforcement is universal via a Docker wrapper + systemd cgroups. See [Admin → Architecture](https://hertie-data-science-lab.github.io/ds01-infra/admin/architecture) for the full design.
+
+## Getting started
+
+**Users** — see the [30-minute quickstart](https://hertie-data-science-lab.github.io/ds01/quickstart). In short:
+
+```bash
+user-setup              # guided onboarding
+project init my-thesis  # create a project with a Dockerfile
+container deploy        # launch a container with a GPU
+```
+
+**Administrators** — see [Admin → Installation](https://hertie-data-science-lab.github.io/ds01-infra/admin/installation) for the full deployment guide. In short:
+
+```bash
+sudo git clone https://github.com/hertie-data-science-lab/ds01-infra /opt/ds01-infra
+cd /opt/ds01-infra
+sudo scripts/system/deploy-commands.sh        # deploy commands to PATH
+sudo scripts/system/setup-resource-slices.sh  # configure systemd slices
+sudo scripts/system/add-user-to-docker.sh alice
+```
 
 ## Requirements
 
@@ -120,155 +71,30 @@ DS01 uses a **5-layer modular architecture**:
 - **Python:** 3.8+ with PyYAML
 - **AIME:** [aime-ml-containers](https://github.com/aime-team/aime-ml-containers) v2
 
-## Installation
-
-### 1. Prerequisites
-
-```bash
-# Install NVIDIA Container Toolkit
-distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
-  sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-
-# Install AIME ML Containers
-sudo git clone https://github.com/aime-team/aime-ml-containers /opt/aime-ml-containers
-```
-
-### 2. Install DS01
-
-```bash
-# Clone repository
-sudo git clone https://github.com/hertie-data-science-lab/ds01-infra /opt/ds01-infra
-cd /opt/ds01-infra
-
-# Make scripts executable
-find scripts -type f \( -name "*.sh" -o -name "*.py" \) -exec chmod +x {} \;
-
-# Deploy commands to PATH
-sudo scripts/system/deploy-commands.sh
-
-# Configure systemd slices
-sudo scripts/system/setup-resource-slices.sh
-sudo systemctl daemon-reload
-```
-
-### 3. Configure Resource Limits
-
-```bash
-sudo vim config/resource-limits.yaml
-```
-
-Define your groups and limits. See [config/README.md](config/README.md) for full reference.
-
-### 4. Add Users
-
-```bash
-# Add user to docker group with DS01 slice
-sudo scripts/system/add-user-to-docker.sh username
-
-# User must log out and back in
-```
-
-## Usage
-
-### For Users
-
-```bash
-# First-time setup
-user-setup                              # Guided onboarding wizard
-
-# Project workflow
-project init my-thesis --type=cv        # Create project structure
-project launch my-thesis                # Build image + deploy container
-
-# Container management
-container deploy my-project             # Launch container
-container retire my-project             # Stop + remove + free GPU
-
-# Check your limits
-check-limits                            # View resource usage and limits
-```
-
-### For Administrators
-
-TODO: this needs updating 
-
-```bash
-# System status
-dashboard                               # GPU, containers, system overview
-dashboard users                         # Per-user breakdown
-
-# User management
-sudo scripts/system/add-user-to-docker.sh newuser
-
-# GPU status
-python3 scripts/docker/gpu_allocator.py status
-
-# Logs
-tail -f /var/log/ds01/gpu-allocations.log
-```
-
-## Directory Structure
-
-TODO: this needs updating 
+## Repository layout
 
 ```
 ds01-infra/
-├── config/
-│   ├── resource-limits.yaml    # Central resource configuration
-│   └── groups/                 # Group membership files
-├── scripts/
-│   ├── docker/                 # GPU allocation, container creation
-│   ├── user/                   # User-facing commands (L2-L4)
-│   ├── admin/                  # Admin tools and dashboards
-│   ├── lib/                    # Shared libraries
-│   ├── system/                 # System administration
-│   ├── monitoring/             # Metrics and health checks
-│   └── maintenance/            # Cleanup automation
-├── testing/                    # Test suites
-└── docs-user/                  # User documentation
+├── config/        # resource-limits.yaml + group membership
+├── scripts/       # docker/ user/ admin/ lib/ system/ monitoring/ maintenance/
+├── monitoring/    # Prometheus + Grafana stack
+├── testing/       # test suites
+├── docs-user/     # end-user docs (source of truth; synced to the ds01-hub site)
+├── docs-admin/    # admin & ops docs
+├── docs-develop/  # contributor docs
+└── website/       # Docusaurus site (full docs)
 ```
 
-## Documentation
-
-TODO: this needs updating 
-
-| Document | Purpose |
-|----------|---------|
-| [ds01-UI_UX_GUIDE.md](ds01-UI_UX_GUIDE.md) | CLI design standards |
-| [config/README.md](config/README.md) | Resource configuration reference |
-| [scripts/user/README.md](scripts/user/README.md) | User command reference |
-| [scripts/admin/README.md](scripts/admin/README.md) | Admin tools reference |
-| [scripts/docker/README.md](scripts/docker/README.md) | GPU allocation internals |
-| [scripts/monitoring/README.md](scripts/monitoring/README.md) | Monitoring setup |
-| [scripts/maintenance/README.md](scripts/maintenance/README.md) | Cleanup automation |
+Subsystem READMEs live next to the code (`scripts/lib/`, `scripts/user/`, `monitoring/`, `config/`, …) and are indexed from [Developer → Subsystem references](https://hertie-data-science-lab.github.io/ds01-infra/develop/subsystem-references).
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-**Commit format:** [Conventional Commits](https://www.conventionalcommits.org/)
-```bash
-feat: add feature     # MINOR bump
-fix: resolve bug      # PATCH bump
-feat!: breaking       # MAJOR bump
-```
-
-## Roadmap
-
-See [TODO.md](TODO.md) for current priorities:
-- **HIGH:** Dev Container GPU integration, monitoring fixes
-- **MEDIUM:** OPA authorization, bare metal restriction
-- **LOW:** SLURM integration, dynamic MIG partitioning
+See [CONTRIBUTING.md](CONTRIBUTING.md). PRs use [Conventional Commits](https://www.conventionalcommits.org/) (`type(scope): subject`) and are squash-merged to `main`.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).
 
 ---
 
-**Developed by [Henry Baker](https://henrycgbaker.github.io/) for the [Hertie School Data Science Lab](https://www.hertie-school.org/en/datasciencelab)**
-
-📖 [User Documentation](https://hertie-data-science-lab.github.io/ds01/) · 🐛 [Report Issues](https://github.com/hertie-data-science-lab/ds01-hub/issues)
+Developed by [Henry Baker](https://henrycgbaker.github.io/) for the [Hertie School Data Science Lab](https://www.hertie-school.org/en/datasciencelab). · [Report an issue](https://github.com/hertie-data-science-lab/ds01-hub/issues)
