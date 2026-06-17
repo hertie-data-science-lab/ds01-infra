@@ -134,7 +134,7 @@ const config: Config = {
         },
         {
           href: 'https://hertie-data-science-lab.github.io/ds01/',
-          label: 'End-user site ↗',
+          label: 'End-user site',
           position: 'right',
         },
         {

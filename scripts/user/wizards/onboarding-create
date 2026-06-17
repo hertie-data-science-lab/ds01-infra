@@ -20,7 +20,7 @@ ONBOARDING_FILE="$HOME/ONBOARDING.md"
 # Contact info placeholders - edit these for your deployment
 ENGINEER_EMAIL="[ENGINEER_EMAIL]"
 LAB_EMAIL="[LAB_EMAIL]"
-USER_DOCS_URL="https://github.com/hertie-data-science-lab/ds01-user-docs"
+USER_DOCS_URL="https://hertie-data-science-lab.github.io/ds01/"
 
 usage() {
     echo ""

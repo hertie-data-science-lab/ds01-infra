@@ -9,19 +9,16 @@ import Link from '@docusaurus/Link';
 const pillars = [
   {
     to: '/guide',
-    emoji: '📘',
     title: 'User Guide',
     desc: 'For researchers and students: getting started, daily workflows, GPU usage, scripting, and troubleshooting.',
   },
   {
     to: '/admin',
-    emoji: '🛠️',
     title: 'Admin & Ops',
     desc: 'For maintainers: architecture, installation, system configuration, monitoring, maintenance, and security.',
   },
   {
     to: '/develop',
-    emoji: '🧑‍💻',
     title: 'Developer',
     desc: 'For contributors: development setup, contributing guide, and pointers into the subsystem references.',
   },
@@ -41,9 +38,7 @@ export default function Home(): JSX.Element {
         <div className="pillarGrid">
           {pillars.map((p) => (
             <Link key={p.to} className="pillarCard" to={p.to}>
-              <h3>
-                {p.emoji} {p.title}
-              </h3>
+              <h3>{p.title}</h3>
               <p>{p.desc}</p>
             </Link>
           ))}

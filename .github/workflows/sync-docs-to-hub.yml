@@ -28,23 +28,12 @@ jobs:
 
       - name: Sync documentation
         run: |
-          # Remove old docs in target (preserve other content)
-          rm -rf target/docs/
+          # Mirror ALL of docs-user/ into the hub's docs/ (excluding any
+          # internal-only subtree). Using rsync --delete keeps the target an
+          # exact mirror and avoids the drift the old hand-listed copy caused
+          # (e.g. silently dropping newly-added top-level files).
           mkdir -p target/docs/
-
-          # Sync user-facing docs only (from docs-user/ in source)
-          cp source/docs-user/README.md target/docs/
-          cp source/docs-user/index.md target/docs/
-          cp source/docs-user/quick-reference.md target/docs/
-          cp source/docs-user/quickstart.md target/docs/
-          cp -r source/docs-user/getting-started target/docs/
-          cp -r source/docs-user/key-concepts target/docs/
-          cp -r source/docs-user/core-guides target/docs/
-          cp -r source/docs-user/intermediate target/docs/
-          cp -r source/docs-user/background target/docs/
-          cp -r source/docs-user/reference target/docs/
-          cp -r source/docs-user/troubleshooting target/docs/
-          cp -r source/docs-user/advanced target/docs/
+          rsync -a --delete --exclude 'internal' source/docs-user/ target/docs/
 
       - name: Check for changes
         id: changes

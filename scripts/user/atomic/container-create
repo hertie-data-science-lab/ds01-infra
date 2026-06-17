@@ -944,7 +944,7 @@ if [ "$CPU_ONLY" != true ] && [ "$NUM_MIGS" -eq 1 ]; then
             echo -e "    • Request a ${BOLD}full GPU${NC} instead (40GB VRAM)"
             echo -e "    • Or reduce batch size to fit single MIG (10GB)"
             echo ""
-            echo -e "  ${DIM}See: https://ds01-hub.hertie-school.org/docs/multi-mig-training${NC}"
+            echo -e "  ${DIM}See: https://hertie-data-science-lab.github.io/ds01/advanced/multi-mig-training${NC}"
             echo ""
             read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
             read -p "Proceed with multi-MIG? [Y/n, default: Y]: " CONFIRM </dev/tty
