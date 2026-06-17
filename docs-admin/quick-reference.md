@@ -339,7 +339,7 @@ tail /var/log/ds01/gpu-allocations.log | grep priority
 - `scripts/docker/gpu_allocator.py` (MIG + priority aware)
 - `scripts/monitoring/gpu-status-dashboard.py` (MIG aware)
 - `scripts/system/setup-var-directories.sh`
-- `docs-admin/mig-setup-guide.md` ⭐
+- `docs-admin/mig-setup-guide.md`
 
 **Updated:**
 - `config/resource-limits.yaml` (priority, reservations, MIG, corrected limits)
