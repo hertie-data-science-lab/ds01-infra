@@ -195,8 +195,18 @@
             "uid": "prometheus"
           },
           "expr": "sum(ds01_group_members_total)",
-          "legendFormat": "",
+          "legendFormat": "Current",
           "refId": "A",
+          "instant": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max_over_time(sum(ds01_group_members_total)[$__range:1h])",
+          "legendFormat": "Peak (30d)",
+          "refId": "B",
           "instant": true
         }
       ]
