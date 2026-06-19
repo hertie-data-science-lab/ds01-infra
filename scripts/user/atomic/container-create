@@ -43,8 +43,7 @@ usage() {
     echo -e "${CYAN}Options:${NC}"
     echo "  --guided          Show detailed explanations for beginners"
     echo "  --cpu-only        Create CPU-only container (no GPU)"
-    echo "  --num-migs=N      Request N MIG partitions (default: 1)"
-    echo "  --prefer-full     Prefer full GPU over MIG partitions"
+    echo "  --num-gpus=N      Request N GPU slots (default: 1)"
     echo "  -w, --workspace   Workspace directory (default: ~/workspace/<name>)"
     echo "  -d, --data        Additional data directory to mount"
     echo "  --dry-run         Show what would be created"
@@ -100,8 +99,7 @@ detailed_help() {
     echo -e "${BOLD}Options:${NC}"
     echo "  --guided          Interactive mode with detailed explanations"
     echo "  --cpu-only        Create CPU-only container (no GPU allocation)"
-    echo "  --num-migs=N      Request N MIG partitions (default: 1)"
-    echo "  --prefer-full     Prefer full GPU over MIG partitions"
+    echo "  --num-gpus=N      Request N GPU slots (default: 1)"
     echo "  -w, --workspace   Custom workspace directory"
     echo "                    Default: ~/workspace/<container-name>"
     echo "  -d, --data        Additional data directory to mount (read-only)"
@@ -233,8 +231,8 @@ CPU_ONLY=false
 WORKSPACE_DIR=""
 DATA_DIR=""
 DRY_RUN=false
-NUM_MIGS=1              # Number of MIG-equivalents (CLI override)
-PREFER_FULL=false       # Prefer full GPU over MIGs
+NUM_GPUS=1              # Number of GPU slots to request (CLI override)
+PREFER_FULL=false       # Deprecated: prefer full GPU (no-op, slots are full GPUs)
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -258,8 +256,8 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
-        --num-migs=*)
-            NUM_MIGS="${1#*=}"
+        --num-gpus=*)
+            NUM_GPUS="${1#*=}"
             shift
             ;;
         --prefer-full)
@@ -765,57 +763,40 @@ CONTAINER_NAME=$(echo "$CONTAINER_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-
 CONTAINER_TAG="${CONTAINER_NAME}._.${USER_ID}"
 
 # =============================================================================
-# MIG/GPU Count Selection (for GPU-enabled containers)
+# GPU Slot Count Selection (for GPU-enabled containers)
 # =============================================================================
-# Shows for all users with multi-GPU permissions, unless:
+# One unit = one GPU slot (a full GPU today; a MIG instance later). Shown for all
+# users with multi-GPU permissions, unless:
 # - CPU_ONLY mode is selected
-# - User already specified --num-migs on command line
+# - User already specified --num-gpus on command line
 
-if [ "$CPU_ONLY" != true ] && [ "$NUM_MIGS" -eq 1 ]; then
-    # Get user's limits
-    MAX_MIG_PER_CONTAINER=$(python3 "$RESOURCE_PARSER" "$USERNAME" --max-mig-per-container 2>/dev/null || echo "1")
-    MAX_MIG_TOTAL=$(python3 "$RESOURCE_PARSER" "$USERNAME" --max-gpus 2>/dev/null || echo "2")
-    ALLOW_FULL_GPU=$(python3 "$RESOURCE_PARSER" "$USERNAME" --allow-full-gpu 2>/dev/null || echo "false")
-    MIG_PER_GPU=$(python3 "$RESOURCE_PARSER" "$USERNAME" --mig-instances-per-gpu 2>/dev/null || echo "4")
+if [ "$CPU_ONLY" != true ] && [ "$NUM_GPUS" -eq 1 ]; then
+    # Get user's limits (slot-based)
+    MAX_SLOTS_PER_CONTAINER=$(python3 "$RESOURCE_PARSER" "$USERNAME" --max-mig-per-container 2>/dev/null || echo "1")
+    MAX_SLOTS_TOTAL=$(python3 "$RESOURCE_PARSER" "$USERNAME" --max-gpus 2>/dev/null || echo "2")
 
-    # Get user's current allocation count
-    CURRENT_ALLOC=$(python3 "$INFRA_ROOT/scripts/docker/gpu-state-reader.py" user-mig-total "$USERNAME" 2>/dev/null || echo "0")
+    # Get user's current allocation count (GPU slots)
+    CURRENT_ALLOC=$(python3 "$INFRA_ROOT/scripts/docker/gpu-state-reader.py" user-gpu-count "$USERNAME" 2>/dev/null || echo "0")
 
     # Calculate remaining quota
-    if [ "$MAX_MIG_TOTAL" = "unlimited" ] || [ "$MAX_MIG_TOTAL" = "null" ]; then
+    if [ "$MAX_SLOTS_TOTAL" = "unlimited" ] || [ "$MAX_SLOTS_TOTAL" = "null" ]; then
         REMAINING_QUOTA=999
     else
-        REMAINING_QUOTA=$((MAX_MIG_TOTAL - CURRENT_ALLOC))
+        REMAINING_QUOTA=$((MAX_SLOTS_TOTAL - CURRENT_ALLOC))
         [ "$REMAINING_QUOTA" -lt 0 ] && REMAINING_QUOTA=0
     fi
 
-    # Only show GPU selection if user can have more than 1 GPU/MIG per container
-    if [ "$MAX_MIG_PER_CONTAINER" != "1" ] && [ "$MAX_MIG_PER_CONTAINER" != "" ]; then
-        # Auto-detect: MIG mode or full GPU mode
-        MIG_COUNT=$(nvidia-smi -L 2>/dev/null | grep -c "MIG") || MIG_COUNT=0
-        PHYS_GPU_COUNT=$(nvidia-smi -L 2>/dev/null | grep -c "^GPU") || PHYS_GPU_COUNT=4
-
-        if [ "$MIG_COUNT" -gt 0 ]; then
-            # MIG mode: count MIG instances
-            TOTAL_GPUS=$MIG_COUNT
-            GPU_UNIT="MIG partition"
-            GPU_UNITS="MIG partitions"
-            IS_MIG_MODE=true
-        else
-            # Full GPU mode: count physical GPUs
-            TOTAL_GPUS=$PHYS_GPU_COUNT
-            GPU_UNIT="GPU"
-            GPU_UNITS="GPUs"
-            IS_MIG_MODE=false
-            # In full GPU mode, MIG_PER_GPU is 1 (each GPU is a single unit)
-            MIG_PER_GPU=1
-        fi
+    # Only show GPU selection if user can have more than 1 GPU slot per container
+    if [ "$MAX_SLOTS_PER_CONTAINER" != "1" ] && [ "$MAX_SLOTS_PER_CONTAINER" != "" ]; then
+        # Count physical GPUs available (each GPU = 1 slot; MIG off)
+        TOTAL_GPUS=$(nvidia-smi -L 2>/dev/null | grep -c "^GPU") || TOTAL_GPUS=4
+        [ "$TOTAL_GPUS" -lt 1 ] && TOTAL_GPUS=4
 
         # Determine max option: min(per_container_limit, remaining_quota, system_available)
-        if [ "$MAX_MIG_PER_CONTAINER" = "unlimited" ] || [ "$MAX_MIG_PER_CONTAINER" = "null" ]; then
+        if [ "$MAX_SLOTS_PER_CONTAINER" = "unlimited" ] || [ "$MAX_SLOTS_PER_CONTAINER" = "null" ]; then
             MAX_OPTION=$REMAINING_QUOTA
         else
-            MAX_OPTION=$MAX_MIG_PER_CONTAINER
+            MAX_OPTION=$MAX_SLOTS_PER_CONTAINER
             [ "$MAX_OPTION" -gt "$REMAINING_QUOTA" ] && MAX_OPTION=$REMAINING_QUOTA
         fi
         [ "$MAX_OPTION" -gt "$TOTAL_GPUS" ] && MAX_OPTION=$TOTAL_GPUS
@@ -825,11 +806,11 @@ if [ "$CPU_ONLY" != true ] && [ "$NUM_MIGS" -eq 1 ]; then
             echo -e "${RED}Cannot allocate GPU resources.${NC}"
             echo ""
             echo "Your limits:"
-            echo "  • Per container: up to $MAX_MIG_PER_CONTAINER $GPU_UNITS"
-            echo "  • Total (all containers): up to $MAX_MIG_TOTAL $GPU_UNITS"
+            echo "  • Per container: up to $MAX_SLOTS_PER_CONTAINER GPUs"
+            echo "  • Total (all containers): up to $MAX_SLOTS_TOTAL GPUs"
             echo ""
             echo "Current usage:"
-            echo "  • You have $CURRENT_ALLOC $GPU_UNITS allocated"
+            echo "  • You have $CURRENT_ALLOC GPUs allocated"
             echo "  • Remaining quota: $REMAINING_QUOTA"
             echo ""
             echo -e "${CYAN}To free up resources:${NC}"
@@ -842,125 +823,48 @@ if [ "$CPU_ONLY" != true ] && [ "$NUM_MIGS" -eq 1 ]; then
         if [ "$MAX_OPTION" -gt 1 ]; then
             echo -e "${BOLD}GPU Allocation:${NC}"
             echo ""
-            if [ "$IS_MIG_MODE" = true ]; then
-                echo -e "${DIM}Mode: MIG (Multi-Instance GPU) — each partition is ~10GB VRAM${NC}"
-            else
-                echo -e "${DIM}Mode: Full GPUs — each GPU is ~40GB VRAM${NC}"
-            fi
+            echo -e "${DIM}Mode: Full GPUs — each GPU is ~40GB VRAM${NC}"
             echo ""
             if [ "$CURRENT_ALLOC" -gt 0 ]; then
-                echo "Current allocation: $CURRENT_ALLOC $GPU_UNITS"
+                echo "Current allocation: $CURRENT_ALLOC GPUs"
             fi
-            echo "Available for this container: up to $MAX_OPTION $GPU_UNITS"
+            echo "Available for this container: up to $MAX_OPTION GPUs"
             echo ""
-            if [ "$IS_MIG_MODE" = true ]; then
-                echo "How many $GPU_UNITS do you need? (1 full GPU = $MIG_PER_GPU MIGs)"
-            else
-                echo "How many $GPU_UNITS do you need?"
-            fi
+            echo "How many GPUs do you need?"
             echo ""
 
             # Show dynamic options
             for i in $(seq 1 $MAX_OPTION); do
-                GPU_EQUIV=""
-                if [ "$IS_MIG_MODE" = true ] && [ "$((i % MIG_PER_GPU))" -eq 0 ]; then
-                    GPU_COUNT=$((i / MIG_PER_GPU))
-                    GPU_EQUIV=" = ${GPU_COUNT} full GPU(s)"
-                fi
                 if [ "$i" -eq 1 ]; then
-                    echo -e "  ${BOLD}${i})${NC} ${i} ${GPU_UNIT}${GPU_EQUIV} ${GREEN}(recommended)${NC}"
+                    echo -e "  ${BOLD}${i})${NC} ${i} GPU ${GREEN}(recommended)${NC}"
                 else
-                    echo -e "  ${BOLD}${i})${NC} ${i} ${GPU_UNITS}${GPU_EQUIV}"
+                    echo -e "  ${BOLD}${i})${NC} ${i} GPUs"
                 fi
             done
             echo ""
             read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
-            read -p "Enter number of $GPU_UNITS [1-$MAX_OPTION, default: 1]: " MIG_CHOICE </dev/tty
-            MIG_CHOICE=${MIG_CHOICE:-1}
+            read -p "Enter number of GPUs [1-$MAX_OPTION, default: 1]: " GPU_CHOICE </dev/tty
+            GPU_CHOICE=${GPU_CHOICE:-1}
         else
-            # User can only allocate 1 GPU/MIG, skip selection
-            MIG_CHOICE=1
+            # User can only allocate 1 GPU, skip selection
+            GPU_CHOICE=1
         fi
 
         # Validate choice
-        if [[ "$MIG_CHOICE" =~ ^[0-9]+$ ]] && [ "$MIG_CHOICE" -ge 1 ] && [ "$MIG_CHOICE" -le "$MAX_OPTION" ]; then
-            NUM_MIGS=$MIG_CHOICE
+        if [[ "$GPU_CHOICE" =~ ^[0-9]+$ ]] && [ "$GPU_CHOICE" -ge 1 ] && [ "$GPU_CHOICE" -le "$MAX_OPTION" ]; then
+            NUM_GPUS=$GPU_CHOICE
         else
-            NUM_MIGS=1
+            NUM_GPUS=1
         fi
         echo ""
 
-        # Full GPU option (only in MIG mode when user has allow_full_gpu and requesting enough MIGs for a full GPU)
-        # In full GPU mode, this menu doesn't make sense - you already get full GPUs
-        if [ "$IS_MIG_MODE" = true ] && [ "$ALLOW_FULL_GPU" = "true" ] && [ "$NUM_MIGS" -ge "$MIG_PER_GPU" ]; then
-            # Calculate full GPUs and remaining MIGs dynamically
-            num_full_gpus=$((NUM_MIGS / MIG_PER_GPU))
-            remaining_migs=$((NUM_MIGS % MIG_PER_GPU))
-
-            # Build description for option 2
-            full_gpu_desc=""
-            if [ "$num_full_gpus" -eq 1 ]; then
-                full_gpu_desc="1 Full GPU"
-            else
-                full_gpu_desc="$num_full_gpus Full GPUs"
-            fi
-            if [ "$remaining_migs" -gt 0 ]; then
-                full_gpu_desc="$full_gpu_desc + $remaining_migs MIG partition(s)"
-            fi
-
-            echo -e "${BOLD}GPU Type Preference:${NC}"
-            echo ""
-            echo -e "  ${BOLD}1)${NC} $NUM_MIGS distributed MIG partitions ${GREEN}(default - better for shared resources)${NC}"
-            echo -e "  ${BOLD}2)${NC} $full_gpu_desc (better memory bandwidth, NVLink)"
-            echo ""
-            read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
-            read -p "Choice [1-2, default: 1]: " FULL_CHOICE </dev/tty
-            FULL_CHOICE=${FULL_CHOICE:-1}
-
-            if [ "$FULL_CHOICE" = "2" ]; then
-                PREFER_FULL=true
-                echo -e "${GREEN}✓${NC} Using $full_gpu_desc"
-            fi
-            echo ""
-        fi
-
-        # Warning for multi-GPU requests (only relevant in MIG mode)
-        if [ "$NUM_MIGS" -gt 1 ] && [ "$IS_MIG_MODE" = true ]; then
-            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo -e "${YELLOW}⚠  IMPORTANT: Multi-MIG Limitation${NC}"
-            echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo ""
-            echo -e "  Requesting: ${BOLD}$NUM_MIGS MIG partitions${NC}"
-            echo ""
-            echo -e "  ${RED}CUDA only exposes ONE MIG device per process.${NC}"
-            echo -e "  PyTorch/TensorFlow will see: ${BOLD}1 GPU (not $NUM_MIGS)${NC}"
-            echo ""
-            echo -e "  ${CYAN}Multi-MIG is useful for:${NC}"
-            echo -e "    • Running multiple independent experiments in parallel"
-            echo -e "    • Hyperparameter sweeps (each process on separate MIG)"
-            echo -e "    • Requires multi-process architecture (MPI, subprocess)"
-            echo ""
-            echo -e "  ${CYAN}For single large model training:${NC}"
-            echo -e "    • Request a ${BOLD}full GPU${NC} instead (40GB VRAM)"
-            echo -e "    • Or reduce batch size to fit single MIG (10GB)"
-            echo ""
-            echo -e "  ${DIM}See: https://hertie-data-science-lab.github.io/ds01/advanced/multi-mig-training${NC}"
-            echo ""
-            read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
-            read -p "Proceed with multi-MIG? [Y/n, default: Y]: " CONFIRM </dev/tty
-            CONFIRM=${CONFIRM:-Y}
-            if [[ "${CONFIRM,,}" != "y" && "${CONFIRM,,}" != "yes" && -n "$CONFIRM" ]]; then
-                echo -e "${CYAN}Cancelled${NC}"
-                exit 0
-            fi
-            echo ""
-        elif [ "$NUM_MIGS" -gt 1 ] && [ "$IS_MIG_MODE" = false ]; then
-            # Multi-GPU in full GPU mode — different info
+        # Informational notice for multi-GPU requests
+        if [ "$NUM_GPUS" -gt 1 ]; then
             echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo -e "${CYAN}ℹ  Multi-GPU Allocation${NC}"
             echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo ""
-            echo -e "  Requesting: ${BOLD}$NUM_MIGS full GPUs${NC}"
+            echo -e "  Requesting: ${BOLD}$NUM_GPUS full GPUs${NC}"
             echo ""
             echo -e "  ${CYAN}Useful for:${NC}"
             echo -e "    • Data-parallel training (DDP)"
@@ -1211,22 +1115,11 @@ echo -e "${BOLD}Workspace:${NC}  $WORKSPACE_DIR"
 if [ "$CPU_ONLY" = true ]; then
     echo -e "${BOLD}GPU:${NC}        ${YELLOW}CPU only${NC}"
 else
-    # Detect current GPU mode for correct terminology in summary
-    _MIG_COUNT=$(nvidia-smi -L 2>/dev/null | grep -c "MIG") || _MIG_COUNT=0
-    if [ "$_MIG_COUNT" -gt 0 ]; then
-        _GPU_UNITS="MIG partition(s)"
+    # One unit = one GPU slot (a full GPU today)
+    if [ -n "$NUM_GPUS" ] && [ "$NUM_GPUS" -gt 1 ] 2>/dev/null; then
+        echo -e "${BOLD}GPU:${NC}        ${GREEN}${NUM_GPUS} GPUs${NC}"
     else
-        _GPU_UNITS="GPU(s)"
-    fi
-
-    if [ -n "$NUM_MIGS" ] && [ "$NUM_MIGS" -gt 1 ] 2>/dev/null; then
-        if [ "$PREFER_FULL" = true ]; then
-            echo -e "${BOLD}GPU:${NC}        ${GREEN}Full GPU preferred (${NUM_MIGS} units)${NC}"
-        else
-            echo -e "${BOLD}GPU:${NC}        ${GREEN}${NUM_MIGS} ${_GPU_UNITS}${NC}"
-        fi
-    else
-        echo -e "${BOLD}GPU:${NC}        ${GREEN}Enabled (1 ${_GPU_UNITS%s*})${NC}"
+        echo -e "${BOLD}GPU:${NC}        ${GREEN}Enabled (1 GPU)${NC}"
     fi
 fi
 echo ""
@@ -1265,8 +1158,8 @@ if [ -n "$IMAGE_NAME" ]; then
 fi
 
 # Add multi-GPU allocation flags (distributed containers)
-if [ -n "$NUM_MIGS" ] && [ "$NUM_MIGS" -gt 1 ] 2>/dev/null; then
-    WRAPPER_ARGS+=("--num-migs=$NUM_MIGS")
+if [ -n "$NUM_GPUS" ] && [ "$NUM_GPUS" -gt 1 ] 2>/dev/null; then
+    WRAPPER_ARGS+=("--num-gpus=$NUM_GPUS")
 fi
 
 if [ "$PREFER_FULL" = true ]; then

@@ -78,7 +78,7 @@ GPUAvailabilityChecker = gpu_avail_module.GPUAvailabilityChecker
 
 class GPUAllocatorSmart:
     # Safe defaults for fail-open when config loading fails
-    SAFE_DEFAULTS = {"max_mig_instances": 1, "allow_full_gpu": False, "priority": 10}
+    SAFE_DEFAULTS = {"max_gpu_equivalents": 1.0, "allow_full_gpu": False, "priority": 10}
 
     def __init__(self, config_path="/opt/ds01-infra/config/runtime/resource-limits.yaml"):
         self.config_path = Path(config_path)
@@ -254,17 +254,20 @@ class GPUAllocatorSmart:
         return limits.get("priority", 10)
 
     def _check_aggregate_gpu_quota(
-        self, username: str, requested_count: int
+        self, username: str, requested_gpueq: float
     ) -> tuple[bool, str | None]:
-        """Check if user is within aggregate GPU quota (per-user total cap).
+        """Check if user is within aggregate GPU quota, in GPU-equivalents (gpueq).
 
-        This is the first layer of GPU quota enforcement - checks total GPU usage
-        across ALL of the user's containers against their aggregate limit.
-        The second layer (max_mig_instances) is checked separately.
+        This is the first layer of GPU quota enforcement - it compares the user's
+        currently-held gpueq (compute fractions summed across ALL containers) plus
+        the gpueq weight of the requested allocation against their aggregate
+        gpu_limit. For full GPUs every weight is 1.0, so this is numerically
+        identical to the old integer slot-count check. The second layer
+        (max_gpu_equivalents) is checked separately.
 
         Args:
             username: User requesting GPU allocation
-            requested_count: Number of GPU/MIG slots being requested
+            requested_gpueq: GPU-equivalents being requested (1.0 per full GPU)
 
         Returns:
             Tuple of (allowed: bool, error_message: Optional[str])
@@ -288,14 +291,14 @@ class GPUAllocatorSmart:
             if gpu_limit is None or gpu_limit == "unlimited":
                 return True, None
 
-            # Count current GPU allocations for this user
-            user_allocs = self.state_reader.get_user_allocations(username)
-            current_count = len(user_allocs)
+            # Current gpueq held by this user (full GPUs each count 1.0)
+            current_gpueq = self.state_reader.get_user_gpu_equivalents(username)
 
-            # Check if new allocation would exceed limit
-            if current_count + requested_count > gpu_limit:
+            # Check if new allocation would exceed limit (small epsilon for float noise)
+            if current_gpueq + requested_gpueq > float(gpu_limit) + 1e-9:
                 error_msg = (
-                    f"AGGREGATE_GPU_QUOTA_EXCEEDED ({current_count}+{requested_count}>{gpu_limit})"
+                    "AGGREGATE_GPU_QUOTA_EXCEEDED "
+                    f"({current_gpueq:g}+{requested_gpueq:g}>{float(gpu_limit):g})"
                 )
                 return False, error_msg
 
@@ -405,7 +408,7 @@ class GPUAllocatorSmart:
         self,
         username: str,
         container: str,
-        max_gpus: int | None = None,
+        max_gpus: float | None = None,
         require_full_gpu: bool = False,
     ) -> tuple[str | None, str]:
         """
@@ -415,7 +418,7 @@ class GPUAllocatorSmart:
         Args:
             username: User requesting GPU
             container: Container name (full tag: name._.userid)
-            max_gpus: User's max GPU limit (from resource-limits.yaml)
+            max_gpus: User's max GPU-equivalents quota (max_gpu_equivalents, float)
             require_full_gpu: If True, only allocate full GPU (not MIG)
 
         Returns:
@@ -436,11 +439,11 @@ class GPUAllocatorSmart:
             # Get user's limits
             limits = self._get_user_limits(username)
 
-            if max_gpus is None:
-                max_gpus = limits.get("max_mig_instances", 1)
-                # Handle unlimited
-                if max_gpus is None or max_gpus == "unlimited":
-                    max_gpus = 999
+            # Max GPU-equivalents quota (gpueq). One full GPU = 1.0 gpueq, so for
+            # full-GPU users this is numerically the old slot count.
+            max_gpueq = self._get_user_max_gpu_equivalents(username, limits)
+            if max_gpus is not None:
+                max_gpueq = float(max_gpus)
 
             # Check full GPU permission if requesting full GPU
             if require_full_gpu and not self._can_use_full_gpu(username):
@@ -459,8 +462,9 @@ class GPUAllocatorSmart:
 
                 return None, reason
 
-            # FIRST LAYER: Check aggregate GPU quota (per-user total cap)
-            allowed, agg_error = self._check_aggregate_gpu_quota(username, 1)
+            # FIRST LAYER: Check aggregate GPU quota (per-user total cap), in gpueq.
+            # A single full-GPU request weighs 1.0 gpueq.
+            allowed, agg_error = self._check_aggregate_gpu_quota(username, 1.0)
             if not allowed:
                 self._log_event("REJECTED", username, container, reason=agg_error)
 
@@ -475,12 +479,12 @@ class GPUAllocatorSmart:
 
                 return None, agg_error
 
-            # SECOND LAYER: Check per-container limit (max_mig_instances)
-            user_allocs = self.state_reader.get_user_allocations(username)
-            current_count = len(user_allocs)
+            # SECOND LAYER: Check per-user total quota (max_gpu_equivalents), in gpueq.
+            current_gpueq = self.state_reader.get_user_gpu_equivalents(username)
 
-            if current_count >= max_gpus:
-                reason = f"USER_AT_LIMIT ({current_count}/{max_gpus})"
+            # Requested full GPU weighs 1.0 gpueq (epsilon guards float noise).
+            if current_gpueq + 1.0 > max_gpueq + 1e-9:
+                reason = f"USER_AT_LIMIT ({current_gpueq:g}/{max_gpueq:g})"
                 self._log_event("REJECTED", username, container, reason=reason)
 
                 # Log to centralized event system (best-effort)
@@ -499,7 +503,7 @@ class GPUAllocatorSmart:
             allow_full = self._can_use_full_gpu(username)
             suggestion = self.availability_checker.suggest_gpu_for_user(
                 username,
-                max_gpus,
+                max_gpueq,
                 self._get_user_priority(username),
                 require_full_gpu=require_full_gpu,
                 allow_full_gpu=allow_full,
@@ -539,7 +543,7 @@ class GPUAllocatorSmart:
                 return None, reason
 
             # Log allocation to legacy log
-            reason = f"ALLOCATED (user has {current_count + 1}/{max_gpus} GPUs)"
+            reason = f"ALLOCATED (user has {current_gpueq + 1.0:g}/{max_gpueq:g} gpueq)"
             self._log_event("ALLOCATED", username, container, gpu_slot, reason)
 
             # Log to centralized event system (best-effort, never blocks)
@@ -566,31 +570,31 @@ class GPUAllocatorSmart:
         username: str,
         container: str,
         container_type: str,
-        num_migs: int = 1,
+        num_gpus: int = 1,
         prefer_full_gpu: bool = False,
-    ) -> tuple[list, int, str]:
+    ) -> tuple[list, int, float, str]:
         """
-        Allocate multiple MIG instances or full GPUs for a container.
+        Allocate multiple GPU slots for a container.
         Supports distributed containers across multiple GPU slots.
 
-        Quota enforcement is unified with allocate_external: both consult
-        `container_types.<type>.default_mig_count[group]` for the per-container
-        cap and count user's currently-allocated slots (not MIG-equivalents)
-        against the aggregate cap. Needed because the MIG-equivalents
-        arithmetic misfires in whole-GPU-mode (1 full GPU = mig_per_gpu equivs,
-        which exceeds a student's max_mig_instances=3 even for a single GPU).
+        Quota enforcement runs two layers (see _check_external_quotas): the
+        per-container distinct-unit cap (integer slots) and the aggregate
+        fair-share quota (gpueq). Each slot is a full GPU today (MIG off), so its
+        weight is 1.0 gpueq and the total gpueq equals the slot count.
 
         Args:
             username: User requesting GPUs
             container: Container name (full tag: name._.userid)
             container_type: Interface/type (api, devcontainer, compose, docker, unknown)
-            num_migs: Number of GPU slots to allocate (historical name; in whole-GPU mode = GPU count)
-            prefer_full_gpu: If True and user has allow_full_gpu, prefer full GPUs over MIGs
+            num_gpus: Number of GPU slots to allocate
+            prefer_full_gpu: Accepted for CLI compatibility; with slots == full GPUs
+                it is a no-op (every slot is already a full GPU).
 
         Returns:
-            Tuple of (gpu_slots, actual_mig_equiv, status_message)
-            gpu_slots: List of GPU slot IDs (e.g., ["1.2", "1.3"] or ["0"])
-            actual_mig_equiv: Total MIG-equivalents allocated (full GPU = mig_instances_per_gpu)
+            Tuple of (gpu_slots, slot_count, total_gpueq, status_message)
+            gpu_slots: List of GPU slot IDs (e.g., ["0", "1"])
+            slot_count: Number of slots allocated (== len(gpu_slots))
+            total_gpueq: Sum of the allocated slots' gpueq weights (1.0 per full GPU)
             status_message: "SUCCESS", "ALREADY_ALLOCATED", or error reason
         """
         try:
@@ -601,138 +605,69 @@ class GPUAllocatorSmart:
             container_gpu = self.state_reader.get_container_gpu(container)
             if container_gpu:
                 gpu_slot = container_gpu["gpu_slot"]
-                return [gpu_slot], 1, "ALREADY_ALLOCATED"
+                gpueq = self.state_reader.get_slot_compute_fraction(gpu_slot)
+                return [gpu_slot], 1, gpueq, "ALREADY_ALLOCATED"
 
-            # mig_per_gpu is still needed below for full-vs-partial GPU allocation strategy
-            gpu_config = self.config.get("gpu_allocation", {})
-            mig_per_gpu = gpu_config.get("mig_instances_per_gpu", 4)
-
-            # Per-container cap: user profile, interface-agnostic.
+            # Per-container cap: distinct GPU/MIG units per container (integer).
             max_per_container = self._get_user_per_container_cap(username)
 
-            if num_migs > max_per_container:
-                reason = f"EXCEEDS_CONTAINER_LIMIT ({num_migs}>{max_per_container})"
+            if num_gpus > max_per_container:
+                reason = f"EXCEEDS_CONTAINER_LIMIT ({num_gpus}>{max_per_container})"
                 self._log_event("REJECTED", username, container, reason=reason)
-                return [], 0, reason
+                return [], 0, 0.0, reason
 
             # Quota check with one self-heal retry (see allocate_external).
-            ok, err = self._check_external_quotas(username, max_per_container, num_migs)
+            ok, err = self._check_external_quotas(username, max_per_container, num_gpus)
             if not ok:
                 self.release_stale_allocations(username)
-                ok, err = self._check_external_quotas(username, max_per_container, num_migs)
+                ok, err = self._check_external_quotas(username, max_per_container, num_gpus)
             if not ok:
                 # Rename QUOTA_EXCEEDED → EXCEEDS_TOTAL_LIMIT for wire-format continuity
                 # with the old allocate-multi contract expected by the wrapper.
                 if err and err.startswith("QUOTA_EXCEEDED:"):
                     current = err.split(":", 1)[1].split("/")[0]
-                    err = f"EXCEEDS_TOTAL_LIMIT ({num_migs}+{current}>{max_per_container})"
+                    err = f"EXCEEDS_TOTAL_LIMIT ({num_gpus}+{current}>{max_per_container})"
                 self._log_event("REJECTED", username, container, reason=err)
-                return [], 0, err
+                return [], 0, 0.0, err
 
-            # Check full GPU permission
+            # Allocate slots one at a time (each slot is a full GPU today).
             can_use_full = self._can_use_full_gpu(username)
-
-            # Determine allocation strategy
             allocated_slots = []
-            total_mig_equiv = 0
-
-            if prefer_full_gpu and can_use_full and num_migs >= mig_per_gpu:
-                # Try to allocate full GPUs first
-                num_full_gpus = num_migs // mig_per_gpu
-                remaining_migs_needed = num_migs % mig_per_gpu
-
-                for _ in range(num_full_gpus):
-                    suggestion = self.availability_checker.suggest_gpu_for_user(
-                        username,
-                        max_per_container,
-                        self._get_user_priority(username),
-                        require_full_gpu=True,
-                        allow_full_gpu=True,
-                        exclude_slots=allocated_slots,
-                    )
-                    if suggestion["success"]:
-                        # Handle virtual full GPU (all MIG slots from one physical GPU)
-                        mig_slots = suggestion.get("mig_slots", [])
-                        if mig_slots:
-                            # Virtual full GPU: use individual MIG slots for Docker
-                            allocated_slots.extend(mig_slots)
-                            total_mig_equiv += len(mig_slots)
-                        else:
-                            # Real full GPU: use the GPU slot directly
-                            allocated_slots.append(suggestion["gpu_slot"])
-                            total_mig_equiv += mig_per_gpu
-                    else:
-                        # No more full GPUs available, try MIGs
-                        remaining_migs_needed += mig_per_gpu
-                        break
-
-                # Allocate remaining MIGs
-                for _ in range(remaining_migs_needed):
-                    suggestion = self.availability_checker.suggest_gpu_for_user(
-                        username,
-                        max_per_container,
-                        self._get_user_priority(username),
-                        require_full_gpu=False,
-                        allow_full_gpu=can_use_full,
-                        exclude_slots=allocated_slots,
-                    )
-                    if suggestion["success"]:
-                        allocated_slots.append(suggestion["gpu_slot"])
-                        total_mig_equiv += 1
-                    else:
-                        # Can't allocate remaining, release what we got and fail
-                        reason = suggestion.get("error", "NO_GPU_AVAILABLE")
-                        self._log_event("REJECTED", username, container, reason=reason)
-                        return [], 0, reason
-            else:
-                # Allocate MIGs first (default behavior)
-                for _ in range(num_migs):
-                    suggestion = self.availability_checker.suggest_gpu_for_user(
-                        username,
-                        max_per_container,
-                        self._get_user_priority(username),
-                        require_full_gpu=False,
-                        allow_full_gpu=can_use_full,
-                        exclude_slots=allocated_slots,
-                    )
-                    if suggestion["success"]:
-                        slot = suggestion["gpu_slot"]
-                        allocated_slots.append(slot)
-                        # Full GPU counts as mig_per_gpu equivalents
-                        if self._is_full_gpu(slot):
-                            total_mig_equiv += mig_per_gpu
-                        else:
-                            total_mig_equiv += 1
-                    else:
-                        reason = suggestion.get("error", "NO_GPU_AVAILABLE")
-                        self._log_event("REJECTED", username, container, reason=reason)
-                        return [], 0, reason
+            for _ in range(num_gpus):
+                suggestion = self.availability_checker.suggest_gpu_for_user(
+                    username,
+                    max_per_container,
+                    self._get_user_priority(username),
+                    require_full_gpu=False,
+                    allow_full_gpu=can_use_full,
+                    exclude_slots=allocated_slots,
+                )
+                if suggestion["success"]:
+                    allocated_slots.append(suggestion["gpu_slot"])
+                else:
+                    reason = suggestion.get("error", "NO_GPU_AVAILABLE")
+                    self._log_event("REJECTED", username, container, reason=reason)
+                    return [], 0, 0.0, reason
 
             if not allocated_slots:
                 reason = "NO_GPU_AVAILABLE"
                 self._log_event("REJECTED", username, container, reason=reason)
-                return [], 0, reason
+                return [], 0, 0.0, reason
 
             # Log allocation
             slots_str = ",".join(allocated_slots)
-            reason = f"ALLOCATED ({total_mig_equiv} MIG-equiv, slots: {slots_str})"
+            slot_count = len(allocated_slots)
+            # Total gpueq = sum of each slot's compute fraction (1.0 per full GPU).
+            total_gpueq = sum(
+                self.state_reader.get_slot_compute_fraction(slot) for slot in allocated_slots
+            )
+            reason = f"ALLOCATED ({slot_count} slot(s), {total_gpueq:g} gpueq: {slots_str})"
             self._log_event("ALLOCATED", username, container, slots_str, reason)
 
-            return allocated_slots, total_mig_equiv, "SUCCESS"
+            return allocated_slots, slot_count, total_gpueq, "SUCCESS"
 
         finally:
             self._release_lock()
-
-    def _calculate_mig_equivalents(self, allocations: list, mig_per_gpu: int) -> int:
-        """Calculate total MIG-equivalents from a list of allocations."""
-        total = 0
-        for alloc in allocations:
-            gpu_slot = alloc.get("gpu_slot", "")
-            if self._is_full_gpu(gpu_slot):
-                total += mig_per_gpu
-            else:
-                total += 1
-        return total
 
     def get_docker_id(self, gpu_slot: str) -> str:
         """
@@ -846,11 +781,37 @@ class GPUAllocatorSmart:
         user_allocs = self.state_reader.get_user_allocations(username)
         return len(user_allocs)
 
+    def _get_user_max_gpu_equivalents(self, username: str, limits: dict | None = None) -> float:
+        """Max fair-share quota for a user in GPU-equivalents (gpueq, float).
+
+        Resolves max_gpu_equivalents first, then the legacy aliases max_gpu_slots /
+        max_gpus_per_user / max_mig_instances (read for one release). null/unlimited
+        maps to 999.0; absence falls back to 1.0.
+        """
+        if limits is None:
+            limits = self._get_user_limits(username)
+        sentinel = object()
+        value = sentinel
+        for key in (
+            "max_gpu_equivalents",
+            "max_gpu_slots",
+            "max_gpus_per_user",
+            "max_mig_instances",
+        ):
+            if key in limits:
+                value = limits[key]
+                break
+        if value is sentinel:
+            return 1.0
+        if value is None or value == "unlimited":
+            return 999.0
+        return float(value)
+
     def _get_user_per_container_cap(self, username: str) -> int:
         """
         Max GPU slots a single container may request for this user.
 
-        Single source of truth: the user's group profile (`max_mig_per_container`),
+        Single source of truth: the user's group profile (`max_gpu_slots_per_container`),
         applied uniformly across all submission paths (api, devcontainer, compose,
         docker, unknown). A user's budget is their budget regardless of how they
         submitted the work — we don't want per-interface quota drift.
@@ -858,21 +819,40 @@ class GPUAllocatorSmart:
         Returns 999 for unlimited (admin).
         """
         limits = self._get_user_limits(username)
-        cap = limits.get("max_mig_per_container", limits.get("max_gpus_per_container", 1))
+        # New key first, then legacy aliases (read for one release).
+        # None (present-but-null) means unlimited; absence falls back to default 1.
+        for key in (
+            "max_gpu_slots_per_container",
+            "max_gpus_per_container",
+            "max_mig_per_container",
+        ):
+            if key in limits:
+                cap = limits[key]
+                break
+        else:
+            cap = 1
         if cap is None or cap == "unlimited":
             return 999
         return int(cap)
 
     def _check_external_quotas(
-        self, username: str, max_allowed: int, requested: int
+        self, username: str, max_per_container: int, requested_slots: int
     ) -> tuple[bool, str | None]:
-        """Run both quota layers (aggregate + per-container-type)."""
-        allowed, agg_err = self._check_aggregate_gpu_quota(username, requested)
+        """Run both quota layers for a multi/external request.
+
+        Layer 1 (aggregate, gpueq): the user's total fair-share quota. Each
+        requested slot is a full GPU today, so its weight is 1.0 gpueq.
+        Layer 2 (per-container, integer slots): a single container may pin at
+        most ``max_per_container`` distinct GPU/MIG units.
+        """
+        # Layer 1: aggregate gpueq quota (full-GPU request → requested_slots gpueq).
+        allowed, agg_err = self._check_aggregate_gpu_quota(username, float(requested_slots))
         if not allowed:
             return False, agg_err
-        current = self.get_user_gpu_count(username)
-        if current + requested > max_allowed:
-            return False, f"QUOTA_EXCEEDED:{current}/{max_allowed}"
+        # Layer 2: per-container distinct-unit cap (integer slots).
+        current_slots = self.get_user_gpu_count(username)
+        if current_slots + requested_slots > max_per_container:
+            return False, f"QUOTA_EXCEEDED:{current_slots}/{max_per_container}"
         return True, None
 
     def allocate_external(self, username: str, container_type: str) -> tuple[str | None, str]:
@@ -1169,16 +1149,16 @@ def main():
 
     # allocate-multi command (multi-GPU allocation for distributed containers)
     parser_multi = subparsers.add_parser(
-        "allocate-multi", help="Allocate multiple MIG instances or GPUs to container"
+        "allocate-multi", help="Allocate multiple GPU slots to container"
     )
     parser_multi.add_argument("user", help="Username")
     parser_multi.add_argument("container", help="Container name (full tag)")
     parser_multi.add_argument(
         "container_type", help="Container type (api, devcontainer, compose, docker, unknown)"
     )
-    parser_multi.add_argument("num_migs", type=int, help="Number of GPU/MIG slots to allocate")
+    parser_multi.add_argument("num_gpus", type=int, help="Number of GPU slots to allocate")
     parser_multi.add_argument(
-        "--prefer-full", action="store_true", help="Prefer full GPUs over MIGs"
+        "--prefer-full", action="store_true", help="Deprecated no-op (slots are full GPUs)"
     )
 
     # allocate-external command (for docker-wrapper.sh - external containers like devcontainers, compose)
@@ -1250,11 +1230,11 @@ def main():
             print("✓ No stale containers found")
 
     elif args.command == "allocate-multi":
-        gpu_slots, mig_equiv, reason = allocator.allocate_multi_gpu(
+        gpu_slots, slot_count, total_gpueq, reason = allocator.allocate_multi_gpu(
             args.user,
             args.container,
             args.container_type,
-            args.num_migs,
+            args.num_gpus,
             prefer_full_gpu=args.prefer_full,
         )
 
@@ -1263,12 +1243,11 @@ def main():
             docker_ids = [allocator.get_docker_id(slot) for slot in gpu_slots]
             slots_str = ",".join(gpu_slots)
             docker_ids_str = ",".join(docker_ids)
-            print(
-                f"✓ Allocated {len(gpu_slots)} GPU/MIG ({mig_equiv} MIG-equiv) to {args.container}"
-            )
+            print(f"✓ Allocated {len(gpu_slots)} GPU slot(s) to {args.container}")
             print(f"GPU_SLOTS={slots_str}")
             print(f"DOCKER_IDS={docker_ids_str}")  # For mlc-create-wrapper parsing
-            print(f"MIG_EQUIV={mig_equiv}")
+            print(f"SLOT_COUNT={slot_count}")
+            print(f"GPU_EQUIV={total_gpueq:g}")  # Total GPU-equivalents (gpueq)
         elif reason == "ALREADY_ALLOCATED":
             slots_str = ",".join(gpu_slots)
             docker_ids = [allocator.get_docker_id(slot) for slot in gpu_slots]
@@ -1276,6 +1255,8 @@ def main():
             print(f"⚠ Container {args.container} already has GPU(s) {slots_str} allocated")
             print(f"GPU_SLOTS={slots_str}")
             print(f"DOCKER_IDS={docker_ids_str}")
+            print(f"SLOT_COUNT={slot_count}")
+            print(f"GPU_EQUIV={total_gpueq:g}")
         else:
             print(f"✗ Allocation failed: {reason}")
             sys.exit(1)

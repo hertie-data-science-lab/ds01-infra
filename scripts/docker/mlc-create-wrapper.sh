@@ -143,8 +143,8 @@ DATA_DIR=""
 REQUESTED_GPU=""
 CPU_ONLY=false
 DRY_RUN=false
-NUM_MIGS=1            # Number of MIG-equivalents to request (default: 1)
-PREFER_FULL_GPU=false # Prefer full GPU over MIGs
+NUM_GPUS=1            # Number of GPU slots to request (default: 1)
+PREFER_FULL_GPU=false # Deprecated: prefer full GPU (no-op, slots are full GPUs)
 
 # Parse container name
 CONTAINER_NAME="$1"
@@ -189,8 +189,8 @@ while [[ $# -gt 0 ]]; do
         --cpu-only)
             CPU_ONLY=true
             ;;
-        --num-migs=*)
-            NUM_MIGS="${1#*=}"
+        --num-gpus=*)
+            NUM_GPUS="${1#*=}"
             ;;
         --prefer-full)
             PREFER_FULL_GPU=true
@@ -399,7 +399,7 @@ fi
 GPU_ARG=""
 ALLOCATED_GPU=""
 ALLOCATED_SLOTS="" # Comma-separated list of GPU slots
-MIG_EQUIV=0        # Total MIG-equivalents allocated
+SLOT_COUNT=0       # Total GPU slots allocated
 
 if [ "$CPU_ONLY" = true ]; then
     log_info "Creating CPU-only container (no GPU)"
@@ -422,12 +422,12 @@ else
                 MAX_GPUS=999
             fi
 
-            # Determine allocation method based on NUM_MIGS and PREFER_FULL_GPU
-            if [ "$NUM_MIGS" -gt 1 ] || [ "$PREFER_FULL_GPU" = true ]; then
+            # Determine allocation method based on NUM_GPUS and PREFER_FULL_GPU
+            if [ "$NUM_GPUS" -gt 1 ] || [ "$PREFER_FULL_GPU" = true ]; then
                 # Multi-GPU allocation
-                log_info "Allocating $NUM_MIGS MIG-equivalents via gpu_allocator_v2.py..."
+                log_info "Allocating $NUM_GPUS GPU slot(s) via gpu_allocator_v2.py..."
 
-                ALLOC_CMD="python3 $GPU_ALLOCATOR allocate-multi $CURRENT_USER $CONTAINER_TAG mlc $NUM_MIGS"
+                ALLOC_CMD="python3 $GPU_ALLOCATOR allocate-multi $CURRENT_USER $CONTAINER_TAG mlc $NUM_GPUS"
                 if [ "$PREFER_FULL_GPU" = true ]; then
                     ALLOC_CMD="$ALLOC_CMD --prefer-full"
                 fi
@@ -441,7 +441,7 @@ else
                     # Extract GPU slots and Docker IDs
                     ALLOCATED_SLOTS=$(echo "$ALLOC_OUTPUT" | grep "^GPU_SLOTS=" | cut -d= -f2)
                     DOCKER_IDS=$(echo "$ALLOC_OUTPUT" | grep "^DOCKER_IDS=" | cut -d= -f2)
-                    MIG_EQUIV=$(echo "$ALLOC_OUTPUT" | grep "^MIG_EQUIV=" | cut -d= -f2)
+                    SLOT_COUNT=$(echo "$ALLOC_OUTPUT" | grep "^SLOT_COUNT=" | cut -d= -f2)
 
                     if [ -n "$ALLOCATED_SLOTS" ] && [ -n "$DOCKER_IDS" ]; then
                         # Build comma-separated device list for Docker
@@ -457,7 +457,7 @@ else
                         done
                         GPU_ARG="-g=device=$DEVICE_LIST"
                         ALLOCATED_GPU="$ALLOCATED_SLOTS"
-                        log_success "Allocated $MIG_EQUIV MIG-equivalents (slots: $ALLOCATED_SLOTS)"
+                        log_success "Allocated $SLOT_COUNT GPU slot(s) (slots: $ALLOCATED_SLOTS)"
                     else
                         log_error "GPU allocator returned success but couldn't parse GPU IDs"
                         log_error "Output: $ALLOC_OUTPUT"
@@ -493,7 +493,7 @@ else
 
                     # Extract Docker ID (MIG UUID for MIG instances, gpu index for full GPUs)
                     DOCKER_ID=$(echo "$ALLOC_OUTPUT" | grep "^DOCKER_ID=" | cut -d= -f2)
-                    MIG_EQUIV=1
+                    SLOT_COUNT=1
 
                     if [ -n "$ALLOCATED_GPU" ] && [ -n "$DOCKER_ID" ]; then
                         # Use Docker ID (UUID for MIG) instead of friendly ID
@@ -501,16 +501,17 @@ else
                         ALLOCATED_SLOTS="$ALLOCATED_GPU"
                         log_success "GPU $ALLOCATED_GPU allocated successfully"
 
-                        # Check soft limits (warn at 80%+)
-                        CURRENT_MIG_TOTAL=$(python3 "$SCRIPT_DIR/gpu-state-reader.py" user-mig-total "$CURRENT_USER" 2>/dev/null || echo "0")
-                        CURRENT_MIG_TOTAL="${CURRENT_MIG_TOTAL//[^0-9]/}"
-                        CURRENT_MIG_TOTAL="${CURRENT_MIG_TOTAL:-0}"
+                        # Check soft limits (warn at 80%+). Count GPU slots:
+                        # 1 full GPU = 1 slot under the unified slot model.
+                        CURRENT_SLOT_TOTAL=$(python3 "$SCRIPT_DIR/gpu-state-reader.py" user-gpu-count "$CURRENT_USER" 2>/dev/null || echo "0")
+                        CURRENT_SLOT_TOTAL="${CURRENT_SLOT_TOTAL//[^0-9]/}"
+                        CURRENT_SLOT_TOTAL="${CURRENT_SLOT_TOTAL:-0}"
                         if [ "$MAX_GPUS" != "999" ] && [ "$MAX_GPUS" -gt 0 ] 2>/dev/null; then
-                            GPU_PERCENT=$((CURRENT_MIG_TOTAL * 100 / MAX_GPUS))
+                            GPU_PERCENT=$((CURRENT_SLOT_TOTAL * 100 / MAX_GPUS))
                             if [ "$GPU_PERCENT" -ge 100 ]; then
-                                log_warning "MIG limit reached ($CURRENT_MIG_TOTAL/$MAX_GPUS). This is your last available MIG."
+                                log_warning "GPU slot limit reached ($CURRENT_SLOT_TOTAL/$MAX_GPUS). This is your last available slot."
                             elif [ "$GPU_PERCENT" -ge 80 ]; then
-                                log_warning "MIG usage high ($CURRENT_MIG_TOTAL/$MAX_GPUS, ${GPU_PERCENT}%). Consider retiring idle containers."
+                                log_warning "GPU slot usage high ($CURRENT_SLOT_TOTAL/$MAX_GPUS, ${GPU_PERCENT}%). Consider retiring idle containers."
                             fi
                         fi
                     else
@@ -620,9 +621,9 @@ if [ -n "$ALLOCATED_GPU" ]; then
         MLC_ARGS="$MLC_ARGS --ds01-label ds01.gpu.slots=$ALLOCATED_SLOTS"
     fi
 
-    # Store MIG-equivalent count
-    if [ -n "$MIG_EQUIV" ] && [ "$MIG_EQUIV" -gt 0 ] 2>/dev/null; then
-        MLC_ARGS="$MLC_ARGS --ds01-label ds01.gpu.mig_equiv=$MIG_EQUIV"
+    # Store GPU slot count
+    if [ -n "$SLOT_COUNT" ] && [ "$SLOT_COUNT" -gt 0 ] 2>/dev/null; then
+        MLC_ARGS="$MLC_ARGS --ds01-label ds01.gpu.slot_count=$SLOT_COUNT"
     fi
 
     # Store Docker IDs (UUIDs) for all GPUs
