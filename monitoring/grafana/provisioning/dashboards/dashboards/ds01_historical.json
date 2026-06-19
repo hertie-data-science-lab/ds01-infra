@@ -66,13 +66,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "ds01:hourly_gpu_util_avg * 100",
+          "expr": "ds01:hourly_gpu_util_avg",
           "legendFormat": "Avg GPU Util (hourly)",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "ds01:hourly_gpu_util_max * 100",
+          "expr": "ds01:hourly_gpu_util_max",
           "legendFormat": "Max GPU Util (hourly)",
           "refId": "B"
         }
@@ -134,7 +134,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "ds01:system_gpu_utilization_avg * 100",
+          "expr": "ds01:system_gpu_utilization_avg",
           "legendFormat": "gpu_util",
           "refId": "A"
         }
@@ -149,7 +149,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "GPU-hours consumed per user over the selected time range. Uses increase() on the per-minute GPU-seconds recording rule for accurate attribution.",
+      "description": "GPU-hours consumed per user over the selected time range. Integrates the per-minute GPU-seconds recording rule with sum_over_time() for accurate attribution.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -190,7 +190,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(ds01:user_gpu_seconds[$__range]) / 3600",
+          "expr": "sum_over_time(ds01:user_gpu_seconds[$__range]) / 3600",
           "instant": true,
           "legendFormat": "{{user}}",
           "refId": "A"
@@ -229,7 +229,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(increase(ds01:user_gpu_seconds[$__range])) / 3600",
+          "expr": "sum(sum_over_time(ds01:user_gpu_seconds[$__range])) / 3600",
           "instant": true,
           "legendFormat": "Total GPU-Hours",
           "refId": "A"
@@ -277,14 +277,14 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(increase(ds01:user_gpu_seconds[$__range])) / 3600",
+          "expr": "sum(sum_over_time(ds01:user_gpu_seconds[$__range])) / 3600",
           "instant": true,
           "legendFormat": "Raw allocated",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(increase(ds01:user_gpu_seconds_weighted[$__range])) / 3600",
+          "expr": "sum(sum_over_time(ds01:user_gpu_seconds_weighted[$__range])) / 3600",
           "instant": true,
           "legendFormat": "Utilisation-weighted",
           "refId": "B"
@@ -339,7 +339,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (user) (ds01:user_gpu_slots_allocated) / 60",
+          "expr": "sum by (user) (sum_over_time(ds01:user_gpu_seconds[$__interval])) / 3600",
           "legendFormat": "{{user}}",
           "refId": "A"
         }
@@ -354,7 +354,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Hourly average MIG slot allocation over time. Shows busy vs quiet periods and capacity demand patterns.",
+      "description": "Hourly average GPU slot allocation over time. Shows busy vs quiet periods and capacity demand patterns.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -399,14 +399,14 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "ds01:hourly_mig_allocated_avg",
+          "expr": "ds01:hourly_gpu_slots_allocated_avg",
           "legendFormat": "Slots allocated (hourly avg)",
           "refId": "A"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "ds01:system_mig_total",
-          "legendFormat": "Total MIG slots",
+          "expr": "ds01:system_gpu_slots_total",
+          "legendFormat": "Total GPU slots",
           "refId": "B"
         }
       ]

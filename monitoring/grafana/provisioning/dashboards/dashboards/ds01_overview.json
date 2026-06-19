@@ -18,7 +18,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Number of GPU slots (MIG instances) currently allocated to running containers.",
+      "description": "Number of GPU slots currently allocated to running containers.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -27,8 +27,8 @@
             "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
-              { "color": "yellow", "value": 6 },
-              { "color": "red", "value": 8 }
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 4 }
             ]
           }
         },
@@ -49,7 +49,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "ds01:system_mig_allocated",
+          "expr": "ds01:system_gpu_slots_allocated",
           "instant": true,
           "legendFormat": "Allocated",
           "refId": "A"
@@ -58,7 +58,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "Number of GPU slots (MIG instances) currently free.",
+      "description": "Number of GPU slots currently free.",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -89,7 +89,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "ds01:system_mig_free",
+          "expr": "ds01:system_gpu_slots_free",
           "instant": true,
           "legendFormat": "Free",
           "refId": "A"
@@ -206,7 +206,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "ds01:system_gpu_utilization_avg * 100",
+          "expr": "ds01:system_gpu_utilization_avg",
           "instant": true,
           "legendFormat": "Avg Util",
           "refId": "A"
