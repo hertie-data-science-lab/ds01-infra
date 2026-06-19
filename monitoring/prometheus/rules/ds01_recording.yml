@@ -144,52 +144,6 @@ groups:
             0
           )
 
-      # Total allocated slots (full + MIG)
-      # NOTE: kept as an alias of ds01:system_gpu_slots_allocated for callers
-      # that still reference the old name (e.g. hourly_mig_allocated_avg).
-      - record: ds01:system_mig_allocated
-        expr: count(ds01_gpu_allocated) or vector(0)
-
-      # Total MIG instances (from ds01 mapping) — MIG-specific, may be 0
-      - record: ds01:system_mig_total
-        expr: count(ds01_mig_slot_info) or vector(0)
-
-      # Total free MIG slots (MIG instances - allocated MIG slots)
-      # MIG-specific: counts only slots with a "." in the name (e.g. "2.0").
-      # On a no-MIG box this is correctly 0; use ds01:system_gpu_slots_free for
-      # REAL free GPU capacity that also accounts for idle full GPUs.
-      - record: ds01:system_mig_free
-        expr: |
-          clamp_min(
-            (count(ds01_mig_slot_info) or vector(0))
-            -
-            (count(ds01_gpu_allocated{gpu_slot=~".*\\..*"}) or vector(0)),
-            0
-          )
-
-      # Disaggregated slot metrics (MIG vs Full GPU)
-      # MIG slots allocated (slots with . in name like "2.0")
-      - record: ds01:system_mig_slots_allocated
-        expr: count(ds01_gpu_allocated{gpu_slot=~".*\\..*"}) or vector(0)
-
-      # Full GPU slots allocated (slots without . in name like "0", "1")
-      - record: ds01:system_full_gpu_slots_allocated
-        expr: count(ds01_gpu_allocated{gpu_slot!~".*\\..*"}) or vector(0)
-
-      # Total full GPU slots available
-      - record: ds01:system_full_gpu_slots_total
-        expr: count(ds01_gpu_slot_info) or vector(0)
-
-      # Full GPU slots free
-      - record: ds01:system_full_gpu_slots_free
-        expr: |
-          clamp_min(
-            (count(ds01_gpu_slot_info) or vector(0))
-            -
-            (count(ds01_gpu_allocated{gpu_slot!~".*\\..*"}) or vector(0)),
-            0
-          )
-
       # Active users count
       - record: ds01:system_active_users
         expr: count(count by (user) (ds01_gpu_allocated)) or vector(0)
@@ -210,9 +164,9 @@ groups:
       - record: ds01:hourly_gpu_util_max
         expr: max_over_time(ds01:system_gpu_utilization_avg[1h])
 
-      # Hourly average MIG allocation
-      - record: ds01:hourly_mig_allocated_avg
-        expr: avg_over_time(ds01:system_mig_allocated[1h])
+      # Hourly average allocated GPU slots (full GPUs + MIG)
+      - record: ds01:hourly_gpu_slots_allocated_avg
+        expr: avg_over_time(ds01:system_gpu_slots_allocated[1h])
 
   # GPU waste metrics (for alerting and reporting)
   - name: ds01_waste_metrics

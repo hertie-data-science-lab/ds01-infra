@@ -167,9 +167,12 @@ groups:
           description: "Less than 10% memory available"
 
       # MIG topology mismatch (nvidia-smi vs DCGM)
-      # Fires when MIG partitions change but DCGM hasn't been restarted
+      # Fires when MIG partitions change but DCGM hasn't been restarted.
+      # Gated on MIG actually existing (count(ds01_mig_slot_info) > 0) so a
+      # no-MIG box — where mapping_status may be 0 simply because there is
+      # nothing to map — does not raise a spurious mismatch alert.
       - alert: DS01MIGMappingMismatch
-        expr: ds01_mig_mapping_status == 0
+        expr: ds01_mig_mapping_status == 0 and on() (count(ds01_mig_slot_info) > 0)
         for: 5m
         labels:
           severity: warning
