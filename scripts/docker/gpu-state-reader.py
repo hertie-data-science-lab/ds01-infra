@@ -95,10 +95,14 @@ class GPUStateReader:
         # Device permissions are 0666 so all users can query nvidia-smi directly
         try:
             result = subprocess.run(
-                ["/usr/bin/nvidia-smi", "-L"], capture_output=True, text=True, check=True
+                ["/usr/bin/nvidia-smi", "-L"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
             )
             nvidia_output = result.stdout
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
             self._mig_uuid_to_slot_cache = mapping
             return mapping
 
@@ -138,11 +142,20 @@ class GPUStateReader:
         """Get docker inspect output for a container."""
         try:
             result = subprocess.run(
-                [DOCKER_BIN, "inspect", container_name], capture_output=True, text=True, check=True
+                [DOCKER_BIN, "inspect", container_name],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
             )
             data = json.loads(result.stdout)
             return data[0] if data else None
-        except (subprocess.CalledProcessError, json.JSONDecodeError, IndexError):
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            json.JSONDecodeError,
+            IndexError,
+        ):
             return None
 
     def _detect_interface(self, container_data: dict) -> str:
@@ -471,6 +484,7 @@ class GPUStateReader:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
             )
 
             for name in result.stdout.split("\n"):
@@ -528,7 +542,7 @@ class GPUStateReader:
                     }
                 )
 
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             pass
 
         return unmanaged
@@ -618,6 +632,7 @@ class GPUStateReader:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
             )
 
             for name in result.stdout.split("\n"):
@@ -643,7 +658,7 @@ class GPUStateReader:
                     if in_ds01_slice or has_ds01_labels or has_aime_naming:
                         container_names.append(name)
 
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             pass
 
         return container_names

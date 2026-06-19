@@ -60,8 +60,10 @@ class DS01ResourceQuery:
         docker_cmd.extend(["--format", "{{.Names}}\t{{.Status}}\t{{.CreatedAt}}"])
 
         try:
-            result = subprocess.run(docker_cmd, capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError:
+            result = subprocess.run(
+                docker_cmd, capture_output=True, text=True, check=True, timeout=30
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             return containers
 
         for line in result.stdout.strip().split("\n"):
@@ -77,9 +79,15 @@ class DS01ResourceQuery:
             created_at = parts[2].strip() if len(parts) > 2 else ""
 
             # Get container details
-            inspect_result = subprocess.run(
-                ["docker", "inspect", container_name], capture_output=True, text=True
-            )
+            try:
+                inspect_result = subprocess.run(
+                    ["docker", "inspect", container_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            except subprocess.TimeoutExpired:
+                continue
 
             if inspect_result.returncode != 0:
                 continue
@@ -171,10 +179,19 @@ class DS01ResourceQuery:
         """
         try:
             result = subprocess.run(
-                ["docker", "inspect", container_name], capture_output=True, text=True, check=True
+                ["docker", "inspect", container_name],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
             )
             container_info = json.loads(result.stdout)[0]
-        except (subprocess.CalledProcessError, json.JSONDecodeError, IndexError):
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            json.JSONDecodeError,
+            IndexError,
+        ):
             return None
 
         labels = container_info.get("Config", {}).get("Labels", {}) or {}

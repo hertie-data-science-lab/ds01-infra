@@ -37,6 +37,7 @@ class GPUAvailabilityChecker:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
             )
             mig_gpus = set()
             for line in result.stdout.strip().split("\n"):
@@ -44,17 +45,21 @@ class GPUAvailabilityChecker:
                 if len(parts) == 2 and parts[1] == "Enabled":
                     mig_gpus.add(parts[0])
             return mig_gpus
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
             return set()
 
     def _get_nvidia_smi_output(self) -> str:
         """Get nvidia-smi -L output. Device permissions are 0666 so all users can query."""
         try:
             result = subprocess.run(
-                ["/usr/bin/nvidia-smi", "-L"], capture_output=True, text=True, check=True
+                ["/usr/bin/nvidia-smi", "-L"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
             )
             return result.stdout
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
             return ""
 
     def _get_all_mig_instances(self) -> dict[str, dict]:

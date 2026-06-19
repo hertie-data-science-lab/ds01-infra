@@ -38,6 +38,7 @@ class GPUStatusDashboard:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=30,
             )
 
             gpus = []
