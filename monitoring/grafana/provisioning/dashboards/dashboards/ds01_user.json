@@ -341,7 +341,7 @@
       },
       "targets": [
         {
-          "expr": "increase(ds01:user_gpu_seconds{user=\"$user\"}[7d]) / 3600",
+          "expr": "sum_over_time(ds01:user_gpu_seconds{user=\"$user\"}[7d]) / 3600",
           "legendFormat": "GPU-Hours (7d)",
           "refId": "A"
         }
@@ -378,7 +378,7 @@
       },
       "targets": [
         {
-          "expr": "increase(ds01:user_gpu_seconds{user=\"$user\"}[30d]) / 3600",
+          "expr": "sum_over_time(ds01:user_gpu_seconds{user=\"$user\"}[30d]) / 3600",
           "legendFormat": "GPU-Hours (30d)",
           "refId": "A"
         }
@@ -416,7 +416,7 @@
       },
       "targets": [
         {
-          "expr": "(increase(ds01:user_gpu_seconds_weighted{user=\"$user\"}[7d]) / increase(ds01:user_gpu_seconds{user=\"$user\"}[7d])) * 100",
+          "expr": "(sum_over_time(ds01:user_gpu_seconds_weighted{user=\"$user\"}[7d]) / sum_over_time(ds01:user_gpu_seconds{user=\"$user\"}[7d])) * 100",
           "legendFormat": "Efficiency %",
           "refId": "A"
         }
@@ -472,7 +472,7 @@
       },
       "targets": [
         {
-          "expr": "increase(ds01:user_gpu_seconds{user=\"$user\"}[1d]) / 3600",
+          "expr": "sum_over_time(ds01:user_gpu_seconds{user=\"$user\"}[1d]) / 3600",
           "legendFormat": "GPU-Hours",
           "refId": "A",
           "interval": "1d"
@@ -515,15 +515,15 @@
         "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
         "textMode": "value_and_name"
       },
-      "description": "Current MIG slots allocated. For quota limits, use the check-limits CLI command.",
+      "description": "Current GPU slots allocated. For quota limits, use the check-limits CLI command.",
       "targets": [
         {
-          "expr": "ds01_user_mig_allocated{user=\"$user\"}",
-          "legendFormat": "MIG Slots Used",
+          "expr": "count(ds01_gpu_allocated{user=\"$user\"}) or vector(0)",
+          "legendFormat": "GPU Slots Used",
           "refId": "A"
         }
       ],
-      "title": "MIG Slots Allocated",
+      "title": "GPU Slots Allocated",
       "type": "stat"
     },
     {
