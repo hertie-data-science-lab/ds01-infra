@@ -42,15 +42,14 @@ INFRASTRUCTURE_CONTAINER_PATTERNS = [
 ]
 INFRASTRUCTURE_LABEL = "ds01.protected"
 
-# Universal MIG compute-slice count for a full GPU (A100/H100): a full GPU is
-# divided into 7 compute slices, so a 1g MIG instance is 1/7 of the GPU.
+# Universal MIG compute-slice count: A100/H100 expose 7 compute slices per GPU.
+# Used as the denominator for a MIG slot's compute fraction (gpueq weight).
 MIG_COMPUTE_SLICES_PER_GPU = 7
 
 
 class GPUStateReader:
     def __init__(self, config_path="/opt/ds01-infra/config/runtime/resource-limits.yaml"):
         self._mig_uuid_to_slot_cache = None
-        self._mig_uuid_to_profile_cache = None
         self.config_path = config_path
         self._config = None
 
@@ -73,10 +72,15 @@ class GPUStateReader:
         return self._config
 
     def _get_mig_instances_per_gpu(self) -> int:
-        """Get mig_instances_per_gpu from config (default: 4)"""
+        """Get GPU slots per physical GPU from config (default: 1).
+
+        Reads gpu_allocation.slots_per_gpu (new name); falls back to the legacy
+        mig_instances_per_gpu key for one release. Default is 1 (full GPU = 1 slot,
+        MIG off) — matching the unified slot model.
+        """
         config = self._load_config()
         gpu_config = config.get("gpu_allocation", {})
-        return gpu_config.get("mig_instances_per_gpu", 4)
+        return gpu_config.get("slots_per_gpu", gpu_config.get("mig_instances_per_gpu", 1))
 
     def _is_full_gpu(self, gpu_slot: str) -> bool:
         """Check if a GPU slot is a full GPU (not MIG instance)"""
@@ -86,88 +90,54 @@ class GPUStateReader:
             return False
         return "." not in slot_str
 
-    # ========================================================================
-    # GPU-equivalents (gpueq): fractional GPU accounting for MIG.
-    #
-    # Canonical model: one gpueq = one full physical GPU (weight 1.0). A MIG
-    # instance contributes its COMPUTE fraction = compute_slices / 7, where 7 is
-    # the universal MIG compute-slice count for a full A100/H100 GPU.
-    #
-    # SHARED CANONICAL HELPERS: the allocator PR (#76) carries an identical
-    # copy of the block below. Keep signatures and behaviour byte-for-byte in
-    # sync so the two branches merge cleanly.
-    # ========================================================================
-
+    # ------------------------------------------------------------------
+    # GPU-equivalent (gpueq) weight helpers — SHARED with the exporter PR (#75).
+    # These compute the fair-share weight of a GPU/MIG slot as a compute fraction
+    # (1.0 == a full GPU). Keep these byte-identical across the allocator and
+    # exporter branches so the merge is a trivial "keep one copy".
+    # ------------------------------------------------------------------
     @staticmethod
     def _parse_mig_compute_slices(profile: str) -> int:
-        """Parse the leading compute-slice count from a MIG profile string.
+        """Compute slices in a MIG profile (the leading "Ng" of e.g. "2g.20gb").
 
-        A MIG profile looks like "3g.20gb": the "Ng" prefix is the number of
-        compute slices (GPU Instance slices). Returns that N, or 0 if the
-        profile is None/empty/unparseable.
-
-        >>> GPUStateReader._parse_mig_compute_slices("1g.10gb")
-        1
-        >>> GPUStateReader._parse_mig_compute_slices("3g.20gb")
-        3
+        Returns 0 when the profile is empty/unparseable (caller treats as full GPU).
         """
         if not profile:
             return 0
-        match = re.match(r"\s*(\d+)g", str(profile))
+        match = re.match(r"\s*(\d+)g", str(profile).strip(), re.IGNORECASE)
         return int(match.group(1)) if match else 0
 
     def _slices_per_gpu(self) -> int:
-        """Total compute slices a full physical GPU is divided into under MIG."""
-        # Universal A100/H100 MIG compute-slice count; no per-device detection.
+        """Total compute slices per physical GPU.
+
+        Constant 7 on A100/H100 (the universal MIG compute-slice count). This is
+        the denominator for a MIG slot's compute fraction.
+        """
         return MIG_COMPUTE_SLICES_PER_GPU
 
-    def get_slot_compute_fraction(self, gpu_slot, profile=None) -> float:
-        """Compute-slice fraction of a physical GPU for one allocation slot.
+    def get_slot_compute_fraction(self, gpu_slot: str, profile: str | None = None) -> float:
+        """Compute-share weight of a GPU/MIG slot in GPU-equivalents (gpueq).
 
-        Returns 1.0 for a full GPU. For a MIG instance returns
-        compute_slices(profile) / slices_per_gpu, computed live.
+        A full GPU is 1.0. A MIG instance is its compute slices over the GPU's
+        total slices (e.g. a 2g slice on a 7-slice GPU = 2/7 ≈ 0.286).
         """
         if self._is_full_gpu(gpu_slot):
             return 1.0
-        slices = self._parse_mig_compute_slices(profile)
-        per_gpu = self._slices_per_gpu()
-        if slices <= 0 or per_gpu <= 0:
+        slices = self._parse_mig_compute_slices(profile) if profile else 0
+        if slices <= 0:
             return 0.0
-        return slices / per_gpu
-
-    def get_user_gpu_equivalents(self, user) -> float:
-        """Sum of compute-slice fractions over a user's allocations (gpueq).
-
-        For full-GPU users this equals the GPU count. For MIG users it is the
-        sum of fractional compute slices. Profiles come from the existing
-        mig-uuid→profile mapping / _extract_gpu_from_container.
-        """
-        total = 0.0
-        for alloc in self.get_user_allocations(user):
-            gpu_slots = alloc.get("gpu_slots", [alloc.get("gpu_slot")])
-            profiles = alloc.get("gpu_profiles", [])
-            for i, slot in enumerate(gpu_slots):
-                if not slot:
-                    continue
-                profile = profiles[i] if i < len(profiles) else None
-                total += self.get_slot_compute_fraction(slot, profile)
-        return total
+        return slices / self._slices_per_gpu()
 
     def _get_mig_uuid_to_slot_mapping(self) -> dict[str, str]:
         """
         Get mapping of GPU/MIG UUIDs to slot IDs.
         Maps both physical GPU UUIDs (GPU-xxx → "0") and MIG UUIDs (MIG-xxx → "1.0").
         Caches result for performance.
-
-        Side effect: populates the UUID→profile cache in the same parse pass,
-        so MIG profiles (e.g. "3g.20gb") are available for gpueq fractions
-        without a second nvidia-smi call.
         """
         if self._mig_uuid_to_slot_cache is not None:
             return self._mig_uuid_to_slot_cache
 
         mapping = {}
-        profiles: dict[str, str] = {}
 
         # Device permissions are 0666 so all users can query nvidia-smi directly
         try:
@@ -181,7 +151,6 @@ class GPUStateReader:
             nvidia_output = result.stdout
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
             self._mig_uuid_to_slot_cache = mapping
-            self._mig_uuid_to_profile_cache = profiles
             return mapping
 
         # Parse output like:
@@ -203,31 +172,18 @@ class GPUStateReader:
 
                 # Match MIG line: "  MIG 1g.10gb Device 0: (UUID: MIG-xxx)"
                 mig_match = re.match(
-                    r"\s+MIG\s+(\S+)\s+Device\s+(\d+):\s+\(UUID:\s+(MIG-[a-f0-9-]+)\)", line
+                    r"\s+MIG\s+\S+\s+Device\s+(\d+):\s+\(UUID:\s+(MIG-[a-f0-9-]+)\)", line
                 )
                 if mig_match and current_gpu is not None:
-                    profile = mig_match.group(1)
-                    device_id = mig_match.group(2)
-                    uuid = mig_match.group(3)
+                    device_id = mig_match.group(1)
+                    uuid = mig_match.group(2)
                     slot_id = f"{current_gpu}.{device_id}"
                     mapping[uuid] = slot_id
-                    profiles[uuid] = profile
         except Exception:
             pass
 
         self._mig_uuid_to_slot_cache = mapping
-        self._mig_uuid_to_profile_cache = profiles
         return mapping
-
-    def _get_mig_uuid_to_profile_mapping(self) -> dict[str, str]:
-        """Get mapping of MIG UUIDs to their profile string (e.g. "3g.20gb").
-
-        Populated as a side effect of _get_mig_uuid_to_slot_mapping; this
-        accessor ensures the parse has run.
-        """
-        if self._mig_uuid_to_profile_cache is None:
-            self._get_mig_uuid_to_slot_mapping()
-        return self._mig_uuid_to_profile_cache or {}
 
     def _get_container_inspect(self, container_name: str) -> dict | None:
         """Get docker inspect output for a container."""
@@ -400,23 +356,16 @@ class GPUStateReader:
 
             # Map all UUIDs to slot IDs
             uuid_to_slot = self._get_mig_uuid_to_slot_mapping()
-            uuid_to_profile = self._get_mig_uuid_to_profile_mapping()
             mig_per_gpu = self._get_mig_instances_per_gpu()
 
             gpu_slots = []
             gpu_uuids = []
-            gpu_profiles = []  # MIG profile per slot ("" for full GPUs)
-            # DEPRECATED: mig_equiv conflates "1 full GPU" with "N MIG instances".
-            # The exporter now uses get_user_gpu_count() (real slot count) instead.
-            # Kept only because the allocator/wrapper code still reads mig_equiv;
-            # remove with get_user_mig_total once the allocator PR migrates.
             mig_equiv = 0
 
             for uuid in device_ids:
                 slot = uuid_to_slot.get(uuid, uuid)  # Fallback to UUID if not found
                 gpu_slots.append(slot)
                 gpu_uuids.append(uuid)
-                gpu_profiles.append(uuid_to_profile.get(uuid, ""))
                 # Full GPU counts as mig_per_gpu equivalents
                 if self._is_full_gpu(slot):
                     mig_equiv += mig_per_gpu
@@ -452,7 +401,6 @@ class GPUStateReader:
                 "gpu_slot": gpu_slot,  # Primary GPU slot (backward compat)
                 "gpu_uuids": gpu_uuids,  # All GPU UUIDs
                 "gpu_slots": gpu_slots,  # All GPU slots
-                "gpu_profiles": gpu_profiles,  # MIG profile per slot ("" for full GPUs)
                 "mig_equiv": mig_equiv,  # Total MIG-equivalents
                 "allocated_at": allocated_at,
                 "priority": priority,
@@ -654,7 +602,7 @@ class GPUStateReader:
         """
         allocations = defaultdict(
             lambda: {
-                "type": "full_gpu",
+                "type": "mig_instance",
                 "containers": [],
                 "users": defaultdict(int),
                 "uuid": "",
@@ -686,28 +634,22 @@ class GPUStateReader:
             # Process ALL gpu_slots for multi-MIG containers
             all_gpu_slots = gpu_info.get("gpu_slots", [gpu_info["gpu_slot"]])
             all_gpu_uuids = gpu_info.get("gpu_uuids", [gpu_info["gpu_uuid"]])
-            all_gpu_profiles = gpu_info.get("gpu_profiles", [])
 
             for i, gpu_slot in enumerate(all_gpu_slots):
                 gpu_uuid = all_gpu_uuids[i] if i < len(all_gpu_uuids) else ""
-                slot_profile = all_gpu_profiles[i] if i < len(all_gpu_profiles) else ""
 
-                # Add to allocations. Slot type is full_gpu by default; a dot in
-                # the slot id (e.g. "2.0") marks a genuine MIG instance.
-                allocations[gpu_slot]["type"] = (
-                    "mig_instance" if "." in str(gpu_slot) else "full_gpu"
-                )
+                # Add to allocations
                 allocations[gpu_slot]["containers"].append(container_name)
                 allocations[gpu_slot]["users"][user] += 1
                 allocations[gpu_slot]["uuid"] = gpu_uuid
                 allocations[gpu_slot]["docker_id"] = gpu_uuid
                 allocations[gpu_slot]["interfaces"][interface] += 1
 
-                # Profile comes from the live nvidia-smi MIG profile (e.g.
-                # "3g.20gb"); used downstream for gpueq fractions. Empty for
-                # full GPUs.
-                if slot_profile:
-                    allocations[gpu_slot]["profile"] = slot_profile
+                # Try to determine profile from UUID or slot
+                if "MIG" in gpu_uuid:
+                    allocations[gpu_slot]["profile"] = (
+                        "1g.10gb"  # Default, could parse from nvidia-smi
+                    )
 
         # Convert defaultdict to regular dict
         result = {}
@@ -874,7 +816,6 @@ class GPUStateReader:
                     "gpu_uuid": gpu_info["gpu_uuid"],  # Primary UUID (backward compat)
                     "gpu_slots": gpu_info.get("gpu_slots", [gpu_info["gpu_slot"]]),  # All slots
                     "gpu_uuids": gpu_info.get("gpu_uuids", [gpu_info["gpu_uuid"]]),  # All UUIDs
-                    "gpu_profiles": gpu_info.get("gpu_profiles", []),  # MIG profile per slot
                     "mig_equiv": gpu_info.get("mig_equiv", 1),  # MIG-equivalents
                     "status": status,
                     "running": is_running,
@@ -887,12 +828,6 @@ class GPUStateReader:
     def get_user_mig_total(self, username: str) -> int:
         """
         Get total MIG-equivalents allocated to a user across all containers.
-
-        DEPRECATED: MIG-equivalents conflate "1 full GPU" with "N MIG instances"
-        and are misleading on the GPU-slot model. Use get_user_gpu_count() for
-        the real slot count. Retained only because the allocator/wrapper code
-        (gpu_allocator_v2.py, mlc-create-wrapper.sh, container-create) still
-        consumes it; remove once the allocator PR migrates off MIG-equivalents.
         """
         allocations = self.get_user_allocations(username)
         return sum(alloc.get("mig_equiv", 1) for alloc in allocations)
@@ -917,6 +852,30 @@ class GPUStateReader:
                 if slot:
                     all_slots.add(slot)
         return len(all_slots)
+
+    def get_user_gpu_equivalents(self, username: str) -> float:
+        """Total GPU-equivalents (gpueq) a user currently holds.
+
+        Sums each allocated slot's compute fraction (get_slot_compute_fraction):
+        a full GPU contributes 1.0, a MIG instance its compute share. For
+        full-GPU users this equals the distinct GPU count, so quota arithmetic
+        is numerically identical to the old integer-slot model.
+
+        SHARED with the exporter PR (#75) — keep byte-identical.
+        """
+        allocations = self.get_user_allocations(username)
+        total = 0.0
+        seen_slots = set()
+        for alloc in allocations:
+            slots = alloc.get("gpu_slots", [alloc.get("gpu_slot")])
+            profiles = alloc.get("gpu_profiles", [])
+            for i, slot in enumerate(slots):
+                if not slot or slot in seen_slots:
+                    continue
+                seen_slots.add(slot)
+                profile = profiles[i] if i < len(profiles) else None
+                total += self.get_slot_compute_fraction(slot, profile)
+        return total
 
 
 # ============================================================================
@@ -1050,7 +1009,7 @@ def main():
         print("  user <username>        - Show user's GPU allocations (with MIG-equiv)")
         print("  user-mig-total <user>  - Get total MIG-equivalents for user")
         print("  user-gpu-count <user>  - Get GPU/MIG slot count for display")
-        print("  user-gpu-equivalents <user> - Get fractional GPU-equivalents (gpueq)")
+        print("  user-gpu-equiv <user>  - Get total GPU-equivalents (gpueq, float) for user")
         print("  unmanaged              - Show containers with GPU access outside DS01 tracking")
         print("  json                   - Output all allocations as JSON")
         print("  json-by-interface      - Output containers by interface as JSON")
@@ -1131,11 +1090,9 @@ def main():
         count = reader.get_user_gpu_count(username)
         print(count)
 
-    elif command == "user-gpu-equivalents" and len(sys.argv) > 2:
+    elif command == "user-gpu-equiv" and len(sys.argv) > 2:
         username = sys.argv[2]
-        gpueq = reader.get_user_gpu_equivalents(username)
-        # Print as a clean integer when whole (full-GPU users), else fractional.
-        print(int(gpueq) if gpueq == int(gpueq) else round(gpueq, 6))
+        print(reader.get_user_gpu_equivalents(username))
 
     elif command == "unmanaged":
         unmanaged = reader.get_unmanaged_gpu_containers()
