@@ -56,7 +56,7 @@ Long-term trend analysis. Default range: last 7 days.
 |-----|-----------------|
 | GPU Utilisation Trends | Hourly avg/max trends, utilisation heatmap (orange = high demand) |
 | GPU Cost Attribution | GPU-hours by user (stacked bar), total GPU-hours, efficiency bargauge, GPU-hours over time |
-| Capacity & Demand | MIG slot allocation over time, active users over time, GPU waste % trend |
+| Capacity & Demand | GPU slot allocation over time, active users over time, GPU waste % trend |
 | Temperature & Health | Daily max GPU temp, enforcement activity over time (idle/runtime kills) |
 
 ### NVIDIA DCGM GPU Metrics (`nvidia-dcgm`)
@@ -284,10 +284,10 @@ After editing any config file, reload the relevant service (see section 4). For 
 | `ds01_gpu_allocated` | ds01-exporter | Per-slot GPU allocation (labels: gpu_slot, user, container) |
 | `ds01_ssh_sessions_active` | ds01-exporter | SSH sessions per user (from `who`) |
 | `ds01_lifecycle_events_total` | ds01-exporter | Enforcement events last 24h (label: action) |
-| `ds01:system_gpu_utilization_avg` | recording rule | System-wide GPU utilisation avg (0–1 scale) |
-| `ds01:user_gpu_seconds` | recording rule | Proxy counter for GPU-hours attribution |
+| `ds01:system_gpu_utilization_avg` | recording rule | System-wide GPU utilisation avg (0–100 scale) |
+| `ds01:user_gpu_seconds` | recording rule | Gauge proxy for GPU-hours attribution (GPU-seconds; integrate via `sum_over_time`) |
 | `DCGM_FI_DEV_GPU_TEMP` | dcgm-exporter | Per-GPU temperature (°C) |
-| `DCGM_FI_PROF_GR_ENGINE_ACTIVE` | dcgm-exporter | MIG GPU utilisation (0–1 scale) |
+| `DCGM_FI_PROF_GR_ENGINE_ACTIVE` | dcgm-exporter | GPU compute engine active ratio (0–1 scale) |
 | `container_cpu_usage_seconds_total` | cAdvisor | Per-container CPU usage |
 | `container_memory_usage_bytes` | cAdvisor | Per-container memory usage |
 | `node_load15` | node-exporter | System 15-minute load average |
