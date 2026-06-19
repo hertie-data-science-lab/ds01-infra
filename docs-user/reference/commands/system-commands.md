@@ -120,14 +120,14 @@ check-limits
 **Example output:**
 ```
 === Your Resource Limits ===
-Max GPU-equivalents: 3.0
+Max GPU-equivalents: 2.0
 Max Containers: 3
 Memory/Container: 64GB
 Max Runtime:    24h (varies by user)
 Idle Timeout:   0.5h (varies by user)
 
 === Current Usage ===
-GPU-equivalents: 1.0 / 3.0
+GPU-equivalents: 1.0 / 2.0
 Containers: 2 / 3
 ```
 

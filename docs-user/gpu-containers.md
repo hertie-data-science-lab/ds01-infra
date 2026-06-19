@@ -181,8 +181,8 @@ touch /workspace/.keep-alive
 ### Q: Can I have multiple GPU containers?
 
 **A:** Yes, up to your group limit:
-- **Students**: up to 3 GPU-slots total (3.0 GPU-equivalents)
-- **Researchers / Faculty**: up to 6–8 GPU-slots (varies by group)
+- **Students**: up to 2 GPU-slots total (2.0 GPU-equivalents)
+- **Researchers / Faculty**: up to 4 GPU-slots (varies by group)
 - **Admins**: Unlimited
 
 ### Q: What happens to my work when container stops?

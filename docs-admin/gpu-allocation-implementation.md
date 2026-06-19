@@ -83,37 +83,32 @@ Exact numeric priorities live in `config/runtime/resource-limits.yaml`.
 
 ### Scenario 1: Student at Limit
 
-**Alice (student — `max_gpu_equivalents: 3.0`, `max_gpu_slots_per_container: 2`, 32 CPUs per container):**
+**Alice (student — `max_gpu_equivalents: 2.0`, `max_gpu_slots_per_container: 2`, 32 CPUs per container):**
 
 ```bash
 # 1. Launch first container with a GPU
 container run training1 pytorch
 # → Gets GPU-slot 0 (full GPU, 1.0 gpueq)
-# → Alice usage: 1.0 / 3.0 gpueq ✓
+# → Alice usage: 1.0 / 2.0 gpueq ✓
 
 # 2. Launch second container with a GPU
 container run training2 pytorch
 # → Gets GPU-slot 1 (1.0 gpueq)
-# → Alice usage: 2.0 / 3.0 gpueq ✓
+# → Alice usage: 2.0 / 2.0 gpueq ✓
 
-# 3. Launch third container with a GPU
+# 3. Try a third container with a GPU
 container run training3 pytorch
-# → Gets GPU-slot 2 (1.0 gpueq)
-# → Alice usage: 3.0 / 3.0 gpueq ✓
+# ✗ REJECTED: "USER_AT_LIMIT (2.0/2.0 gpueq)"
 
-# 4. Try a fourth container with a GPU
-container run training4 pytorch
-# ✗ REJECTED: "USER_AT_LIMIT (3.0/3.0 gpueq)"
-
-# 5. Try a single container requesting 3 slots
+# 4. Try a single container requesting 3 slots
 container run big pytorch --num-migs 3
 # ✗ REJECTED: exceeds max_gpu_slots_per_container (2)
 
-# 6. Launch a CPU-only container
+# 5. Launch a CPU-only container
 container run preprocessing pytorch --cpu-only
 # ✓ SUCCESS (does not count against the GPU quota)
 
-# 7. A container tries to use 40 CPU cores
+# 6. A container tries to use 40 CPU cores
 # cgroups throttles it to the configured CPU quota
 ```
 
@@ -346,7 +341,7 @@ wizard:
 
 **Usage in wrapper:**
 ```bash
-echo "$(get_error_message gpu_limit_exceeded max=3.0 current=3.0)"
+echo "$(get_error_message gpu_limit_exceeded max=2.0 current=2.0)"
 ```
 
 ---

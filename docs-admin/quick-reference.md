@@ -16,14 +16,14 @@
 
 | Group | GPU quota (`max_gpu_equivalents`) | Slots/container (`max_gpu_slots_per_container`) | CPUs | Memory |
 |-------|-----------------------------------|-------------------------------------------------|------|--------|
-| **Student** | 3.0 | 2 | 32 | 32G |
-| **Researcher** | 6.0 | 3 | 48 | 64G |
-| **Faculty** | 8.0 | 4 | 64 | 128G |
+| **Student** | 2.0 | 2 | 32 | 32G |
+| **Researcher** | 4.0 | 3 | 48 | 64G |
+| **Faculty** | 4.0 | 4 | 64 | 128G |
 | **Admin** | unlimited | unlimited | 64 | 128G |
 
 Quota is **per user across all containers** (in gpueq); the slots/container value caps a single
 container. Exact values and storage quotas live in `config/runtime/resource-limits.yaml`.
-With MIG off, 1 slot = 1 full GPU = 1.0 gpueq, so e.g. a student can run up to 3 containers
+With MIG off, 1 slot = 1 full GPU = 1.0 gpueq, so e.g. a student can run up to 2 containers
 each with one full GPU.
 
 ---
@@ -115,12 +115,11 @@ tail /var/log/ds01/gpu-allocations.log
 ### Scenario 1: Student at quota
 
 ```bash
-# Alice (student, max_gpu_equivalents 3.0, max_gpu_slots_per_container 2)
+# Alice (student, max_gpu_equivalents 2.0, max_gpu_slots_per_container 2)
 
-mlc-create training1 pytorch    # ✓ slot 0 allocated (1.0/3.0 gpueq)
-mlc-create training2 pytorch    # ✓ slot 1 allocated (2.0/3.0 gpueq)
-mlc-create training3 pytorch    # ✓ slot 2 allocated (3.0/3.0 gpueq)
-mlc-create training4 pytorch    # ✗ REJECTED: "USER_AT_LIMIT (3.0/3.0 gpueq)"
+mlc-create training1 pytorch    # ✓ slot 0 allocated (1.0/2.0 gpueq)
+mlc-create training2 pytorch    # ✓ slot 1 allocated (2.0/2.0 gpueq)
+mlc-create training3 pytorch    # ✗ REJECTED: "USER_AT_LIMIT (2.0/2.0 gpueq)"
 mlc-create preprocess pytorch --cpu-only   # ✓ (no GPU, doesn't count)
 ```
 
@@ -178,7 +177,7 @@ The allocator detects the instances and weights each slot by its compute fractio
 
 ### GPU quota (via allocator):
 ```
-Alice at 3.0/3.0 gpueq → next GPU container rejected: "USER_AT_LIMIT"
+Alice at 2.0/2.0 gpueq → next GPU container rejected: "USER_AT_LIMIT"
 → Graceful error shown in wizard
 ```
 
@@ -208,7 +207,7 @@ Configured in `config/runtime/resource-limits.yaml`:
 ```
 ✗ GPU Limit Exceeded
 
-Your GPU quota is 3.0 GPU-equivalents and you currently use 3.0.
+Your GPU quota is 2.0 GPU-equivalents and you currently use 2.0.
 
 Options:
 1. Stop an existing container to free a slot
