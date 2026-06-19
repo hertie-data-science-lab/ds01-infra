@@ -167,9 +167,12 @@ groups:
           description: "Less than 10% memory available"
 
       # MIG topology mismatch (nvidia-smi vs DCGM)
-      # Fires when MIG partitions change but DCGM hasn't been restarted
+      # Fires when MIG partitions change but DCGM hasn't been restarted.
+      # Gated on MIG actually existing (count(ds01_mig_slot_info) > 0) so a
+      # no-MIG box — where mapping_status may be 0 simply because there is
+      # nothing to map — does not raise a spurious mismatch alert.
       - alert: DS01MIGMappingMismatch
-        expr: ds01_mig_mapping_status == 0
+        expr: ds01_mig_mapping_status == 0 and on() (count(ds01_mig_slot_info) > 0)
         for: 5m
         labels:
           severity: warning
@@ -208,23 +211,31 @@ groups:
           description: "Alert routing and notifications are not functioning"
 
       # GPU XID errors (hardware errors)
+      # DCGM_FI_DEV_XID_ERRORS is the last XID error CODE (it latches and stays
+      # set), not a count — so `> 0` would fire forever after any past error.
+      # Fire on a CHANGE in the code over the last 10m to catch new XID events.
       - alert: DS01GPUXIDError
-        expr: DCGM_FI_DEV_XID_ERRORS > 0
+        expr: changes(DCGM_FI_DEV_XID_ERRORS[10m]) > 0
         for: 1m
         labels:
           severity: critical
         annotations:
           summary: "GPU XID error detected"
-          description: "GPU {{ $labels.gpu }} reported XID error {{ $value }}"
+          description: "GPU {{ $labels.gpu }} reported a new XID error code {{ $value }}"
 
   # User-specific alerts (using recording rules)
   - name: ds01_user_alerts
     interval: 30s
     rules:
       # User has GPUs with very low utilization
-      # Returns 0 when DCGM is down — check ds01:user_gpu_utilization_avg source before acting
+      # Gated on DCGM being up: if dcgm-exporter is down, utilization reads as 0
+      # and would otherwise raise false "0% util" waste alerts. The phantom {}
+      # series is also gone now that ds01:user_gpu_utilization_avg dropped its
+      # `or vector(0)` fallback, so this only fires for real users.
       - alert: DS01UserGPUWaste
-        expr: ds01:user_gpu_utilization_avg < 5
+        expr: |
+          ds01:user_gpu_utilization_avg < 5
+          and on() (up{job="dcgm-exporter"} == 1)
         for: 2h
         labels:
           severity: warning
@@ -233,8 +244,13 @@ groups:
           description: "User {{ $labels.user }} has avg GPU utilization of {{ $value | printf \"%.1f\" }}% for 2+ hours. Consider releasing unused GPUs."
 
       # High GPU waste across system (>50% of allocated GPUs idle)
+      # Guard: only fire when more than 3 GPUs are allocated, so a single idle
+      # allocation (1/1 = 100%) on a lightly-used box does not raise a "high
+      # waste" alert. With >3 allocations a >50% idle share is genuinely wasteful.
       - alert: DS01SystemHighGPUWaste
-        expr: ds01:gpu_waste_percent > 50
+        expr: |
+          ds01:gpu_waste_percent > 50
+          and on() (count(ds01_gpu_allocated) > 3)
         for: 30m
         labels:
           severity: warning
@@ -242,37 +258,43 @@ groups:
           summary: "High GPU waste across system"
           description: "{{ $value | printf \"%.0f\" }}% of allocated GPUs have <5% utilization"
 
-      # User approaching MIG limit (>80% of their quota)
-      - alert: DS01UserNearMIGLimit
-        expr: |
-          (sum by (user) (ds01_gpu_allocated) / on(user) ds01_user_max_mig_instances) > 0.8
-        for: 5m
-        labels:
-          severity: info
-        annotations:
-          summary: "User {{ $labels.user }} near GPU allocation limit"
-          description: "User {{ $labels.user }} has used >80% of their GPU quota"
+      # DS01UserNearMIGLimit removed: it referenced ds01_user_max_mig_instances,
+      # a per-user quota metric that is NOT emitted by any exporter, so the alert
+      # could never fire (dead rule). Reinstate once a per-user GPU quota metric
+      # (e.g. ds01_user_max_mig_instances or ds01_user_gpu_quota) is exported.
 
   # Capacity planning alerts
   - name: ds01_capacity_alerts
     interval: 5m
     rules:
-      # High MIG utilization (system running low on free slots)
-      - alert: DS01LowMIGCapacity
-        expr: (ds01:system_mig_free / (ds01:system_mig_allocated + ds01:system_mig_free)) < 0.2
+      # Low GPU capacity (system running low on free GPU compute)
+      # Repointed to the fractional GPU-equivalents (gpueq) family: a full GPU
+      # contributes 1.0 and a MIG instance its compute fraction, so this tracks
+      # how much real GPU COMPUTE is free rather than how many allocatable units
+      # remain (the slot-count family still backs the "how many units" panels).
+      # Fires when less than 20% of total GPU compute is free.
+      # NOTE: ds01_gpu_equivalents is emitted by exporter PR #75 and is not live
+      # yet, so _allocated is currently empty and _free == _total (= 4); this
+      # stays quiet until #75 deploys.
+      - alert: DS01LowGPUCapacity
+        expr: (ds01:system_gpu_equivalents_free / ds01:system_gpu_equivalents_total) < 0.2
         for: 30m
         labels:
           severity: info
         annotations:
-          summary: "Low MIG capacity available"
-          description: "Only {{ $value | humanizePercentage }} of MIG slots are free"
+          summary: "Low GPU capacity available"
+          description: "Only {{ $value | humanizePercentage }} of GPU compute (GPU-equivalents) is free"
 
-      # Very low MIG capacity
-      - alert: DS01CriticalMIGCapacity
-        expr: ds01:system_mig_free < 2
+      # Critically low GPU capacity
+      # Repointed to ds01:system_gpu_equivalents_free for the same reason: fewer
+      # than 1.0 GPU-equivalents free means there is effectively no spare GPU
+      # compute, even if some MIG slots remain allocatable.
+      # See the PR #75 note above — quiet until the exporter lands.
+      - alert: DS01CriticalGPUCapacity
+        expr: ds01:system_gpu_equivalents_free < 1
         for: 15m
         labels:
           severity: warning
         annotations:
-          summary: "Critical: Very few MIG slots available"
-          description: "Only {{ $value }} MIG slots free. Users may be unable to create containers."
+          summary: "Critical: Very little GPU capacity available"
+          description: "Only {{ $value }} GPU-equivalents free. Users may be unable to get GPU compute."
