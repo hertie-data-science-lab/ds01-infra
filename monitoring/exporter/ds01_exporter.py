@@ -84,6 +84,17 @@ def _safe_label(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
+def _fmt_fraction(value: float) -> str:
+    """Format a gpueq fraction for Prometheus output.
+
+    Emits whole numbers as integers (full GPU -> "1") and fractions with
+    enough precision to distinguish MIG slices (e.g. 1/7 -> "0.142857").
+    """
+    if value == int(value):
+        return str(int(value))
+    return f"{value:.6g}"
+
+
 # ============================================================================
 # Metric Collection
 # ============================================================================
@@ -103,22 +114,64 @@ def collect_allocation_metrics() -> list[str]:
 
         # Get all allocations
         allocations = reader.get_all_allocations()
+        gpu_total_gb = reader._get_gpu_total_gb()
 
         lines.append("# HELP ds01_gpu_allocated GPU/MIG slot allocation status (1=allocated)")
         lines.append("# TYPE ds01_gpu_allocated gauge")
+
+        # gpueq: fractional GPU-equivalents per allocation. The COMPUTE fraction
+        # is the canonical quota/capacity unit (1.0 for a full GPU; a MIG
+        # instance is a fraction of its physical GPU). The MEMORY fraction is
+        # emitted alongside for visibility.
+        gpueq_lines = []
+        gpueq_lines.append(
+            "# HELP ds01_gpu_equivalents Fractional GPU-equivalents per allocation"
+            " (compute-slice fraction; 1.0 = full GPU)"
+        )
+        gpueq_lines.append("# TYPE ds01_gpu_equivalents gauge")
+        memfrac_lines = []
+        memfrac_lines.append(
+            "# HELP ds01_gpu_memory_fraction Memory fraction of physical GPU per allocation"
+            " (1.0 = full GPU)"
+        )
+        memfrac_lines.append("# TYPE ds01_gpu_memory_fraction gauge")
 
         for slot, data in allocations.items():
             containers = data.get("containers", [])
             users = data.get("users", {})
             interfaces = data.get("interfaces", {})
+            # Profile string for this slot ("" for full GPUs); used to compute
+            # the gpueq fraction live from the MIG profile.
+            profile = data.get("profile", "") or ""
+            compute_fraction = reader.get_slot_compute_fraction(slot, profile)
+            memory_fraction = reader.get_slot_memory_fraction(
+                slot, profile, gpu_total_gb=gpu_total_gb
+            )
+            # Label value: "full" for full GPUs (no MIG profile), else the profile.
+            profile_label = profile if profile else "full"
 
             for container in containers:
                 user = list(users.keys())[0] if users else "unknown"
                 interface = list(interfaces.keys())[0] if interfaces else "unknown"
                 lines.append(
                     f'ds01_gpu_allocated{{gpu_slot="{slot}",container="{container}",'
-                    f'user="{user}",interface="{interface}"}} 1'
+                    f'user="{user}",interface="{interface}",profile="{profile_label}"}} 1'
                 )
+                gpueq_lines.append(
+                    f'ds01_gpu_equivalents{{gpu_slot="{slot}",user="{user}",'
+                    f'interface="{interface}",profile="{profile_label}"}} '
+                    f"{_fmt_fraction(compute_fraction)}"
+                )
+                memfrac_lines.append(
+                    f'ds01_gpu_memory_fraction{{gpu_slot="{slot}",user="{user}",'
+                    f'interface="{interface}",profile="{profile_label}"}} '
+                    f"{_fmt_fraction(memory_fraction)}"
+                )
+
+        lines.append("")
+        lines.extend(gpueq_lines)
+        lines.append("")
+        lines.extend(memfrac_lines)
 
         # Containers by interface
         by_interface = reader.get_all_containers_by_interface()
@@ -161,15 +214,23 @@ def collect_user_metrics() -> list[str]:
         lines.append("# HELP ds01_user_gpus_allocated GPU slots allocated to user")
         lines.append("# TYPE ds01_user_gpus_allocated gauge")
 
+        lines.append(
+            "# HELP ds01_user_gpu_equivalents Fractional GPU-equivalents (gpueq) allocated to"
+            " user (sum of compute-slice fractions; full-GPU users == slot count)"
+        )
+        lines.append("# TYPE ds01_user_gpu_equivalents gauge")
+
         lines.append("# HELP ds01_user_containers_count Number of containers for user")
         lines.append("# TYPE ds01_user_containers_count gauge")
 
         for user in users:
             gpu_count = reader.get_user_gpu_count(user)
+            gpueq = reader.get_user_gpu_equivalents(user)
             user_allocs = reader.get_user_allocations(user)
             container_count = len(user_allocs)
 
             lines.append(f'ds01_user_gpus_allocated{{user="{user}"}} {gpu_count}')
+            lines.append(f'ds01_user_gpu_equivalents{{user="{user}"}} {_fmt_fraction(gpueq)}')
             lines.append(f'ds01_user_containers_count{{user="{user}"}} {container_count}')
 
     except Exception as e:
