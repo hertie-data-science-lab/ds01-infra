@@ -341,7 +341,7 @@ class GPUAllocatorSmart:
 
         # Log to centralized event system (fail silently - logging should never block allocation)
         try:
-            subprocess.run(args, capture_output=True, check=False)
+            subprocess.run(args, capture_output=True, check=False, timeout=10)
         except (subprocess.SubprocessError, OSError) as e:
             # Log failures to stderr for debugging, but don't block
             print(f"Warning: event logging failed: {e}", file=sys.stderr)
@@ -375,6 +375,7 @@ class GPUAllocatorSmart:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=10,
             )
             output = result.stdout.strip()
             parts = output.split("|||")
@@ -397,7 +398,7 @@ class GPUAllocatorSmart:
             # Default: docker direct
             return INTERFACE_DOCKER
 
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
             return INTERFACE_DOCKER
 
     def allocate_gpu(
@@ -741,7 +742,11 @@ class GPUAllocatorSmart:
         # Device permissions are 0666 so all users can query nvidia-smi directly
         try:
             result = subprocess.run(
-                ["/usr/bin/nvidia-smi", "-L"], capture_output=True, text=True, check=True
+                ["/usr/bin/nvidia-smi", "-L"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
             )
             nvidia_output = result.stdout
 
@@ -774,7 +779,7 @@ class GPUAllocatorSmart:
                     if slot_id == gpu_slot:
                         return uuid
 
-        except subprocess.CalledProcessError as e:
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             print(f"Warning: nvidia-smi query failed: {e}", file=sys.stderr)
         except (json.JSONDecodeError, KeyError, IndexError) as e:
             print(f"Warning: parsing nvidia-smi output failed: {e}", file=sys.stderr)
@@ -1010,11 +1015,12 @@ class GPUAllocatorSmart:
                         capture_output=True,
                         text=True,
                         check=True,
+                        timeout=10,
                     )
                     user = result.stdout.strip()
                     if not user or user == "<no value>":
                         user = None
-                except subprocess.CalledProcessError:
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                     user = None
 
                 # Filter by username if specified
@@ -1031,6 +1037,7 @@ class GPUAllocatorSmart:
                         capture_output=True,
                         text=True,
                         check=True,
+                        timeout=10,
                     )
                     is_running = result.stdout.strip() == "true"
 
@@ -1043,12 +1050,13 @@ class GPUAllocatorSmart:
                         capture_output=True,
                         text=True,
                         check=True,
+                        timeout=10,
                     )
                     finished_at_str = result.stdout.strip()
 
                     if not finished_at_str or finished_at_str == "0001-01-01T00:00:00Z":
                         # Container never ran or invalid state - remove immediately (stale allocation)
-                        subprocess.run(["docker", "rm", "-f", container], check=True)
+                        subprocess.run(["docker", "rm", "-f", container], check=True, timeout=30)
                         removed.append((container, "Invalid FinishedAt - stale allocation"))
                         self._log_event(
                             "REMOVED_STALE",
@@ -1073,7 +1081,7 @@ class GPUAllocatorSmart:
                         # CLI/scripted, api = ds01-jobs HTTP API) that already serialises
                         # access, so the wrapper's per-user GPU hold would just block back-
                         # to-back jobs without adding isolation.
-                        subprocess.run(["docker", "rm", "-f", container], check=True)
+                        subprocess.run(["docker", "rm", "-f", container], check=True, timeout=30)
                         reason = f"{interface} interface - binary state (stopped→removed)"
                         removed.append((container, reason))
                         self._log_event(
@@ -1098,7 +1106,9 @@ class GPUAllocatorSmart:
                         # Check if timeout exceeded
                         if elapsed > hold_timeout:
                             # Remove container (automatically releases GPU)
-                            subprocess.run(["docker", "rm", "-f", container], check=True)
+                            subprocess.run(
+                                ["docker", "rm", "-f", container], check=True, timeout=30
+                            )
                             removed.append(
                                 (
                                     container,
