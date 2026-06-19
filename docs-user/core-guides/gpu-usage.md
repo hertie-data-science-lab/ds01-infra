@@ -11,13 +11,13 @@ Practical guide to GPU usage on DS01.
 container-deploy my-project
 
 # Request multiple GPU-slots (during container-create)
-container-create my-project --num-migs 2
+container-create my-project --num-gpus 2
 
 # Prefer a full GPU over a MIG slice (only meaningful when MIG is enabled)
 container-create my-project --prefer-full
 ```
 
-**Note:** GPU allocation options (`--num-migs`, `--prefer-full`) are set during `container-create`. The `container-deploy` orchestrator uses your default allocation settings.
+**Note:** GPU allocation options (`--num-gpus`, `--prefer-full`) are set during `container-create`. The `container-deploy` orchestrator uses your default allocation settings.
 
 ## Monitoring GPU Usage
 

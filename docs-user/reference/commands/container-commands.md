@@ -131,7 +131,7 @@ container-create <project-name> [image] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--cpu-only` | CPU-only container (no GPU) |
-| `--num-migs=N` | Request N GPU-slots (default: 1) |
+| `--num-gpus=N` | Request N GPU-slots (default: 1) |
 | `--prefer-full` | Prefer a full GPU over MIG partitions (only meaningful if MIG is enabled) |
 | `-w, --workspace` | Custom workspace directory |
 | `-d, --data` | Additional data directory to mount |

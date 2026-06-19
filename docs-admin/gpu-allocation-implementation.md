@@ -101,7 +101,7 @@ container run training3 pytorch
 # ✗ REJECTED: "USER_AT_LIMIT (2.0/2.0 gpueq)"
 
 # 4. Try a single container requesting 3 slots
-container run big pytorch --num-migs 3
+container run big pytorch --num-gpus 3
 # ✗ REJECTED: exceeds max_gpu_slots_per_container (2)
 
 # 5. Launch a CPU-only container
