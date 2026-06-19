@@ -48,13 +48,15 @@ groups:
     rules:
       # Per-user GPU utilization (avg across all their allocated GPUs)
       # Works for both full GPUs and MIG instances
-      # NOTE: Returns 0 when DCGM is down — dashboard should check up{job="dcgm-exporter"} status
+      # NOTE: no `or vector(0)` fallback — it would inject a phantom label-less {} series.
+      # When DCGM is down or no user has GPUs, the rule correctly yields no series;
+      # dashboards/alerts should check up{job="dcgm-exporter"} rather than rely on a 0.
       - record: ds01:user_gpu_utilization_avg
         expr: |
           avg by (user) (
             ds01_gpu_allocated * on(gpu_slot) group_left()
             ds01:gpu_utilization_by_slot
-          ) or vector(0)
+          )
 
       # Per-user max GPU utilization
       - record: ds01:user_gpu_utilization_max
@@ -62,7 +64,7 @@ groups:
           max by (user) (
             ds01_gpu_allocated * on(gpu_slot) group_left()
             ds01:gpu_utilization_by_slot
-          ) or vector(0)
+          )
 
       # Per-user GPU memory utilization (works for both full GPUs and MIG)
       # MIG instances have their own memory metrics
@@ -91,7 +93,7 @@ groups:
                 "gpu_slot", "${1}", "gpu", "([0-9]+)"
               )
             )
-          ) or vector(0)
+          )
 
   # System-wide aggregations
   - name: ds01_system_aggregates
@@ -107,17 +109,55 @@ groups:
             DCGM_FI_DEV_GPU_UTIL{GPU_I_ID=""}
           ) or vector(0)
 
-      # Total allocated MIG slots
+      # ---------------------------------------------------------------------
+      # Generic GPU capacity family (handles BOTH full GPUs AND MIG slots)
+      # total / allocated / free are defined over the same population so the
+      # numbers stay consistent. This box currently has 4 full GPUs and no MIG,
+      # but MIG slots are added in transparently if they ever appear.
+      #   total     = full-GPU slots + MIG slots
+      #   allocated = all allocations (full + MIG)
+      #   free      = total - allocated
+      # ---------------------------------------------------------------------
+
+      # Total GPU slots available (full GPUs + MIG instances)
+      - record: ds01:system_gpu_slots_total
+        expr: |
+          (count(ds01_gpu_slot_info) or vector(0))
+          +
+          (count(ds01_mig_slot_info) or vector(0))
+
+      # Total allocated GPU slots (full + MIG)
+      - record: ds01:system_gpu_slots_allocated
+        expr: count(ds01_gpu_allocated) or vector(0)
+
+      # Free GPU slots (total - allocated), never negative
+      - record: ds01:system_gpu_slots_free
+        expr: |
+          clamp_min(
+            (
+              (count(ds01_gpu_slot_info) or vector(0))
+              +
+              (count(ds01_mig_slot_info) or vector(0))
+            )
+            -
+            (count(ds01_gpu_allocated) or vector(0)),
+            0
+          )
+
+      # Total allocated slots (full + MIG)
+      # NOTE: kept as an alias of ds01:system_gpu_slots_allocated for callers
+      # that still reference the old name (e.g. hourly_mig_allocated_avg).
       - record: ds01:system_mig_allocated
         expr: count(ds01_gpu_allocated) or vector(0)
 
-      # Total MIG instances (from ds01 mapping)
+      # Total MIG instances (from ds01 mapping) — MIG-specific, may be 0
       - record: ds01:system_mig_total
         expr: count(ds01_mig_slot_info) or vector(0)
 
       # Total free MIG slots (MIG instances - allocated MIG slots)
-      # Only calculates when MIG topology is known (DCGM running)
-      # Returns NaN if DCGM is down rather than misleading negative values
+      # MIG-specific: counts only slots with a "." in the name (e.g. "2.0").
+      # On a no-MIG box this is correctly 0; use ds01:system_gpu_slots_free for
+      # REAL free GPU capacity that also accounts for idle full GPUs.
       - record: ds01:system_mig_free
         expr: |
           clamp_min(
@@ -187,9 +227,13 @@ groups:
           ) or vector(0)
 
       # GPU waste percentage (wasted / allocated)
+      # Numerator and denominator are both counts over ds01_gpu_allocated, so the
+      # ratio is well-defined (0-100). Denominator uses count(ds01_gpu_allocated)
+      # directly to make the shared population explicit; `or vector(0)` keeps the
+      # result a single label-less scalar (0 when nothing is allocated).
       - record: ds01:gpu_waste_percent
         expr: |
-          (ds01:gpu_waste_count / ds01:system_mig_allocated) * 100
+          (ds01:gpu_waste_count / count(ds01_gpu_allocated)) * 100
           or vector(0)
 
   # GPU temperature trends (for capacity planning)
@@ -238,13 +282,15 @@ groups:
 
       # Per-user weighted GPU-hours (utilisation-adjusted)
       # Weights by actual usage - idle GPU counts less
+      # NOTE: `or vector(0)` removed — it injected a phantom label-less {} series.
+      # The GPU-hours math (weighting, *60) is unchanged; fixed dashboard-side.
       - record: ds01:user_gpu_seconds_weighted
         expr: |
           (
             sum by (user) (ds01_gpu_allocated)
             * on(user) group_left()
             (ds01:user_gpu_utilization_avg / 100)
-          ) * 60 or vector(0)
+          ) * 60
 
   # Device labelling for clear GPU/MIG distinction in dashboards
   # Produces metrics with a "device" label: "GPU 0", "GPU 1" for full GPUs, "MIG 2.0", "MIG 2.1" for MIG instances

@@ -67,9 +67,13 @@ scrape_configs:
           ds01_component: 'cadvisor'
     scrape_interval: 30s
     metric_relabel_configs:
-      # Drop high-cardinality / rarely-used cAdvisor metrics to control storage
+      # Drop high-cardinality / rarely-used cAdvisor metrics to control storage.
+      # NOTE: regex narrowed from 'spec_.*' to 'spec_cpu_.*' so that
+      # container_spec_memory_limit_bytes is PRESERVED (DS01ContainerHighMemory
+      # needs it). We still drop the per-thread state, recursive blkio series,
+      # and the static cpu spec series (period/quota/shares).
       - source_labels: [__name__]
-        regex: 'container_(tasks_state|blkio_io_service_bytes_recursive|blkio_io_serviced_recursive|spec_.*)'
+        regex: 'container_(tasks_state|blkio_.*_recursive|spec_cpu_.*)'
         action: drop
 
   # Grafana self-monitoring
