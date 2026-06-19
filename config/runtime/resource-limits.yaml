@@ -23,18 +23,25 @@
 #   admin      → Unlimited (datasciencelab only)
 
 # GPU UNIT MODEL:
-#   One unit = "GPU slot". Today a slot is a full physical GPU (1 GPU = 1 slot).
-#   When MIG is enabled later, a slot becomes a MIG instance, but the unit and all
-#   quota arithmetic stay slot-based. Limits below count slots everywhere.
-#   Old key names (max_mig_instances, max_mig_per_container) are still read as
-#   aliases for one release; prefer the *_gpu_slots names.
+#   The fair-share quota unit = "GPU-equivalent" (gpueq), a FLOAT compute fraction.
+#   A full physical GPU is 1.0 gpueq; a MIG instance is its compute fraction
+#   (e.g. a 2g.20gb slice on a 7-slice GPU is ~2/7 = 0.286 gpueq). Weights are
+#   computed live from the slot/profile, not from a fixed ratio. With MIG off
+#   every slot is a full GPU, so gpueq == slot count and quota arithmetic is
+#   numerically identical to the old integer-slot model.
+#
+#   max_gpu_equivalents      → FLOAT fair-share quota (total gpueq across all containers)
+#   max_gpu_slots_per_container → INTEGER cap on distinct GPU/MIG units per container
+#
+#   Old key names (max_gpu_slots, and legacy max_mig_instances / max_mig_per_container)
+#   are still read as aliases for one release; prefer the new names.
 
 # Default limits for all users (unless overridden by group or user-specific settings)
 defaults:
   # === GPU limits ===
-  max_gpu_slots: 3                  # Max GPU slots user can have allocated (across all containers)
-  max_gpu_slots_per_container: 3    # Max GPU slots per single container
-  allow_full_gpu: true              # Can user request a full GPU? (MIG off → slots are full GPUs)
+  max_gpu_equivalents: 1.0          # Fair-share quota in GPU-equivalents (gpueq, float) across all containers
+  max_gpu_slots_per_container: 1    # Max distinct GPU/MIG units per single container (integer)
+  allow_full_gpu: true              # Can user request a full GPU? (MIG off → units are full GPUs)
 
   # TODO-NOT-IMPLEMENTED: gpu_memory - redundant with slot memory limits
   # gpu_memory: null                # GPU memory limit in GB (null = no limit)
@@ -78,15 +85,16 @@ groups:
   student:
     # Members: config/groups/student.members
     # Note: Users not in any group file default to 'student' via default_group
-    allow_full_gpu: true            # Students get full GPU access (slots are full GPUs)
-    max_gpu_slots_per_container: 2  # Max GPU slots per single container (any submission path)
+    allow_full_gpu: true            # Students get full GPU access (units are full GPUs)
+    max_gpu_equivalents: 3.0        # Fair-share quota in gpueq across all containers
+    max_gpu_slots_per_container: 2  # Max distinct GPU/MIG units per single container (integer)
     # Per-user aggregate limits (systemd slice enforcement)
     aggregate:
       cpu_quota: "9600%"            # 32 CPUs × 3 containers = 96 CPUs (systemd format: 100% = 1 CPU)
       memory_max: "96G"             # 32GB × 3 = 96GB
       memory_high: "86G"            # 90% of 96GB (soft limit, triggers throttling)
       tasks_max: 12288              # 4096 × 3
-      gpu_limit: 3                  # Max GPU slots across all containers (matches max_gpu_slots)
+      gpu_limit: 3.0                # Fair-share quota in gpueq across all containers (matches max_gpu_equivalents)
     # Per-group lifecycle policies
     policies:
       gpu_idle_threshold: 5          # GPU util % below which GPU is idle
@@ -98,8 +106,8 @@ groups:
     # Members: config/groups/researcher.members
     # PhD students, research assistants, staff with research needs
     allow_full_gpu: true            # Full GPU access for PhD work
-    max_gpu_slots_per_container: 3  # Max GPU slots per single container (any submission path)
-    max_gpu_slots: 6               # Can use up to 6 GPU slots across all containers
+    max_gpu_slots_per_container: 3  # Max distinct GPU/MIG units per single container (integer)
+    max_gpu_equivalents: 6.0       # Fair-share quota in gpueq across all containers
     max_cpus: 48                    # Increased for CPU-heavy workloads
     memory: 64g                     # Increased for large datasets
     memory_swap: 64g
@@ -114,7 +122,7 @@ groups:
       memory_max: "320G"            # 64GB × 5 = 320GB
       memory_high: "288G"           # 90% of 320GB (soft limit)
       tasks_max: 327680             # 65536 × 5
-      gpu_limit: 6                  # Max GPU slots across all containers (matches max_gpu_slots)
+      gpu_limit: 6.0                # Fair-share quota in gpueq across all containers (matches max_gpu_equivalents)
     # Per-group lifecycle policies
     policies:
       gpu_idle_threshold: 5
@@ -129,8 +137,8 @@ groups:
     # Members: config/groups/faculty.members
     # Professors and senior researchers - teaching + research needs
     allow_full_gpu: true            # Full GPU access
-    max_gpu_slots_per_container: 4  # Max GPU slots per single container (any submission path)
-    max_gpu_slots: 8               # Can use up to 8 GPU slots across all containers
+    max_gpu_slots_per_container: 4  # Max distinct GPU/MIG units per single container (integer)
+    max_gpu_equivalents: 8.0       # Fair-share quota in gpueq across all containers
     max_cpus: 64                    # High for demanding workloads
     memory: 128g                    # Large memory for big models
     memory_swap: 128g
@@ -145,7 +153,7 @@ groups:
       memory_max: "640G"            # 128GB × 5 = 640GB
       memory_high: "576G"           # 90% of 640GB (soft limit)
       tasks_max: 327680             # 65536 × 5
-      gpu_limit: 8                  # Max GPU slots across all containers (matches max_gpu_slots)
+      gpu_limit: 8.0                # Fair-share quota in gpueq across all containers (matches max_gpu_equivalents)
     # Per-group lifecycle policies
     policies:
       gpu_idle_threshold: 5
@@ -159,8 +167,8 @@ groups:
   admin:
     # Members: config/groups/admin.members
     allow_full_gpu: true            # Admins CAN request full GPUs
-    max_gpu_slots_per_container: null  # Unlimited GPU slots per container
-    max_gpu_slots: null             # Unlimited (can use all GPUs)
+    max_gpu_slots_per_container: null  # Unlimited distinct GPU/MIG units per container
+    max_gpu_equivalents: null       # Unlimited fair-share quota (can use all GPUs)
     max_cpus: 64
     memory: 128g
     memory_swap: 128g
@@ -180,9 +188,13 @@ groups:
 
 # === GPU allocation ===
 gpu_allocation:
-  # DEPLOYED: This value is used by gpu_allocator_v2.py
-  slots_per_gpu: 1                  # GPU slots per physical GPU (full GPU = 1 slot; MIG off)
-                                    # Alias: mig_instances_per_gpu is still read for one release.
+  # GPU-equivalent weights are computed LIVE from each slot's MIG profile
+  # (compute slices / slices-per-GPU), not from a fixed ratio. A full GPU is 1.0.
+  #
+  # The old fixed ratio is retained only as an UNUSED fallback for the live
+  # slices-per-GPU lookup (default 7 when nvidia-smi can't be queried):
+  # slots_per_gpu: 1                # (legacy, unused) full GPU = 1 unit when MIG off
+  #                                 # Alias: mig_instances_per_gpu, read for one release.
 
   # TODO-NOT-IMPLEMENTED: Strategy settings - hardcoded to least_allocated/dynamic
   # strategy: least_allocated       # Options: least_allocated, round_robin

@@ -86,6 +86,112 @@ class GPUStateReader:
             return False
         return "." not in slot_str
 
+    # ------------------------------------------------------------------
+    # GPU-equivalent (gpueq) weight helpers — SHARED with the exporter PR (#75).
+    # These compute the fair-share weight of a GPU/MIG slot as a compute fraction
+    # (1.0 == a full GPU). Keep these byte-identical across the allocator and
+    # exporter branches so the merge is a trivial "keep one copy".
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _parse_mig_compute_slices(profile: str) -> int:
+        """Compute slices in a MIG profile (the leading "Ng" of e.g. "2g.20gb").
+
+        Returns 0 when the profile is empty/unparseable (caller treats as full GPU).
+        """
+        if not profile:
+            return 0
+        match = re.match(r"\s*(\d+)g", str(profile).strip(), re.IGNORECASE)
+        return int(match.group(1)) if match else 0
+
+    @staticmethod
+    def _parse_mig_memory_gb(profile: str) -> float:
+        """Memory GB in a MIG profile (the "Ngb" of e.g. "2g.20gb").
+
+        Returns 0.0 when the profile is empty/unparseable.
+        """
+        if not profile:
+            return 0.0
+        match = re.search(r"\.(\d+(?:\.\d+)?)gb", str(profile).strip(), re.IGNORECASE)
+        return float(match.group(1)) if match else 0.0
+
+    def _slices_per_gpu(self) -> int:
+        """Total compute slices per physical GPU (live, default 7).
+
+        A100/H100 expose 7 compute slices per GPU under MIG. We query nvidia-smi
+        for the maximum advertised profile and fall back to 7 if MIG geometry is
+        unavailable (e.g. MIG off, no nvidia-smi). This is the denominator for a
+        MIG slot's compute fraction.
+        """
+        try:
+            result = subprocess.run(
+                ["/usr/bin/nvidia-smi", "mig", "-lgip"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+            return 7
+        max_slices = 0
+        for line in result.stdout.splitlines():
+            match = re.search(r"(\d+)g\.\d", line)
+            if match:
+                max_slices = max(max_slices, int(match.group(1)))
+        return max_slices or 7
+
+    def get_slot_compute_fraction(self, gpu_slot: str, profile: str | None = None) -> float:
+        """Compute-share weight of a GPU/MIG slot in GPU-equivalents (gpueq).
+
+        A full GPU is 1.0. A MIG instance is its compute slices over the GPU's
+        total slices (e.g. a 2g slice on a 7-slice GPU = 2/7 ≈ 0.286).
+        """
+        if self._is_full_gpu(gpu_slot):
+            return 1.0
+        slices = self._parse_mig_compute_slices(profile) if profile else 0
+        total = self._slices_per_gpu()
+        if slices <= 0 or total <= 0:
+            return 1.0
+        return slices / total
+
+    def get_slot_memory_fraction(self, gpu_slot: str, profile: str | None = None) -> float:
+        """Memory-share weight of a GPU/MIG slot as a fraction of one full GPU.
+
+        A full GPU is 1.0. A MIG instance is its profile memory over the GPU's
+        total memory; falls back to the compute fraction when memory is unknown.
+        """
+        if self._is_full_gpu(gpu_slot):
+            return 1.0
+        mem = self._parse_mig_memory_gb(profile) if profile else 0.0
+        total_mem = self._gpu_memory_gb()
+        if mem <= 0 or total_mem <= 0:
+            return self.get_slot_compute_fraction(gpu_slot, profile)
+        return mem / total_mem
+
+    def _gpu_memory_gb(self) -> float:
+        """Total memory (GB) of a physical GPU (live, default 80.0).
+
+        Used as the denominator for a MIG slot's memory fraction. Falls back to
+        80.0 (A100/H100 80GB) when nvidia-smi is unavailable.
+        """
+        try:
+            result = subprocess.run(
+                ["/usr/bin/nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+            return 80.0
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    return float(line) / 1024.0  # MiB → GB
+                except ValueError:
+                    continue
+        return 80.0
+
     def _get_mig_uuid_to_slot_mapping(self) -> dict[str, str]:
         """
         Get mapping of GPU/MIG UUIDs to slot IDs.
@@ -811,6 +917,30 @@ class GPUStateReader:
                     all_slots.add(slot)
         return len(all_slots)
 
+    def get_user_gpu_equivalents(self, username: str) -> float:
+        """Total GPU-equivalents (gpueq) a user currently holds.
+
+        Sums each allocated slot's compute fraction (get_slot_compute_fraction):
+        a full GPU contributes 1.0, a MIG instance its compute share. For
+        full-GPU users this equals the distinct GPU count, so quota arithmetic
+        is numerically identical to the old integer-slot model.
+
+        SHARED with the exporter PR (#75) — keep byte-identical.
+        """
+        allocations = self.get_user_allocations(username)
+        total = 0.0
+        seen_slots = set()
+        for alloc in allocations:
+            slots = alloc.get("gpu_slots", [alloc.get("gpu_slot")])
+            profiles = alloc.get("gpu_profiles", [])
+            for i, slot in enumerate(slots):
+                if not slot or slot in seen_slots:
+                    continue
+                seen_slots.add(slot)
+                profile = profiles[i] if i < len(profiles) else None
+                total += self.get_slot_compute_fraction(slot, profile)
+        return total
+
 
 # ============================================================================
 # MODULE-LEVEL API FUNCTIONS (for importing by other scripts)
@@ -943,6 +1073,7 @@ def main():
         print("  user <username>        - Show user's GPU allocations (with MIG-equiv)")
         print("  user-mig-total <user>  - Get total MIG-equivalents for user")
         print("  user-gpu-count <user>  - Get GPU/MIG slot count for display")
+        print("  user-gpu-equiv <user>  - Get total GPU-equivalents (gpueq, float) for user")
         print("  unmanaged              - Show containers with GPU access outside DS01 tracking")
         print("  json                   - Output all allocations as JSON")
         print("  json-by-interface      - Output containers by interface as JSON")
@@ -1022,6 +1153,10 @@ def main():
         username = sys.argv[2]
         count = reader.get_user_gpu_count(username)
         print(count)
+
+    elif command == "user-gpu-equiv" and len(sys.argv) > 2:
+        username = sys.argv[2]
+        print(reader.get_user_gpu_equivalents(username))
 
     elif command == "unmanaged":
         unmanaged = reader.get_unmanaged_gpu_containers()

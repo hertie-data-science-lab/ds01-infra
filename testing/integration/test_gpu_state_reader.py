@@ -173,6 +173,96 @@ class TestGPUStateReaderWithMockDocker:
         assert user == "student1"
 
 
+class TestGPUEquivalents:
+    """Unit tests for the GPU-equivalent (gpueq) weight helpers.
+
+    These cover the shared weight math (also used by the exporter PR) without
+    touching Docker: get_user_allocations is mocked with synthetic full-GPU and
+    MIG profiles.
+    """
+
+    @pytest.fixture
+    def reader(self, infra_root):
+        """Load GPUStateReader from the infra tree under test."""
+        import importlib.util
+
+        path = infra_root / "scripts" / "docker" / "gpu-state-reader.py"
+        if not path.exists():
+            pytest.skip(f"gpu-state-reader.py not found at {path}")
+        spec = importlib.util.spec_from_file_location("gpu_state_reader_under_test", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        instance = module.GPUStateReader()
+        if not hasattr(instance, "get_user_gpu_equivalents"):
+            pytest.skip("get_user_gpu_equivalents not present (pre-gpueq build)")
+        # Pin slices-per-GPU to 7 so the test is independent of host nvidia-smi.
+        instance._slices_per_gpu = lambda: 7
+        return instance
+
+    @pytest.mark.integration
+    def test_compute_slice_parsing(self, reader):
+        """Leading 'Ng' of a MIG profile gives the compute slice count."""
+        assert reader._parse_mig_compute_slices("2g.20gb") == 2
+        assert reader._parse_mig_compute_slices("1g.10gb") == 1
+        assert reader._parse_mig_compute_slices("3g.40gb") == 3
+        assert reader._parse_mig_compute_slices("") == 0
+        assert reader._parse_mig_compute_slices(None) == 0
+
+    @pytest.mark.integration
+    def test_memory_gb_parsing(self, reader):
+        """Memory GB of a MIG profile is parsed from the '.Ngb' segment."""
+        assert reader._parse_mig_memory_gb("2g.20gb") == 20.0
+        assert reader._parse_mig_memory_gb("1g.10gb") == 10.0
+        assert reader._parse_mig_memory_gb("") == 0.0
+
+    @pytest.mark.integration
+    def test_full_gpu_compute_fraction_is_one(self, reader):
+        """A full GPU slot weighs exactly 1.0 gpueq."""
+        assert reader.get_slot_compute_fraction("0") == 1.0
+        assert reader.get_slot_compute_fraction("3") == 1.0
+
+    @pytest.mark.integration
+    def test_mig_compute_fraction_is_slice_share(self, reader):
+        """A MIG slot weighs its compute slices over the GPU's total slices."""
+        assert reader.get_slot_compute_fraction("1.0", "2g.20gb") == pytest.approx(2 / 7)
+        assert reader.get_slot_compute_fraction("1.1", "1g.10gb") == pytest.approx(1 / 7)
+
+    @pytest.mark.integration
+    def test_full_gpu_user_equivalents_equal_gpu_count(self, reader):
+        """For full-GPU users, gpueq equals the distinct GPU count."""
+        reader.get_user_allocations = lambda u: [
+            {"gpu_slots": ["0"], "gpu_profiles": [""]},
+            {"gpu_slots": ["1"], "gpu_profiles": [""]},
+        ]
+        assert reader.get_user_gpu_equivalents("alice") == 2.0
+
+    @pytest.mark.integration
+    def test_mig_user_equivalents_sum_compute_fractions(self, reader):
+        """For MIG users, gpueq sums each slot's compute fraction."""
+        reader.get_user_allocations = lambda u: [
+            {"gpu_slots": ["1.0", "1.1"], "gpu_profiles": ["2g.20gb", "1g.10gb"]},
+        ]
+        assert reader.get_user_gpu_equivalents("bob") == pytest.approx(3 / 7)
+
+    @pytest.mark.integration
+    def test_mixed_user_equivalents(self, reader):
+        """Mixed full-GPU + MIG holdings sum correctly."""
+        reader.get_user_allocations = lambda u: [
+            {"gpu_slots": ["0"], "gpu_profiles": [""]},
+            {"gpu_slots": ["2.0"], "gpu_profiles": ["3g.40gb"]},
+        ]
+        assert reader.get_user_gpu_equivalents("carol") == pytest.approx(1.0 + 3 / 7)
+
+    @pytest.mark.integration
+    def test_equivalents_dedupe_distinct_slots(self, reader):
+        """A slot referenced by multiple containers counts once."""
+        reader.get_user_allocations = lambda u: [
+            {"gpu_slots": ["0"], "gpu_profiles": [""]},
+            {"gpu_slots": ["0"], "gpu_profiles": [""]},
+        ]
+        assert reader.get_user_gpu_equivalents("dave") == 1.0
+
+
 class TestGPUStateReaderInterfaceCategories:
     """Tests for interface category grouping."""
 
