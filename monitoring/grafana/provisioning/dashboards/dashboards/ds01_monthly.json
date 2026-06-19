@@ -482,7 +482,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "topk(15, increase(ds01:user_gpu_seconds[$__range]) / 3600)",
+          "expr": "topk(15, sum_over_time(ds01:user_gpu_seconds[$__range]) / 3600)",
           "legendFormat": "{{user}}",
           "refId": "A",
           "instant": true
@@ -543,7 +543,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(increase(ds01:user_gpu_seconds[$__range])) / 3600",
+          "expr": "sum(sum_over_time(ds01:user_gpu_seconds[$__range])) / 3600",
           "legendFormat": "",
           "refId": "A",
           "instant": true
@@ -614,7 +614,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(sum(increase(ds01:user_gpu_seconds[$__range])) / sum(increase(ds01:user_gpu_seconds_weighted[$__range]))) * 100",
+          "expr": "(sum(sum_over_time(ds01:user_gpu_seconds_weighted[$__range])) / sum(sum_over_time(ds01:user_gpu_seconds[$__range]))) * 100",
           "legendFormat": "Efficiency",
           "refId": "A",
           "instant": true
@@ -704,9 +704,10 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "increase(ds01:user_gpu_seconds[1d]) / 3600",
+          "expr": "sum_over_time(ds01:user_gpu_seconds[1d]) / 3600",
           "legendFormat": "{{user}}",
-          "refId": "A"
+          "refId": "A",
+          "interval": "1d"
         }
       ]
     },
@@ -1022,7 +1023,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "ds01:hourly_mig_allocated_avg",
+          "expr": "ds01:hourly_gpu_slots_allocated_avg",
           "legendFormat": "Allocated",
           "refId": "A"
         },
@@ -1031,7 +1032,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "ds01:system_mig_total",
+          "expr": "ds01:system_gpu_slots_total",
           "legendFormat": "Total Slots",
           "refId": "B"
         }
@@ -1131,7 +1132,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "ds01:system_gpu_utilization_avg * 100",
+          "expr": "ds01:system_gpu_utilization_avg",
           "legendFormat": "GPU Util %",
           "refId": "A"
         }
@@ -1409,7 +1410,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by(action)(increase(ds01_lifecycle_events_total[24h]))",
+          "expr": "sum by(action)(ds01_lifecycle_events_total)",
           "legendFormat": "{{action}}",
           "refId": "A",
           "instant": true
@@ -1498,7 +1499,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by(action)(increase(ds01_lifecycle_events_total[1h]))",
+          "expr": "sum by(action)(ds01_lifecycle_events_total)",
           "legendFormat": "{{action}}",
           "refId": "A"
         }
