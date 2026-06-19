@@ -130,14 +130,13 @@ start_container_impl() {
 
     # Start container
     echo -e "${CYAN}Starting container...${NC}"
-    if [[ -f $MLC_START ]]; then
-        if bash "$MLC_START" "$name" -s >/dev/null 2>&1; then
-            echo -e "${GREEN}✓${NC} Container started"
-            return 0
-        fi
-    fi
-    # Fallback to docker start
-    if docker start "$tag" >/dev/null 2>&1; then
+    # mlc-start delegates to the legacy AIME mlc.py, which only recognises the old
+    # aime.mlc.* label namespace and silently exits 0 (without starting) for
+    # ds01.*-labelled containers. Treat the running state — not mlc-start's exit
+    # code — as the source of truth, then fall back to a direct docker start.
+    if [[ -f $MLC_START ]]; then bash "$MLC_START" "$name" -s >/dev/null 2>&1 || true; fi
+    docker ps --format '{{.Names}}' | grep -q "^${tag}$" || docker start "$tag" >/dev/null 2>&1 || true
+    if docker ps --format '{{.Names}}' | grep -q "^${tag}$"; then
         echo -e "${GREEN}✓${NC} Container started"
         return 0
     fi
@@ -157,16 +156,10 @@ attach_to_container() {
     echo -e "${DIM}Type 'exit' to exit the container${NC}"
     echo ""
 
-    # Attach via mlc-open or docker exec
-    if [[ -f $MLC_OPEN && -x $MLC_OPEN ]]; then
-        if [[ -n $DS01_ORCHESTRATOR ]]; then
-            bash "$MLC_OPEN" "$name" 2>/dev/null
-        else
-            bash "$MLC_OPEN" "$name"
-        fi
-    else
-        docker exec -it "$tag" /bin/bash
-    fi
+    # Attach via docker exec. mlc-open delegates to the legacy AIME mlc.py, which
+    # cannot find ds01.*-labelled containers (old aime.mlc.* namespace), so attach
+    # directly. The container's configured user (uid:gid set at create) is used.
+    docker exec -it "$tag" /bin/bash
 
     # Clean up keep-alive
     docker exec "$tag" pkill -f "\[ds01-keep-alive\]" 2>/dev/null || true

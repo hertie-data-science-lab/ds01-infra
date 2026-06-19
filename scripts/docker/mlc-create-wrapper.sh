@@ -427,7 +427,7 @@ else
                 # Multi-GPU allocation
                 log_info "Allocating $NUM_MIGS MIG-equivalents via gpu_allocator_v2.py..."
 
-                ALLOC_CMD="python3 $GPU_ALLOCATOR allocate-multi $CURRENT_USER $CONTAINER_TAG $NUM_MIGS"
+                ALLOC_CMD="python3 $GPU_ALLOCATOR allocate-multi $CURRENT_USER $CONTAINER_TAG mlc $NUM_MIGS"
                 if [ "$PREFER_FULL_GPU" = true ]; then
                     ALLOC_CMD="$ALLOC_CMD --prefer-full"
                 fi
