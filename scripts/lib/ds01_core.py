@@ -248,7 +248,7 @@ def get_container_gpu(container_name: str) -> str | None:
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=10,
         )
         if result.returncode == 0:
             gpu = result.stdout.strip()
@@ -318,6 +318,16 @@ def get_user_containers(username: str = None) -> list[dict[str, Any]]:
     return containers
 
 
+# Subprocess timeout policy (seconds). Generous ceilings — they fire only on a
+# genuine hang, so the success path is unaffected. Chosen by purpose, not just by
+# command, because the allocation path and the monitors want different behaviour:
+#   Allocation / creation path (gpu_allocator, mlc wrappers — must not false-fail
+#       a user): nvidia-smi & `docker ps`/`docker rm` = 30, single `docker inspect` = 10.
+#   Monitors / pollers (utilisation + workload/bare-metal detectors — should fail
+#       fast and retry next cycle): nvidia-smi & docker = 10, event-logger = 10.
+#   Local NSS lookups (getent) = 5; deliberately 1 inside tight /proc scan loops.
+# Long-running work (image build/pull/create, interactive `docker exec`, the
+# `docker events` stream) is intentionally left unbounded.
 def run_docker_command(args: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
     """
     Run a docker command with consistent error handling.

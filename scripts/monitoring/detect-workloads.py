@@ -433,7 +433,7 @@ def scan_host_gpu_processes() -> dict[str, dict[str, Any]]:
             ],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=10,
         )
 
         if result.returncode != 0:
