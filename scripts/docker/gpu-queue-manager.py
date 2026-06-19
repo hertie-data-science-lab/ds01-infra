@@ -71,7 +71,7 @@ def log_event(event_type, user, message):
             subprocess.run(
                 ["python3", str(EVENT_LOGGER), event_type, "--user", user, "--message", message],
                 capture_output=True,
-                timeout=5,
+                timeout=10,
             )
         except Exception:
             pass
