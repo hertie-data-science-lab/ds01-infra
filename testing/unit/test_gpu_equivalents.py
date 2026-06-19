@@ -4,10 +4,10 @@ Unit Tests: GPU-equivalents (gpueq) fraction helpers
 
 Covers the SHARED canonical helpers added to gpu-state-reader.py for fractional
 GPU accounting under MIG. The helpers compute a COMPUTE-slice fraction (the
-canonical quota/capacity unit) and a MEMORY fraction per allocation, derived
-live from the MIG profile. These tests use synthetic profiles and a stubbed
-slices-per-GPU so they run without real MIG hardware (all DS01 GPUs are full
-today, so live MIG can't be exercised on the box).
+canonical quota/capacity unit) per allocation: 1.0 for a full GPU, else
+compute_slices / 7 for a MIG instance. These tests use synthetic profiles so
+they run without real MIG hardware (all DS01 GPUs are full today, so live MIG
+can't be exercised on the box).
 """
 
 import importlib.util
@@ -31,15 +31,11 @@ def _load_reader_module():
 @pytest.fixture
 def reader():
     module = _load_reader_module()
-    inst = module.GPUStateReader()
-    # Pin slices-per-GPU to the A100/H100 canonical value so the compute-fraction
-    # arithmetic is deterministic without querying live MIG topology.
-    inst._slices_per_gpu = lambda: 7
-    return inst
+    return module.GPUStateReader()
 
 
 # =============================================================================
-# Static profile parsers (pure functions, no hardware)
+# Static profile parser (pure function, no hardware)
 # =============================================================================
 
 
@@ -53,16 +49,6 @@ class TestProfileParsers:
         assert reader._parse_mig_compute_slices("") == 0
         assert reader._parse_mig_compute_slices(None) == 0
         assert reader._parse_mig_compute_slices("garbage") == 0
-
-    def test_parse_memory_gb(self, reader):
-        assert reader._parse_mig_memory_gb("1g.10gb") == 10.0
-        assert reader._parse_mig_memory_gb("3g.20gb") == 20.0
-        assert reader._parse_mig_memory_gb("7g.40gb") == 40.0
-
-    def test_parse_memory_gb_unparseable(self, reader):
-        assert reader._parse_mig_memory_gb("") == 0.0
-        assert reader._parse_mig_memory_gb(None) == 0.0
-        assert reader._parse_mig_memory_gb("3g") == 0.0
 
 
 # =============================================================================
@@ -93,52 +79,14 @@ class TestComputeFraction:
 
 
 # =============================================================================
-# Memory fraction (companion metric, for visibility)
-# =============================================================================
-
-
-class TestMemoryFraction:
-    def test_full_gpu_is_one(self, reader):
-        assert reader.get_slot_memory_fraction("0") == 1.0
-
-    def test_mig_memory_fraction(self, reader):
-        # 10 GB MIG instance on a 40 GB A100 -> 0.25.
-        assert reader.get_slot_memory_fraction("1.2", "1g.10gb", gpu_total_gb=40.0) == pytest.approx(
-            0.25
-        )
-        assert reader.get_slot_memory_fraction("0.0", "3g.20gb", gpu_total_gb=40.0) == pytest.approx(
-            0.5
-        )
-
-    def test_mig_memory_fraction_default_total(self, reader):
-        # Default gpu_total_gb is 40 (A100-40GB).
-        assert reader.get_slot_memory_fraction("1.0", "1g.10gb") == pytest.approx(0.25)
-
-    def test_mig_memory_fraction_unparseable(self, reader):
-        assert reader.get_slot_memory_fraction("1.0", "") == 0.0
-
-
-# =============================================================================
-# slices-per-GPU live derivation (default fallback)
+# slices-per-GPU (universal A100/H100 constant)
 # =============================================================================
 
 
 class TestSlicesPerGpu:
-    def test_default_fallback_is_seven(self):
-        # With no MIG profiles present, _slices_per_gpu falls back to 7
-        # (A100/H100 canonical) rather than a hardcoded mig_instances_per_gpu.
-        module = _load_reader_module()
-        inst = module.GPUStateReader()
-        inst._get_present_mig_profiles = lambda: []
-        assert inst._slices_per_gpu() == 7
-
-    def test_derives_max_from_present_profiles(self):
-        # Heterogeneous MIG: the largest profile's slice count defines the GPU's
-        # total slices (so a 7g instance is recognised as a full GPU).
-        module = _load_reader_module()
-        inst = module.GPUStateReader()
-        inst._get_present_mig_profiles = lambda: ["1g.10gb", "3g.20gb", "7g.40gb"]
-        assert inst._slices_per_gpu() == 7
+    def test_is_seven(self, reader):
+        # A full GPU is always 7 compute slices; no per-device detection.
+        assert reader._slices_per_gpu() == 7
 
 
 # =============================================================================

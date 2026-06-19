@@ -42,6 +42,10 @@ INFRASTRUCTURE_CONTAINER_PATTERNS = [
 ]
 INFRASTRUCTURE_LABEL = "ds01.protected"
 
+# Universal MIG compute-slice count for a full GPU (A100/H100): a full GPU is
+# divided into 7 compute slices, so a 1g MIG instance is 1/7 of the GPU.
+MIG_COMPUTE_SLICES_PER_GPU = 7
+
 
 class GPUStateReader:
     def __init__(self, config_path="/opt/ds01-infra/config/runtime/resource-limits.yaml"):
@@ -85,12 +89,9 @@ class GPUStateReader:
     # ========================================================================
     # GPU-equivalents (gpueq): fractional GPU accounting for MIG.
     #
-    # Canonical model: one gpueq = one full physical GPU. A MIG instance
-    # contributes a FRACTION of its physical GPU. We track both a COMPUTE
-    # fraction (slices) and a MEMORY fraction; the COMPUTE fraction is the
-    # canonical quota/capacity unit. Fractions are computed LIVE from the MIG
-    # profile each time, so heterogeneous/dynamic MIG layouts are handled
-    # without a hardcoded mig_instances_per_gpu.
+    # Canonical model: one gpueq = one full physical GPU (weight 1.0). A MIG
+    # instance contributes its COMPUTE fraction = compute_slices / 7, where 7 is
+    # the universal MIG compute-slice count for a full A100/H100 GPU.
     #
     # SHARED CANONICAL HELPERS: the allocator PR (#76) carries an identical
     # copy of the block below. Keep signatures and behaviour byte-for-byte in
@@ -115,97 +116,10 @@ class GPUStateReader:
         match = re.match(r"\s*(\d+)g", str(profile))
         return int(match.group(1)) if match else 0
 
-    @staticmethod
-    def _parse_mig_memory_gb(profile: str) -> float:
-        """Parse the memory size (GB) from a MIG profile string.
-
-        A MIG profile looks like "3g.20gb": the ".Mgb" suffix is the memory in
-        GB. Returns M as a float, or 0.0 if None/empty/unparseable.
-
-        >>> GPUStateReader._parse_mig_memory_gb("1g.10gb")
-        10.0
-        >>> GPUStateReader._parse_mig_memory_gb("3g.20gb")
-        20.0
-        """
-        if not profile:
-            return 0.0
-        match = re.search(r"\.(\d+(?:\.\d+)?)gb", str(profile))
-        return float(match.group(1)) if match else 0.0
-
     def _slices_per_gpu(self) -> int:
-        """Total compute slices a physical GPU is divided into under MIG.
-
-        Derived live: the maximum compute-slice count observed across the MIG
-        profiles currently present on the device. On A100/H100 a full GPU is
-        7 compute slices, so a 1g profile is 1/7 of the GPU. Falls back to 7
-        when no MIG profiles are visible (the canonical A100/H100 default), so
-        we never hardcode a fixed mig_instances_per_gpu.
-        """
-        default = 7
-        try:
-            profiles = self._get_present_mig_profiles()
-        except Exception:
-            profiles = []
-        max_slices = 0
-        for profile in profiles:
-            max_slices = max(max_slices, self._parse_mig_compute_slices(profile))
-        return max_slices if max_slices > 0 else default
-
-    def _get_present_mig_profiles(self) -> list[str]:
-        """Return the MIG profile strings currently present on the device.
-
-        Parses `nvidia-smi -L` MIG lines (e.g. "MIG 3g.20gb Device 0: ...").
-        Empty when MIG is disabled everywhere (the current DS01 state).
-        """
-        profiles: list[str] = []
-        try:
-            result = subprocess.run(
-                ["/usr/bin/nvidia-smi", "-L"],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=30,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-            return profiles
-
-        for line in result.stdout.split("\n"):
-            mig_match = re.match(r"\s+MIG\s+(\S+)\s+Device\s+\d+:", line)
-            if mig_match:
-                profiles.append(mig_match.group(1))
-        return profiles
-
-    def _get_gpu_total_gb(self, default: float = 40.0) -> float:
-        """Physical GPU memory in GB, derived live from nvidia-smi.
-
-        Falls back to `default` (40 GB, A100-40GB) when nvidia-smi is
-        unavailable or returns nothing parseable.
-        """
-        try:
-            result = subprocess.run(
-                [
-                    "/usr/bin/nvidia-smi",
-                    "--query-gpu=memory.total",
-                    "--format=csv,noheader,nounits",
-                ],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=30,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-            return default
-
-        for line in result.stdout.strip().split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                # nvidia-smi reports memory.total in MiB
-                return int(line) / 1024.0
-            except ValueError:
-                continue
-        return default
+        """Total compute slices a full physical GPU is divided into under MIG."""
+        # Universal A100/H100 MIG compute-slice count; no per-device detection.
+        return MIG_COMPUTE_SLICES_PER_GPU
 
     def get_slot_compute_fraction(self, gpu_slot, profile=None) -> float:
         """Compute-slice fraction of a physical GPU for one allocation slot.
@@ -220,20 +134,6 @@ class GPUStateReader:
         if slices <= 0 or per_gpu <= 0:
             return 0.0
         return slices / per_gpu
-
-    def get_slot_memory_fraction(self, gpu_slot, profile=None, gpu_total_gb=40.0) -> float:
-        """Memory fraction of a physical GPU for one allocation slot.
-
-        Returns 1.0 for a full GPU. For a MIG instance returns
-        memory_gb(profile) / gpu_total_gb. `gpu_total_gb` defaults to 40 GB
-        (A100-40GB); pass the live total where available.
-        """
-        if self._is_full_gpu(gpu_slot):
-            return 1.0
-        mem_gb = self._parse_mig_memory_gb(profile)
-        if mem_gb <= 0 or gpu_total_gb <= 0:
-            return 0.0
-        return mem_gb / gpu_total_gb
 
     def get_user_gpu_equivalents(self, user) -> float:
         """Sum of compute-slice fractions over a user's allocations (gpueq).

@@ -114,39 +114,28 @@ def collect_allocation_metrics() -> list[str]:
 
         # Get all allocations
         allocations = reader.get_all_allocations()
-        gpu_total_gb = reader._get_gpu_total_gb()
 
         lines.append("# HELP ds01_gpu_allocated GPU/MIG slot allocation status (1=allocated)")
         lines.append("# TYPE ds01_gpu_allocated gauge")
 
         # gpueq: fractional GPU-equivalents per allocation. The COMPUTE fraction
         # is the canonical quota/capacity unit (1.0 for a full GPU; a MIG
-        # instance is a fraction of its physical GPU). The MEMORY fraction is
-        # emitted alongside for visibility.
+        # instance is compute_slices / 7 of its physical GPU).
         gpueq_lines = []
         gpueq_lines.append(
             "# HELP ds01_gpu_equivalents Fractional GPU-equivalents per allocation"
             " (compute-slice fraction; 1.0 = full GPU)"
         )
         gpueq_lines.append("# TYPE ds01_gpu_equivalents gauge")
-        memfrac_lines = []
-        memfrac_lines.append(
-            "# HELP ds01_gpu_memory_fraction Memory fraction of physical GPU per allocation"
-            " (1.0 = full GPU)"
-        )
-        memfrac_lines.append("# TYPE ds01_gpu_memory_fraction gauge")
 
         for slot, data in allocations.items():
             containers = data.get("containers", [])
             users = data.get("users", {})
             interfaces = data.get("interfaces", {})
             # Profile string for this slot ("" for full GPUs); used to compute
-            # the gpueq fraction live from the MIG profile.
+            # the gpueq fraction from the MIG profile.
             profile = data.get("profile", "") or ""
             compute_fraction = reader.get_slot_compute_fraction(slot, profile)
-            memory_fraction = reader.get_slot_memory_fraction(
-                slot, profile, gpu_total_gb=gpu_total_gb
-            )
             # Label value: "full" for full GPUs (no MIG profile), else the profile.
             profile_label = profile if profile else "full"
 
@@ -162,16 +151,9 @@ def collect_allocation_metrics() -> list[str]:
                     f'interface="{interface}",profile="{profile_label}"}} '
                     f"{_fmt_fraction(compute_fraction)}"
                 )
-                memfrac_lines.append(
-                    f'ds01_gpu_memory_fraction{{gpu_slot="{slot}",user="{user}",'
-                    f'interface="{interface}",profile="{profile_label}"}} '
-                    f"{_fmt_fraction(memory_fraction)}"
-                )
 
         lines.append("")
         lines.extend(gpueq_lines)
-        lines.append("")
-        lines.extend(memfrac_lines)
 
         # Containers by interface
         by_interface = reader.get_all_containers_by_interface()
