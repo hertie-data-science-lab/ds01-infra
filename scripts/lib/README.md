@@ -230,19 +230,6 @@ SAFE_NAME=$(sanitize_username_for_slice "h.baker@hertie-school.lan")
 # Returns: h_baker_hertie-school_lan
 ```
 
----
-
-### validate-resource-limits.sh
-
-**Purpose:** Validates resource limit values.
-
-**Functions:**
-
-| Function | Description |
-|----------|-------------|
-| `validate_memory_format` | Validates memory strings (e.g., "16g") |
-| `validate_cpu_count` | Validates CPU count |
-
 ## Adding New Libraries
 
 1. Create script in `/opt/ds01-infra/scripts/lib/`

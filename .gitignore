@@ -55,6 +55,10 @@ bin/
 monitoring/.env
 monitoring/alertmanager/alertmanager-local.yml
 
+# Operational runtime secrets / deploy-generated files (never committed)
+config/runtime/teams-webhook-url.txt
+config/deploy/sudoers.d/ds01-deploy
+
 # Per-user data — retained only in the full/downstream repo, not the org repo.
 # This list is the single source of truth: sync-downstream.sh force-adds
 # whatever is git-ignored under config/runtime/ into the downstream mirror.

@@ -17,7 +17,6 @@ Shared libraries for bash and Python scripts.
 | `aime-images.sh` | AIME base image resolution |
 | `project-metadata.sh` | pyproject.toml parsing/creation |
 | `username-utils.sh` | Username sanitisation for systemd |
-| `validate-resource-limits.sh` | Resource limit validation |
 
 ### Python Libraries
 | File | Purpose |
