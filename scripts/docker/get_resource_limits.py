@@ -34,6 +34,35 @@ except ImportError:
         return sanitized
 
 
+# GPU slot config keys, new name first then legacy aliases (read for one release).
+# A present key with value None means "unlimited"; absence means "not configured".
+_MAX_GPU_SLOTS_KEYS = ("max_gpu_slots", "max_gpus_per_user", "max_mig_instances")
+_MAX_GPU_SLOTS_PER_CONTAINER_KEYS = (
+    "max_gpu_slots_per_container",
+    "max_gpus_per_container",
+    "max_mig_per_container",
+)
+_SENTINEL = object()
+
+
+def _first_present(limits: dict, keys) -> object:
+    """Return the value of the first key present in limits, or _SENTINEL if none are."""
+    for key in keys:
+        if key in limits:
+            return limits[key]
+    return _SENTINEL
+
+
+def _resolve_max_gpu_slots(limits: dict):
+    """Max total GPU slots for a user. None = unlimited, _SENTINEL if unconfigured."""
+    return _first_present(limits, _MAX_GPU_SLOTS_KEYS)
+
+
+def _resolve_max_gpu_slots_per_container(limits: dict):
+    """Per-container GPU slot cap. None = unlimited, _SENTINEL if unconfigured."""
+    return _first_present(limits, _MAX_GPU_SLOTS_PER_CONTAINER_KEYS)
+
+
 class ResourceLimitParser:
     def __init__(self, config_path=None):
         if config_path is None:
@@ -240,20 +269,17 @@ class ResourceLimitParser:
         limits = self.get_user_limits(username)
         group = limits.get("_group", "unknown")
 
-        max_gpus = limits.get("max_gpus_per_user") or limits.get("max_mig_instances", 1)
-        if max_gpus is None:
-            max_gpus_str = "unlimited"
-        else:
-            max_gpus_str = str(max_gpus)
+        max_gpus = _resolve_max_gpu_slots(limits)
+        if max_gpus is _SENTINEL:
+            max_gpus = 1  # Unconfigured → conservative default (matches prior behavior)
+        max_gpus_str = "unlimited" if max_gpus is None else str(max_gpus)
 
         cpus = limits.get("max_cpus") or limits.get("cpus", 16)
 
-        # Get max_gpus_per_container (support both old and new config names)
-        # Note: None means unlimited, so check explicitly (don't use 'or' which treats None as falsy)
-        max_gpus_container = limits.get("max_mig_per_container")
-        if max_gpus_container is None:
-            max_gpus_container = limits.get("max_gpus_per_container")
-        if max_gpus_container is None:
+        # Get per-container GPU slot cap (new name first, then legacy aliases).
+        # None (present-but-null) and absence both display as "unlimited" here.
+        max_gpus_container = _resolve_max_gpu_slots_per_container(limits)
+        if max_gpus_container is None or max_gpus_container is _SENTINEL:
             max_gpus_container_str = "unlimited"
         else:
             max_gpus_container_str = str(max_gpus_container)
@@ -558,7 +584,9 @@ def main():
         print(parser.get_user_group(username))
     elif "--max-gpus" in sys.argv:
         limits = parser.get_user_limits(username)
-        max_gpus = limits.get("max_gpus_per_user") or limits.get("max_mig_instances", 1)
+        max_gpus = _resolve_max_gpu_slots(limits)
+        if max_gpus is _SENTINEL:
+            max_gpus = 1  # Unconfigured → conservative default
         print(max_gpus if max_gpus is not None else "unlimited")
     elif "--max-containers" in sys.argv:
         limits = parser.get_user_limits(username)
@@ -566,19 +594,17 @@ def main():
         print(max_containers if max_containers is not None else "unlimited")
     elif "--max-mig-per-container" in sys.argv:
         limits = parser.get_user_limits(username)
-        # Support both old name (max_gpus_per_container) and new name (max_mig_per_container)
-        # Note: None means unlimited, so we must check for key presence, not truthiness
-        if "max_mig_per_container" in limits:
-            max_mig = limits["max_mig_per_container"]
-        elif "max_gpus_per_container" in limits:
-            max_mig = limits["max_gpus_per_container"]
-        else:
-            max_mig = 1  # Default
-        print(max_mig if max_mig is not None else "unlimited")
+        # New name first (max_gpu_slots_per_container), then legacy aliases.
+        # Note: None means unlimited, so we check key presence, not truthiness.
+        max_slots = _resolve_max_gpu_slots_per_container(limits)
+        if max_slots is _SENTINEL:
+            max_slots = 1  # Default
+        print(max_slots if max_slots is not None else "unlimited")
     elif "--mig-instances-per-gpu" in sys.argv:
         gpu_config = parser.get_gpu_allocation_config()
-        mig_per_gpu = gpu_config.get("mig_instances_per_gpu", 4)
-        print(mig_per_gpu)
+        # New name first (slots_per_gpu), legacy mig_instances_per_gpu as alias.
+        slots_per_gpu = gpu_config.get("slots_per_gpu", gpu_config.get("mig_instances_per_gpu", 1))
+        print(slots_per_gpu)
     elif "--allow-full-gpu" in sys.argv:
         limits = parser.get_user_limits(username)
         allow_full = limits.get("allow_full_gpu", False)

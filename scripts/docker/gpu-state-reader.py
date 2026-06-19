@@ -68,10 +68,15 @@ class GPUStateReader:
         return self._config
 
     def _get_mig_instances_per_gpu(self) -> int:
-        """Get mig_instances_per_gpu from config (default: 4)"""
+        """Get GPU slots per physical GPU from config (default: 1).
+
+        Reads gpu_allocation.slots_per_gpu (new name); falls back to the legacy
+        mig_instances_per_gpu key for one release. Default is 1 (full GPU = 1 slot,
+        MIG off) — matching the unified slot model.
+        """
         config = self._load_config()
         gpu_config = config.get("gpu_allocation", {})
-        return gpu_config.get("mig_instances_per_gpu", 4)
+        return gpu_config.get("slots_per_gpu", gpu_config.get("mig_instances_per_gpu", 1))
 
     def _is_full_gpu(self, gpu_slot: str) -> bool:
         """Check if a GPU slot is a full GPU (not MIG instance)"""
