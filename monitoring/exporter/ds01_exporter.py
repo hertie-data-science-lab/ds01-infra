@@ -7,7 +7,7 @@ GPU hardware metrics (utilization, memory, temperature) are provided by DCGM Exp
 This exporter focuses on DS01-specific metrics that DCGM cannot provide:
 - User → GPU allocation mapping
 - Container interface tracking (orchestration, atomic, other)
-- User-level MIG-equivalent counts
+- User-level GPU slot counts
 - Event log counts
 - MIG slot mapping for DCGM metric joins
 
@@ -84,6 +84,17 @@ def _safe_label(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
+def _fmt_fraction(value: float) -> str:
+    """Format a gpueq fraction for Prometheus output.
+
+    Emits whole numbers as integers (full GPU -> "1") and fractions with
+    enough precision to distinguish MIG slices (e.g. 1/7 -> "0.142857").
+    """
+    if value == int(value):
+        return str(int(value))
+    return f"{value:.6g}"
+
+
 # ============================================================================
 # Metric Collection
 # ============================================================================
@@ -107,18 +118,42 @@ def collect_allocation_metrics() -> list[str]:
         lines.append("# HELP ds01_gpu_allocated GPU/MIG slot allocation status (1=allocated)")
         lines.append("# TYPE ds01_gpu_allocated gauge")
 
+        # gpueq: fractional GPU-equivalents per allocation. The COMPUTE fraction
+        # is the canonical quota/capacity unit (1.0 for a full GPU; a MIG
+        # instance is compute_slices / 7 of its physical GPU).
+        gpueq_lines = []
+        gpueq_lines.append(
+            "# HELP ds01_gpu_equivalents Fractional GPU-equivalents per allocation"
+            " (compute-slice fraction; 1.0 = full GPU)"
+        )
+        gpueq_lines.append("# TYPE ds01_gpu_equivalents gauge")
+
         for slot, data in allocations.items():
             containers = data.get("containers", [])
             users = data.get("users", {})
             interfaces = data.get("interfaces", {})
+            # Profile string for this slot ("" for full GPUs); used to compute
+            # the gpueq fraction from the MIG profile.
+            profile = data.get("profile", "") or ""
+            compute_fraction = reader.get_slot_compute_fraction(slot, profile)
+            # Label value: "full" for full GPUs (no MIG profile), else the profile.
+            profile_label = profile if profile else "full"
 
             for container in containers:
                 user = list(users.keys())[0] if users else "unknown"
                 interface = list(interfaces.keys())[0] if interfaces else "unknown"
                 lines.append(
                     f'ds01_gpu_allocated{{gpu_slot="{slot}",container="{container}",'
-                    f'user="{user}",interface="{interface}"}} 1'
+                    f'user="{user}",interface="{interface}",profile="{profile_label}"}} 1'
                 )
+                gpueq_lines.append(
+                    f'ds01_gpu_equivalents{{gpu_slot="{slot}",user="{user}",'
+                    f'interface="{interface}",profile="{profile_label}"}} '
+                    f"{_fmt_fraction(compute_fraction)}"
+                )
+
+        lines.append("")
+        lines.extend(gpueq_lines)
 
         # Containers by interface
         by_interface = reader.get_all_containers_by_interface()
@@ -158,18 +193,26 @@ def collect_user_metrics() -> list[str]:
                 if c.get("user") and c["user"] != "unknown":
                     users.add(c["user"])
 
-        lines.append("# HELP ds01_user_mig_allocated MIG-equivalents allocated to user")
-        lines.append("# TYPE ds01_user_mig_allocated gauge")
+        lines.append("# HELP ds01_user_gpus_allocated GPU slots allocated to user")
+        lines.append("# TYPE ds01_user_gpus_allocated gauge")
+
+        lines.append(
+            "# HELP ds01_user_gpu_equivalents Fractional GPU-equivalents (gpueq) allocated to"
+            " user (sum of compute-slice fractions; full-GPU users == slot count)"
+        )
+        lines.append("# TYPE ds01_user_gpu_equivalents gauge")
 
         lines.append("# HELP ds01_user_containers_count Number of containers for user")
         lines.append("# TYPE ds01_user_containers_count gauge")
 
         for user in users:
-            mig_total = reader.get_user_mig_total(user)
+            gpu_count = reader.get_user_gpu_count(user)
+            gpueq = reader.get_user_gpu_equivalents(user)
             user_allocs = reader.get_user_allocations(user)
             container_count = len(user_allocs)
 
-            lines.append(f'ds01_user_mig_allocated{{user="{user}"}} {mig_total}')
+            lines.append(f'ds01_user_gpus_allocated{{user="{user}"}} {gpu_count}')
+            lines.append(f'ds01_user_gpu_equivalents{{user="{user}"}} {_fmt_fraction(gpueq)}')
             lines.append(f'ds01_user_containers_count{{user="{user}"}} {container_count}')
 
     except Exception as e:
@@ -498,6 +541,66 @@ def _query_dcgm_gpu_i_ids() -> dict[int, list[int]]:
     return {gpu: sorted(ids) for gpu, ids in collected.items()}
 
 
+def _mig_enabled_on_any_gpu() -> bool:
+    """Return True if any GPU has MIG mode enabled.
+
+    Used as a fast early-exit guard: when MIG is disabled everywhere (the
+    current DS01 state), the nvidia-smi -L → DCGM GPU_I_ID correlation always
+    yields nothing, so there's no point running it on every scrape.
+
+    Returns True (fail-open) if the query fails, so the correlation still runs
+    and we don't silently lose MIG mapping if nvidia-smi is briefly unavailable.
+    """
+    try:
+        output = subprocess.run(
+            ["nvidia-smi", "--query-gpu=mig.mode.current", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if output.returncode != 0:
+            return True
+        modes = [m.strip().lower() for m in output.stdout.strip().split("\n") if m.strip()]
+        if not modes:
+            return True
+        # MIG mode reads as "Disabled", "Enabled", or "N/A" (unsupported).
+        return any(m == "enabled" for m in modes)
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return True
+
+
+def _collect_gpu_slot_info() -> list[str]:
+    """Export full (non-MIG) GPU slot mapping.
+
+    Genuine GPU topology, emitted regardless of MIG mode.
+    """
+    lines = []
+    lines.append("# HELP ds01_gpu_slot_info Full GPU slot mapping")
+    lines.append("# TYPE ds01_gpu_slot_info gauge")
+
+    try:
+        output = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index,uuid,mig.mode.current", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if output.returncode == 0:
+            for line in output.stdout.strip().split("\n"):
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 3:
+                    gpu_idx, gpu_uuid, mig_mode = parts[0], parts[1], parts[2]
+                    if mig_mode.lower() == "disabled":
+                        lines.append(
+                            f'ds01_gpu_slot_info{{gpu="{gpu_idx}",slot="{gpu_idx}",'
+                            f'gpu_uuid="{gpu_uuid}",mig_enabled="false"}} 1'
+                        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+
+    return lines
+
+
 def collect_mig_slot_mapping() -> list[str]:
     """Export MIG slot info for joining with DCGM metrics.
 
@@ -518,6 +621,14 @@ def collect_mig_slot_mapping() -> list[str]:
     lines = []
 
     try:
+        # Fast early-exit: when MIG is disabled on every GPU (the current DS01
+        # state), the nvidia-smi -L → DCGM correlation always yields nothing.
+        # Skip the heavy correlation and the misleading 0/0 mapping_status, but
+        # still emit ds01_gpu_slot_info (genuine GPU topology). The MIG code
+        # below is kept intact for when MIG is enabled in future.
+        if not _mig_enabled_on_any_gpu():
+            return _collect_gpu_slot_info()
+
         now = time.time()
 
         # Check cache
@@ -581,39 +692,23 @@ def collect_mig_slot_mapping() -> list[str]:
             else:
                 unmapped_count += 1
 
-        # Mapping health metric (for alerting on topology mismatches)
-        lines.append("")
-        lines.append("# HELP ds01_mig_mapping_status MIG slot mapping health (1=ok, 0=mismatch)")
-        lines.append("# TYPE ds01_mig_mapping_status gauge")
-        mapping_ok = 1 if unmapped_count == 0 else 0
-        lines.append(
-            f'ds01_mig_mapping_status{{mapped="{mapped_count}",unmapped="{unmapped_count}"}} {mapping_ok}'
-        )
+        # Mapping health metric (for alerting on topology mismatches).
+        # Only emit when MIG topology actually exists; a 0/0 value reads as
+        # "healthy mapping" when in fact there is nothing to map.
+        if mapped_count + unmapped_count > 0:
+            lines.append("")
+            lines.append(
+                "# HELP ds01_mig_mapping_status MIG slot mapping health (1=ok, 0=mismatch)"
+            )
+            lines.append("# TYPE ds01_mig_mapping_status gauge")
+            mapping_ok = 1 if unmapped_count == 0 else 0
+            lines.append(
+                f'ds01_mig_mapping_status{{mapped="{mapped_count}",unmapped="{unmapped_count}"}} {mapping_ok}'
+            )
 
         # Also export full GPUs (non-MIG) for completeness
         lines.append("")
-        lines.append("# HELP ds01_gpu_slot_info Full GPU slot mapping")
-        lines.append("# TYPE ds01_gpu_slot_info gauge")
-
-        try:
-            output = subprocess.run(
-                ["nvidia-smi", "--query-gpu=index,uuid,mig.mode.current", "--format=csv,noheader"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            if output.returncode == 0:
-                for line in output.stdout.strip().split("\n"):
-                    parts = [p.strip() for p in line.split(",")]
-                    if len(parts) >= 3:
-                        gpu_idx, gpu_uuid, mig_mode = parts[0], parts[1], parts[2]
-                        if mig_mode.lower() == "disabled":
-                            lines.append(
-                                f'ds01_gpu_slot_info{{gpu="{gpu_idx}",slot="{gpu_idx}",'
-                                f'gpu_uuid="{gpu_uuid}",mig_enabled="false"}} 1'
-                            )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-            pass
+        lines.extend(_collect_gpu_slot_info())
 
     except Exception as e:
         lines.append(f"# Error collecting MIG slot mapping: {e}")
