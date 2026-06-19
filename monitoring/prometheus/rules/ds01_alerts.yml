@@ -267,28 +267,34 @@ groups:
   - name: ds01_capacity_alerts
     interval: 5m
     rules:
-      # Low GPU capacity (system running low on free slots)
-      # Repointed from MIG-only (ds01:system_mig_free) to the generic capacity
-      # family so it reflects REAL free GPU capacity across full GPUs AND MIG.
-      # On this no-MIG box with 4 full GPUs and 1 allocated, free/total = 3/4, so
-      # this stays quiet instead of false-firing "MIG exhausted".
+      # Low GPU capacity (system running low on free GPU compute)
+      # Repointed to the fractional GPU-equivalents (gpueq) family: a full GPU
+      # contributes 1.0 and a MIG instance its compute fraction, so this tracks
+      # how much real GPU COMPUTE is free rather than how many allocatable units
+      # remain (the slot-count family still backs the "how many units" panels).
+      # Fires when less than 20% of total GPU compute is free.
+      # NOTE: ds01_gpu_equivalents is emitted by exporter PR #75 and is not live
+      # yet, so _allocated is currently empty and _free == _total (= 4); this
+      # stays quiet until #75 deploys.
       - alert: DS01LowGPUCapacity
-        expr: (ds01:system_gpu_slots_free / ds01:system_gpu_slots_total) < 0.2
+        expr: (ds01:system_gpu_equivalents_free / ds01:system_gpu_equivalents_total) < 0.2
         for: 30m
         labels:
           severity: info
         annotations:
           summary: "Low GPU capacity available"
-          description: "Only {{ $value | humanizePercentage }} of GPU slots are free"
+          description: "Only {{ $value | humanizePercentage }} of GPU compute (GPU-equivalents) is free"
 
       # Critically low GPU capacity
-      # Repointed to ds01:system_gpu_slots_free (full GPUs + MIG) for the same
-      # reason. With 3 free GPUs this no longer false-fires on a no-MIG box.
+      # Repointed to ds01:system_gpu_equivalents_free for the same reason: fewer
+      # than 1.0 GPU-equivalents free means there is effectively no spare GPU
+      # compute, even if some MIG slots remain allocatable.
+      # See the PR #75 note above — quiet until the exporter lands.
       - alert: DS01CriticalGPUCapacity
-        expr: ds01:system_gpu_slots_free < 2
+        expr: ds01:system_gpu_equivalents_free < 1
         for: 15m
         labels:
           severity: warning
         annotations:
-          summary: "Critical: Very few GPU slots available"
-          description: "Only {{ $value }} GPU slots free. Users may be unable to create containers."
+          summary: "Critical: Very little GPU capacity available"
+          description: "Only {{ $value }} GPU-equivalents free. Users may be unable to get GPU compute."

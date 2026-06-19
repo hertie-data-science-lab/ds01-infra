@@ -144,6 +144,49 @@ groups:
             0
           )
 
+      # ---------------------------------------------------------------------
+      # Fractional GPU-equivalents (gpueq) capacity family
+      # Distinct from the slot-count family above: slots answer "how many
+      # allocatable UNITS exist" (a full GPU and a MIG instance each count as
+      # one slot), while gpueq answers "how much GPU COMPUTE exists/is in use"
+      # where a full GPU = 1.0 and a MIG instance = its compute fraction.
+      #   total     = physical GPU count (each physical GPU = 1.0 capacity,
+      #               regardless of how it is partitioned into MIG instances)
+      #   allocated = sum of per-allocation compute fractions (ds01_gpu_equivalents)
+      #   free      = total - allocated, never negative
+      #
+      # NOTE: ds01_gpu_equivalents / ds01_user_gpu_equivalents are emitted by
+      # the exporter in PR #75 and are NOT live on this server yet. Until #75
+      # deploys, _allocated and user_gpu_equivalents record no data. Today all
+      # GPUs are full (weight = 1.0 each), so once the exporter lands
+      # sum(ds01_gpu_equivalents) equals sum(ds01_gpu_allocated) (= 1).
+      # ---------------------------------------------------------------------
+
+      # Total GPU-equivalents: physical GPU count (each = 1.0 capacity)
+      - record: ds01:system_gpu_equivalents_total
+        expr: count(ds01_gpu_slot_info) or vector(0)
+
+      # Allocated GPU-equivalents: sum of per-allocation compute fractions.
+      # Correct once exporter PR #75 lands; until then ds01_gpu_equivalents is
+      # not emitted so this records no data. Today every weight is 1.0, so it
+      # will equal sum(ds01_gpu_allocated) (= 1) once the exporter is deployed.
+      - record: ds01:system_gpu_equivalents_allocated
+        expr: sum(ds01_gpu_equivalents)
+
+      # Free GPU-equivalents (total - allocated), never negative
+      - record: ds01:system_gpu_equivalents_free
+        expr: |
+          clamp_min(
+            ds01:system_gpu_equivalents_total
+            -
+            ds01:system_gpu_equivalents_allocated,
+            0
+          )
+
+      # Per-user GPU-equivalents (sum of compute fractions per user)
+      - record: ds01:user_gpu_equivalents
+        expr: sum by (user) (ds01_gpu_equivalents)
+
       # Active users count
       - record: ds01:system_active_users
         expr: count(count by (user) (ds01_gpu_allocated)) or vector(0)
