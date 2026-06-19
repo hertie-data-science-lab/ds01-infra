@@ -2,47 +2,43 @@
 
 ## Summary
 
-TODO: UPDATE BASED ON NEW RESOURCE LIMITS
+**GPU-slot allocation + cgroups + priority allocation**
 
-**MIG-enabled GPU sharing + cgroups + priority allocation**
+> **Current state:** MIG is disabled. The server runs 4 full A100-40GB GPUs; one **GPU-slot** = one full GPU. Quotas are expressed in **GPU-equivalents (gpueq)** — a float where a full GPU = `1.0`. The model is MIG-ready; with MIG off, gpueq counts equal whole-GPU counts.
 
 - GPU allocation is **dynamic** with **priority** awareness
-- **MIG partitioning** allows 12 students to work simultaneously (4 GPUs → 12 MIG instances)
+- Today 4 users can run a full GPU each; with MIG enabled, slots subdivide for higher density
 - CPU/RAM limits enforced via **cgroups**
-- Students: max 2 GPUs, Researchers: max 4 GPUs, Admins: unlimited
 
 ---
 
-## Limits (NEEDS UPDATING)
+## Limits
 
-| Group | Max GPUs | Priority | CPUs | Memory | Storage |
-|-------|----------|----------|------|---------|---------|
-| **Student** | 2 | 10 (low) | 16 | 32G | 100G workspace |
-| **Researcher** | 4 | 50 (med) | 32 | 64G | 500G workspace |
-| **Admin** | unlimited | 90 (high) | 64 | 128G | 2T workspace |
+| Group | GPU quota (`max_gpu_equivalents`) | Slots/container (`max_gpu_slots_per_container`) | CPUs | Memory |
+|-------|-----------------------------------|-------------------------------------------------|------|--------|
+| **Student** | 2.0 | 2 | 32 | 32G |
+| **Researcher** | 4.0 | 3 | 48 | 64G |
+| **Faculty** | 4.0 | 4 | 64 | 128G |
+| **Admin** | unlimited | unlimited | 64 | 128G |
 
-**Important:** Limits are PER USER across all containers
-- Student can have 2 containers each with 1 GPU = ✓ OK
-- Student cannot have 3 containers with GPUs = ✗ REJECTED
+Quota is **per user across all containers** (in gpueq); the slots/container value caps a single
+container. Exact values and storage quotas live in `config/runtime/resource-limits.yaml`.
+With MIG off, 1 slot = 1 full GPU = 1.0 gpueq, so e.g. a student can run up to 2 containers
+each with one full GPU.
 
 ---
 
-## MIG Configuration
+## GPU-slot model
 
 ```
-Each A100 → 3 MIG instances (2g.20gb)
-4 GPUs × 3 instances = 12 MIG instances total
-
-Result:
-- 12 students can work simultaneously
-- Each gets 20GB GPU memory
-- Hard memory isolation (can't crash each other)
+Current (MIG off): 4× A100-40GB → 4 GPU-slots, each 1.0 gpueq
+Optional (MIG on): each A100 partitions into MIG instances; each instance is one slot,
+                   weighted by its compute fraction (compute_slices / 7)
 ```
 
 **Device notation:**
-THIS IS WRONG - THEY HAVE UUIDs
-- `0:0` = GPU 0, MIG instance 0
-- `1:2` = GPU 1, MIG instance 2
+- Full GPUs: `device=0` … `device=3` (or GPU UUIDs)
+- MIG instances (if enabled): `GPU:instance`, e.g. `0:1` = GPU 0, instance 1
 
 ---
 
@@ -58,23 +54,25 @@ THIS IS WRONG - THEY HAVE UUIDs
 
 ## Priority Allocation
 
-**Order:** Overrides (100) > Admins (90) > Researchers (50) > Students (10)
+**Order (highest first):** Overrides > Admins > Faculty > Researchers > Students
+(exact numeric priorities in `resource-limits.yaml`)
 
 **Strategy:**
 1. Check reservations (highest priority)
-2. Find empty MIG instances first
-3. Share MIG with same-priority users
+2. Find empty GPU-slots first
+3. Share a slot with same-priority users
 4. Avoid displacing higher-priority users
 
 ---
 
 ## Commands
 
-### Check GPU/MIG status:
+### Check GPU-slot status:
 ```bash
-ds01-gpu-status                # Terminal (MIG-aware)
+ds01-gpu-status                # Terminal
 ds01-gpu-status --markdown     # Generate markdown
-nvidia-smi mig -lgi            # Raw MIG list
+nvidia-smi                     # Raw GPU status
+nvidia-smi mig -lgi            # MIG list (only if MIG enabled)
 ```
 
 ### Check your limits:
@@ -89,8 +87,8 @@ python3 /opt/ds01-infra/scripts/docker/gpu_allocator.py user-status $USER
 
 ### Manual GPU operations (admin):
 ```bash
-# Allocate
-python3 scripts/docker/gpu_allocator.py allocate <user> <container> <max_gpus> <priority>
+# Allocate (<slots> = number of GPU-slots requested)
+python3 scripts/docker/gpu_allocator.py allocate <user> <container> <slots> <priority>
 
 # Release
 python3 scripts/docker/gpu_allocator.py release <container>
@@ -107,60 +105,39 @@ python3 scripts/docker/gpu_allocator.py status
 # GPU allocations (includes priority info)
 tail /var/log/ds01/gpu-allocations.log
 
-# Format: timestamp|event|user|container|gpu_id|priority=X|reason
+# Format: timestamp|event|user|container|gpu_slot|priority=X|reason
 ```
 
 ---
 
 ## Example Scenarios
 
-### Scenario 1: Student Creates 2 Containers (CORRECTED)
+### Scenario 1: Student at quota
 
 ```bash
-# Alice (student, max 2 GPUs)
+# Alice (student, max_gpu_equivalents 2.0, max_gpu_slots_per_container 2)
 
-# Container 1
-mlc-create training1 pytorch
-# ✓ SUCCESS: MIG 0:1 allocated (1/2 GPUs)
-
-# Container 2
-mlc-create training2 pytorch
-# ✓ SUCCESS: MIG 2:0 allocated (2/2 GPUs)
-
-# Container 3
-mlc-create training3 pytorch
-# ✗ REJECTED: "USER_AT_LIMIT (2/2)"
-# Graceful error message shown in wizard
-
-# CPU-only container (doesn't count against GPU limit)
-mlc-create preprocess pytorch --cpu-only
-# ✓ SUCCESS (no GPU)
+mlc-create training1 pytorch    # ✓ slot 0 allocated (1.0/2.0 gpueq)
+mlc-create training2 pytorch    # ✓ slot 1 allocated (2.0/2.0 gpueq)
+mlc-create training3 pytorch    # ✗ REJECTED: "USER_AT_LIMIT (2.0/2.0 gpueq)"
+mlc-create preprocess pytorch --cpu-only   # ✓ (no GPU, doesn't count)
 ```
 
 ### Scenario 2: Priority Allocation
 
 ```bash
-# 3 users request MIG instances simultaneously
+# 3 users request GPU-slots simultaneously
+# slot 0: empty | slot 1: student | slot 2: researcher | slot 3: empty
 
-# MIG 0:0: empty
-# MIG 0:1: student (priority 10)
-# MIG 0:2: researcher (priority 50)
-
-# Requests:
-# - Admin (priority 90)
-# - Researcher (priority 50)
-# - Student (priority 10)
-
-# Allocation:
-# Admin → MIG 0:0 (empty, always first)
-# Researcher → MIG 0:1 (shares with student, lower priority than admin)
-# Student → MIG 0:1 (shares with another student)
+# Admin       → slot 0 (empty, always first)
+# Researcher  → slot 3 (next empty)
+# Student     → least-loaded remaining slot, avoiding higher-priority users
 ```
 
 ### Scenario 3: Reservation
 
 ```yaml
-# In resource-limits.yaml
+# In config/runtime/resource-limits.yaml
 user_overrides:
   john_doe:
     priority: 100
@@ -169,84 +146,71 @@ user_overrides:
     reservation_end: "2025-11-08T00:00:00"
 ```
 
-**Effect:** GPU 0 only available to john_doe during that week
+**Effect:** GPU 0 only available to john_doe during that week.
 
 ---
 
-## MIG Setup (One-Time)
+## Optional: Enable MIG
+
+MIG is disabled today — no setup needed. To partition GPUs for higher density:
 
 ```bash
-# Enable MIG
 sudo nvidia-smi -i 0,1,2,3 -mig 1
 sudo reboot
 
-# Create instances (2g.20gb profile)
+# Create instances (example: 2g.20gb profile)
 for gpu in 0 1 2 3; do
   sudo nvidia-smi mig -i $gpu -cgi 14,14,14 -C
 done
-
-# Verify
 nvidia-smi mig -lgi
 
-# Update config
-# Set enable_mig: true in resource-limits.yaml
-
-# Reinitialize
+# Reinitialise allocator state
 sudo rm /var/lib/ds01/gpu-state.json
 python3 scripts/docker/gpu_allocator.py status
 ```
 
-**Full guide:** `/opt/ds01-infra/docs-admin/mig-setup-guide.md`
+The allocator detects the instances and weights each slot by its compute fraction.
 
 ---
 
 ## What Happens at Limits
 
-### GPU limit (via allocator):
+### GPU quota (via allocator):
 ```
-Alice has 2 GPUs allocated
-Tries 3rd container with GPU
-→ Allocator rejects: "USER_AT_LIMIT (2/2)"
+Alice at 2.0/2.0 gpueq → next GPU container rejected: "USER_AT_LIMIT"
 → Graceful error shown in wizard
 ```
 
 ### CPU limit (via cgroups):
 ```
-Container tries 20 cores
-Student limit: 16 cores
-→ Kernel throttles to 16 cores
+Container exceeds its CPU quota → kernel throttles to the configured cores
 ```
 
 ### Memory limit (via cgroups):
 ```
-Container tries 40GB
-Student limit: 32GB
-→ OOM (allocation fails)
+Container exceeds its memory limit → OOM (allocation fails)
 ```
 
-### MIG memory limit (hardware):
+### GPU memory limit (hardware):
 ```
-Process tries 25GB
-MIG instance: 20GB
-→ CUDA OOM (hardware limit)
-→ Other MIG instances unaffected
+Process exceeds the slot's GPU memory (40GB full GPU, or the MIG partition size)
+→ CUDA OOM; other slots unaffected
 ```
 
 ---
 
 ## Error Messages (User-Facing)
 
-Configured in `/opt/ds01-infra/config/resource-limits.yaml`:
+Configured in `config/runtime/resource-limits.yaml`:
 
-**GPU limit exceeded:**
+**GPU quota exceeded:**
 ```
 ✗ GPU Limit Exceeded
 
-You requested 1 GPU, but your limit is 2 GPUs.
-You currently have 2 GPUs allocated.
+Your GPU quota is 2.0 GPU-equivalents and you currently use 2.0.
 
 Options:
-1. Stop an existing container to free up a GPU
+1. Stop an existing container to free a slot
 2. Launch this container without GPU (CPU-only)
 
 Check your allocations: ds01-gpu-status
@@ -254,40 +218,34 @@ Check your allocations: ds01-gpu-status
 
 **No GPU available:**
 ```
-No GPUs Available
+No GPU-slots Available
 
-All 12 MIG instances are currently allocated.
+All GPU-slots are currently allocated.
 
 Options:
-1. Wait for a MIG instance to become available
+1. Wait for a slot to become available
 2. Launch as CPU-only container
 3. Check status: ds01-gpu-status
 ```
 
 **Reservation conflict:**
 ```
-✗ MIG Instance Reserved
+✗ GPU Reserved
 
-MIG 0:0 is reserved for john_doe until 2025-11-08.
+GPU 0 is reserved for john_doe until 2025-11-08.
 Reason: Thesis deadline
 
-Please try a different MIG instance or wait.
+Please use a different GPU or wait.
 ```
 
 ---
 
 ## Monitoring
 
-### Check MIG utilization:
+### Check GPU-slot utilisation:
 ```bash
 ds01-gpu-status
-
-# Output shows:
-# - 12 MIG instances
-# - Containers per MIG instance
-# - Per-user summary
-# - Priority levels
-# - Reservations
+# Shows: slots, containers per slot, per-user gpueq summary, priorities, reservations
 ```
 
 ### Check cgroups:
@@ -301,15 +259,14 @@ systemd-cgtop --depth=3
 ## Troubleshooting
 
 ```bash
-# MIG not working?
-nvidia-smi mig -lgi  # Should show 12 instances
-# If not, see docs-admin/mig-setup-guide.md
+# Is MIG enabled? (no instances → full-GPU mode, expected today)
+nvidia-smi mig -lgi
 
 # GPU allocator broken?
 sudo rm /var/lib/ds01/gpu-state.json
 python3 scripts/docker/gpu_allocator.py status
 
-# User stuck at limit?
+# User stuck at quota?
 python3 scripts/docker/gpu_allocator.py user-status <user>
 python3 scripts/docker/gpu_allocator.py release <container>  # If needed
 
@@ -324,32 +281,19 @@ tail /var/log/ds01/gpu-allocations.log | grep priority
 
 | Aspect | Old | New |
 |--------|-----|-----|
-| Students per GPU | 1 | 3 (via MIG) |
-| Total capacity | 4 students | 12 students |
-| GPU isolation | None | Hard (MIG) |
 | Allocation | Manual | Dynamic + priority |
-| Limits | 1 GPU per student | 2 GPUs per student |
-| Crash risk | High | None (isolated) |
+| Quota unit | Whole GPUs | GPU-equivalents (gpueq, float) |
+| Per-container cap | — | `max_gpu_slots_per_container` |
+| MIG-ready | No | Yes (slots weight by compute fraction) |
 
 ---
 
-## Files Modified
+## Files Reference
 
-**New:**
-- `scripts/docker/gpu_allocator.py` (MIG + priority aware)
-- `scripts/monitoring/gpu-status-dashboard.py` (MIG aware)
-- `scripts/system/setup-var-directories.sh`
-- `docs-admin/mig-setup-guide.md`
-
-**Updated:**
-- `config/resource-limits.yaml` (priority, reservations, MIG, corrected limits)
-- `scripts/docker/get_resource_limits.py` (priority support)
-- `docs-admin/gpu-allocation-implementation.md` (corrected scenarios)
-
-**TODO:**
-- `scripts/docker/mlc-create-wrapper.sh` (integrate allocator + priority)
-
----
+- `scripts/docker/gpu_allocator.py` — slot + priority aware allocator
+- `scripts/monitoring/gpu-status-dashboard.py` — status dashboard
+- `scripts/system/setup-var-directories.sh` — state/log directories
+- `config/runtime/resource-limits.yaml` — priorities, reservations, gpueq quotas
+- `scripts/docker/get_resource_limits.py` — per-user limit lookup
 
 **Full docs:** `/opt/ds01-infra/docs-admin/`
-**MIG setup:** `/opt/ds01-infra/docs-admin/mig-setup-guide.md`
