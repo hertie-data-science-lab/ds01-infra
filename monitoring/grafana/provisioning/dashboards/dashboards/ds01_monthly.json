@@ -278,7 +278,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count by (group)(count_over_time((ds01_gpu_allocated * on(user) group_left(group) ds01_user_group_info)[$__range]))",
+          "expr": "count by (group)(count_over_time((ds01_gpu_allocated * on(user) group_left(group) ds01_user_group_info)[$__range:1h]))",
           "legendFormat": "{{group}}",
           "refId": "A",
           "instant": true
@@ -604,7 +604,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "(sum(increase(ds01:user_gpu_seconds_weighted[$__range])) / sum(increase(ds01:user_gpu_seconds[$__range]))) * 100",
+          "expr": "(sum(increase(ds01:user_gpu_seconds[$__range])) / sum(increase(ds01:user_gpu_seconds_weighted[$__range]))) * 100",
           "legendFormat": "Efficiency",
           "refId": "A",
           "instant": true
@@ -1399,7 +1399,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "ds01_lifecycle_events_total",
+          "expr": "sum by(action)(increase(ds01_lifecycle_events_total[24h]))",
           "legendFormat": "{{action}}",
           "refId": "A",
           "instant": true
@@ -1488,7 +1488,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "ds01_lifecycle_events_total",
+          "expr": "sum by(action)(increase(ds01_lifecycle_events_total[1h]))",
           "legendFormat": "{{action}}",
           "refId": "A"
         }
