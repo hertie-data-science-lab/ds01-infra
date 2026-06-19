@@ -44,7 +44,6 @@ usage() {
     echo "  --guided          Show detailed explanations for beginners"
     echo "  --cpu-only        Create CPU-only container (no GPU)"
     echo "  --num-gpus=N      Request N GPU slots (default: 1)"
-    echo "  --num-migs=N      Deprecated alias for --num-gpus"
     echo "  -w, --workspace   Workspace directory (default: ~/workspace/<name>)"
     echo "  -d, --data        Additional data directory to mount"
     echo "  --dry-run         Show what would be created"
@@ -101,7 +100,6 @@ detailed_help() {
     echo "  --guided          Interactive mode with detailed explanations"
     echo "  --cpu-only        Create CPU-only container (no GPU allocation)"
     echo "  --num-gpus=N      Request N GPU slots (default: 1)"
-    echo "  --num-migs=N      Deprecated alias for --num-gpus"
     echo "  -w, --workspace   Custom workspace directory"
     echo "                    Default: ~/workspace/<container-name>"
     echo "  -d, --data        Additional data directory to mount (read-only)"
@@ -233,7 +231,7 @@ CPU_ONLY=false
 WORKSPACE_DIR=""
 DATA_DIR=""
 DRY_RUN=false
-NUM_MIGS=1              # Number of GPU slots to request (CLI override)
+NUM_GPUS=1              # Number of GPU slots to request (CLI override)
 PREFER_FULL=false       # Deprecated: prefer full GPU (no-op, slots are full GPUs)
 
 while [[ $# -gt 0 ]]; do
@@ -259,12 +257,7 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --num-gpus=*)
-            NUM_MIGS="${1#*=}"
-            shift
-            ;;
-        --num-migs=*)
-            # Deprecated alias for --num-gpus (one unit = one GPU slot)
-            NUM_MIGS="${1#*=}"
+            NUM_GPUS="${1#*=}"
             shift
             ;;
         --prefer-full)
@@ -775,9 +768,9 @@ CONTAINER_TAG="${CONTAINER_NAME}._.${USER_ID}"
 # One unit = one GPU slot (a full GPU today; a MIG instance later). Shown for all
 # users with multi-GPU permissions, unless:
 # - CPU_ONLY mode is selected
-# - User already specified --num-gpus / --num-migs on command line
+# - User already specified --num-gpus on command line
 
-if [ "$CPU_ONLY" != true ] && [ "$NUM_MIGS" -eq 1 ]; then
+if [ "$CPU_ONLY" != true ] && [ "$NUM_GPUS" -eq 1 ]; then
     # Get user's limits (slot-based)
     MAX_SLOTS_PER_CONTAINER=$(python3 "$RESOURCE_PARSER" "$USERNAME" --max-mig-per-container 2>/dev/null || echo "1")
     MAX_SLOTS_TOTAL=$(python3 "$RESOURCE_PARSER" "$USERNAME" --max-gpus 2>/dev/null || echo "2")
@@ -859,19 +852,19 @@ if [ "$CPU_ONLY" != true ] && [ "$NUM_MIGS" -eq 1 ]; then
 
         # Validate choice
         if [[ "$GPU_CHOICE" =~ ^[0-9]+$ ]] && [ "$GPU_CHOICE" -ge 1 ] && [ "$GPU_CHOICE" -le "$MAX_OPTION" ]; then
-            NUM_MIGS=$GPU_CHOICE
+            NUM_GPUS=$GPU_CHOICE
         else
-            NUM_MIGS=1
+            NUM_GPUS=1
         fi
         echo ""
 
         # Informational notice for multi-GPU requests
-        if [ "$NUM_MIGS" -gt 1 ]; then
+        if [ "$NUM_GPUS" -gt 1 ]; then
             echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo -e "${CYAN}ℹ  Multi-GPU Allocation${NC}"
             echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
             echo ""
-            echo -e "  Requesting: ${BOLD}$NUM_MIGS full GPUs${NC}"
+            echo -e "  Requesting: ${BOLD}$NUM_GPUS full GPUs${NC}"
             echo ""
             echo -e "  ${CYAN}Useful for:${NC}"
             echo -e "    • Data-parallel training (DDP)"
@@ -1123,8 +1116,8 @@ if [ "$CPU_ONLY" = true ]; then
     echo -e "${BOLD}GPU:${NC}        ${YELLOW}CPU only${NC}"
 else
     # One unit = one GPU slot (a full GPU today)
-    if [ -n "$NUM_MIGS" ] && [ "$NUM_MIGS" -gt 1 ] 2>/dev/null; then
-        echo -e "${BOLD}GPU:${NC}        ${GREEN}${NUM_MIGS} GPUs${NC}"
+    if [ -n "$NUM_GPUS" ] && [ "$NUM_GPUS" -gt 1 ] 2>/dev/null; then
+        echo -e "${BOLD}GPU:${NC}        ${GREEN}${NUM_GPUS} GPUs${NC}"
     else
         echo -e "${BOLD}GPU:${NC}        ${GREEN}Enabled (1 GPU)${NC}"
     fi
@@ -1165,8 +1158,8 @@ if [ -n "$IMAGE_NAME" ]; then
 fi
 
 # Add multi-GPU allocation flags (distributed containers)
-if [ -n "$NUM_MIGS" ] && [ "$NUM_MIGS" -gt 1 ] 2>/dev/null; then
-    WRAPPER_ARGS+=("--num-migs=$NUM_MIGS")
+if [ -n "$NUM_GPUS" ] && [ "$NUM_GPUS" -gt 1 ] 2>/dev/null; then
+    WRAPPER_ARGS+=("--num-gpus=$NUM_GPUS")
 fi
 
 if [ "$PREFER_FULL" = true ]; then

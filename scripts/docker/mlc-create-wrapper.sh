@@ -143,7 +143,7 @@ DATA_DIR=""
 REQUESTED_GPU=""
 CPU_ONLY=false
 DRY_RUN=false
-NUM_MIGS=1            # Number of GPU slots to request (default: 1)
+NUM_GPUS=1            # Number of GPU slots to request (default: 1)
 PREFER_FULL_GPU=false # Deprecated: prefer full GPU (no-op, slots are full GPUs)
 
 # Parse container name
@@ -189,8 +189,8 @@ while [[ $# -gt 0 ]]; do
         --cpu-only)
             CPU_ONLY=true
             ;;
-        --num-migs=*)
-            NUM_MIGS="${1#*=}"
+        --num-gpus=*)
+            NUM_GPUS="${1#*=}"
             ;;
         --prefer-full)
             PREFER_FULL_GPU=true
@@ -422,12 +422,12 @@ else
                 MAX_GPUS=999
             fi
 
-            # Determine allocation method based on NUM_MIGS and PREFER_FULL_GPU
-            if [ "$NUM_MIGS" -gt 1 ] || [ "$PREFER_FULL_GPU" = true ]; then
+            # Determine allocation method based on NUM_GPUS and PREFER_FULL_GPU
+            if [ "$NUM_GPUS" -gt 1 ] || [ "$PREFER_FULL_GPU" = true ]; then
                 # Multi-GPU allocation
-                log_info "Allocating $NUM_MIGS GPU slot(s) via gpu_allocator_v2.py..."
+                log_info "Allocating $NUM_GPUS GPU slot(s) via gpu_allocator_v2.py..."
 
-                ALLOC_CMD="python3 $GPU_ALLOCATOR allocate-multi $CURRENT_USER $CONTAINER_TAG mlc $NUM_MIGS"
+                ALLOC_CMD="python3 $GPU_ALLOCATOR allocate-multi $CURRENT_USER $CONTAINER_TAG mlc $NUM_GPUS"
                 if [ "$PREFER_FULL_GPU" = true ]; then
                     ALLOC_CMD="$ALLOC_CMD --prefer-full"
                 fi
