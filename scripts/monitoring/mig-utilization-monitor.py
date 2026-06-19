@@ -313,7 +313,7 @@ def check_wasted_allocations():
     cutoff = now_utc() - timedelta(minutes=WASTE_DURATION_MINUTES)
     history = []
 
-    with open(UTILIZATION_LOG, "r") as f:
+    with open(UTILIZATION_LOG) as f:
         for line in f:
             try:
                 entry = json.loads(line.strip())

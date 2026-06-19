@@ -21,9 +21,10 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional
+from typing import Any
 
 # Configuration
 OUTPUT_DIR = Path("/var/lib/ds01/opa")
@@ -60,7 +61,7 @@ def file_lock(lock_path: Path, timeout: float = 10.0) -> Generator[None, None, N
         os.close(lock_fd)
 
 
-def get_container_owner(labels: Dict[str, str]) -> Optional[str]:
+def get_container_owner(labels: dict[str, str]) -> str | None:
     """
     Extract owner from container labels.
 
@@ -166,7 +167,7 @@ def get_all_containers() -> list:
         return []
 
 
-def load_existing_ownership() -> Dict[str, Any]:
+def load_existing_ownership() -> dict[str, Any]:
     """
     Load existing ownership data from file.
 
@@ -178,12 +179,12 @@ def load_existing_ownership() -> Dict[str, Any]:
         try:
             with open(OUTPUT_FILE) as f:
                 return json.load(f)
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             pass
     return {"containers": {}}
 
 
-def build_ownership_data() -> Dict[str, Any]:
+def build_ownership_data() -> dict[str, Any]:
     """
     Build the complete ownership data structure for OPA.
 
@@ -263,7 +264,7 @@ def build_ownership_data() -> Dict[str, Any]:
     }
 
 
-def write_ownership_data(data: Dict[str, Any]) -> bool:
+def write_ownership_data(data: dict[str, Any]) -> bool:
     """
     Atomically write ownership data to file with locking.
 

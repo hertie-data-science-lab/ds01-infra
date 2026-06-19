@@ -10,8 +10,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -133,7 +134,7 @@ def temp_log_dir(temp_dir) -> Path:
 
 
 @pytest.fixture
-def sample_resource_limits() -> Dict[str, Any]:
+def sample_resource_limits() -> dict[str, Any]:
     """Return sample resource limits configuration."""
     return {
         "defaults": {
@@ -192,7 +193,7 @@ def temp_config_file(temp_dir, sample_resource_limits) -> Path:
 
 
 @pytest.fixture
-def sample_gpu_state() -> Dict[str, Any]:
+def sample_gpu_state() -> dict[str, Any]:
     """Return sample GPU allocator state."""
     return {
         "gpus": {
@@ -205,7 +206,7 @@ def sample_gpu_state() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def sample_gpu_state_with_allocations() -> Dict[str, Any]:
+def sample_gpu_state_with_allocations() -> dict[str, Any]:
     """Return GPU state with some allocations."""
     return {
         "gpus": {
@@ -279,7 +280,7 @@ def mock_subprocess_run():
 
 
 @pytest.fixture
-def sample_container_metadata() -> Dict[str, Any]:
+def sample_container_metadata() -> dict[str, Any]:
     """Return sample container metadata."""
     return {
         "container_name": "project-a._.1001",
@@ -297,7 +298,7 @@ def sample_container_metadata() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def sample_docker_container() -> Dict[str, Any]:
+def sample_docker_container() -> dict[str, Any]:
     """Return sample Docker container inspect data."""
     return {
         "Id": "abc123def456",
@@ -350,7 +351,7 @@ def atomic_context():
 
 
 def run_script(
-    script_path: Path, *args, env: Optional[Dict] = None, timeout: int = 30
+    script_path: Path, *args, env: dict | None = None, timeout: int = 30
 ) -> subprocess.CompletedProcess:
     """Run a shell script and return the result."""
     script_env = os.environ.copy()
@@ -367,7 +368,7 @@ def run_script(
 
 
 def run_python_script(
-    script_path: Path, *args, env: Optional[Dict] = None, timeout: int = 30
+    script_path: Path, *args, env: dict | None = None, timeout: int = 30
 ) -> subprocess.CompletedProcess:
     """Run a Python script and return the result."""
     script_env = os.environ.copy()

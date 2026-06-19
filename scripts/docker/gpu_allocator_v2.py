@@ -19,7 +19,6 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Tuple
 
 import yaml
 
@@ -181,12 +180,12 @@ class GPUAllocatorSmart:
                     if members:
                         inline = config["groups"][group_name].get("members", [])
                         config["groups"][group_name]["members"] = list(set(members + inline))
-            except (PermissionError, IOError):
+            except (OSError, PermissionError):
                 pass  # Fall back to inline members if file unreadable
 
         return config
 
-    def _get_user_limits(self, username: str) -> Dict:
+    def _get_user_limits(self, username: str) -> dict:
         """Get user's resource limits from config (merges defaults + group/override).
 
         Supports both original and sanitized usernames in config lookups.
@@ -256,7 +255,7 @@ class GPUAllocatorSmart:
 
     def _check_aggregate_gpu_quota(
         self, username: str, requested_count: int
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Check if user is within aggregate GPU quota (per-user total cap).
 
         This is the first layer of GPU quota enforcement - checks total GPU usage
@@ -312,7 +311,7 @@ class GPUAllocatorSmart:
         event_type: str,
         user: str,
         container: str,
-        gpu_id: Optional[str] = None,
+        gpu_id: str | None = None,
         reason: str = "",
     ):
         """Log event to centralized event logger (events.jsonl)"""
@@ -353,7 +352,7 @@ class GPUAllocatorSmart:
         try:
             with open(self.log_file, "a") as f:
                 f.write(log_entry)
-        except (IOError, OSError) as e:
+        except OSError as e:
             # Log failures to stderr for debugging, but don't block
             print(f"Warning: legacy log write failed: {e}", file=sys.stderr)
 
@@ -405,9 +404,9 @@ class GPUAllocatorSmart:
         self,
         username: str,
         container: str,
-        max_gpus: Optional[int] = None,
+        max_gpus: int | None = None,
         require_full_gpu: bool = False,
-    ) -> Tuple[Optional[str], str]:
+    ) -> tuple[str | None, str]:
         """
         Allocate GPU for a container (stateless - reads from Docker).
         Uses file lock to prevent race conditions.
@@ -568,7 +567,7 @@ class GPUAllocatorSmart:
         container_type: str,
         num_migs: int = 1,
         prefer_full_gpu: bool = False,
-    ) -> Tuple[list, int, str]:
+    ) -> tuple[list, int, str]:
         """
         Allocate multiple MIG instances or full GPUs for a container.
         Supports distributed containers across multiple GPU slots.
@@ -783,7 +782,7 @@ class GPUAllocatorSmart:
         # Fallback: return slot ID
         return gpu_slot
 
-    def release_gpu(self, container: str) -> Tuple[Optional[str], str]:
+    def release_gpu(self, container: str) -> tuple[str | None, str]:
         """
         Release GPU from container (stateless - just logs event).
         Actual release happens when container is removed from Docker.
@@ -819,7 +818,7 @@ class GPUAllocatorSmart:
 
         return gpu_slot, "SUCCESS"
 
-    def get_status(self) -> Dict:
+    def get_status(self) -> dict:
         """
         Get current GPU allocation status (reads from Docker).
 
@@ -861,7 +860,7 @@ class GPUAllocatorSmart:
 
     def _check_external_quotas(
         self, username: str, max_allowed: int, requested: int
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Run both quota layers (aggregate + per-container-type)."""
         allowed, agg_err = self._check_aggregate_gpu_quota(username, requested)
         if not allowed:
@@ -871,7 +870,7 @@ class GPUAllocatorSmart:
             return False, f"QUOTA_EXCEEDED:{current}/{max_allowed}"
         return True, None
 
-    def allocate_external(self, username: str, container_type: str) -> Tuple[Optional[str], str]:
+    def allocate_external(self, username: str, container_type: str) -> tuple[str | None, str]:
         """
         Allocate GPU for external container (devcontainer, compose, docker run, etc.).
 
@@ -967,7 +966,7 @@ class GPUAllocatorSmart:
         import re
         from datetime import timedelta
 
-        def parse_duration(duration_str: str) -> Optional[timedelta]:
+        def parse_duration(duration_str: str) -> timedelta | None:
             """Parse duration string like '24h', '0.5h', '1d' to timedelta"""
             if not duration_str or duration_str == "null" or duration_str == "indefinite":
                 return None

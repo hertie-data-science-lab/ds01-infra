@@ -27,7 +27,6 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 # Configuration
 MIN_UID = 1000  # Minimum UID to consider (skip system users)
@@ -109,7 +108,7 @@ COMPUTE_INDICATORS = {
 
 class BareMetalDetector:
     def __init__(self):
-        self.container_pids: Set[int] = set()
+        self.container_pids: set[int] = set()
         self._load_container_pids()
 
     def _load_container_pids(self):
@@ -138,7 +137,7 @@ class BareMetalDetector:
         except Exception as e:
             print(f"Warning: Could not get container PIDs: {e}", file=sys.stderr)
 
-    def _get_process_info(self, pid: int) -> Optional[Dict]:
+    def _get_process_info(self, pid: int) -> dict | None:
         """Get information about a process."""
         try:
             # Read /proc/[pid]/stat
@@ -230,12 +229,12 @@ class BareMetalDetector:
         except Exception:
             return None
 
-    def _is_whitelisted(self, proc: Dict) -> bool:
+    def _is_whitelisted(self, proc: dict) -> bool:
         """Check if process is whitelisted."""
         name = proc["name"].lower()
         return name in WHITELIST
 
-    def _is_compute_workload(self, proc: Dict) -> bool:
+    def _is_compute_workload(self, proc: dict) -> bool:
         """Check if process looks like a compute workload."""
         name = proc["name"].lower()
         cmdline = proc.get("cmdline", "").lower()
@@ -251,7 +250,7 @@ class BareMetalDetector:
 
         return False
 
-    def detect(self, exclude_users: List[str] = None) -> Dict:
+    def detect(self, exclude_users: list[str] = None) -> dict:
         """
         Detect bare metal processes.
 

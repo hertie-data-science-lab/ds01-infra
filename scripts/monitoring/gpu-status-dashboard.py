@@ -8,7 +8,6 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List
 
 
 class GPUStatusDashboard:
@@ -24,10 +23,10 @@ class GPUStatusDashboard:
         if not self.state_file.exists():
             return {"gpus": {}, "allocation_strategy": "least_allocated"}
 
-        with open(self.state_file, "r") as f:
+        with open(self.state_file) as f:
             return json.load(f)
 
-    def _get_nvidia_info(self) -> List[Dict]:
+    def _get_nvidia_info(self) -> list[dict]:
         """Get GPU info from nvidia-smi"""
         try:
             result = subprocess.run(
@@ -57,12 +56,12 @@ class GPUStatusDashboard:
         except Exception:
             return []
 
-    def _get_recent_log_entries(self, n=15) -> List[str]:
+    def _get_recent_log_entries(self, n=15) -> list[str]:
         """Get last N log entries"""
         if not self.log_file.exists():
             return []
 
-        with open(self.log_file, "r") as f:
+        with open(self.log_file) as f:
             lines = f.readlines()
 
         return lines[-n:]
@@ -100,11 +99,11 @@ class GPUStatusDashboard:
         except Exception:
             return "N/A"
 
-    def _get_container_metadata(self, container: str) -> Dict:
+    def _get_container_metadata(self, container: str) -> dict:
         """Get container metadata"""
         metadata_file = self.state_dir / "container-metadata" / f"{container}.json"
         if metadata_file.exists():
-            with open(metadata_file, "r") as f:
+            with open(metadata_file) as f:
                 return json.load(f)
         return {}
 
