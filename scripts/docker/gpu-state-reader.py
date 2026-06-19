@@ -313,6 +313,10 @@ class GPUStateReader:
 
             gpu_slots = []
             gpu_uuids = []
+            # DEPRECATED: mig_equiv conflates "1 full GPU" with "N MIG instances".
+            # The exporter now uses get_user_gpu_count() (real slot count) instead.
+            # Kept only because the allocator/wrapper code still reads mig_equiv;
+            # remove with get_user_mig_total once the allocator PR migrates.
             mig_equiv = 0
 
             for uuid in device_ids:
@@ -555,7 +559,7 @@ class GPUStateReader:
         """
         allocations = defaultdict(
             lambda: {
-                "type": "mig_instance",
+                "type": "full_gpu",
                 "containers": [],
                 "users": defaultdict(int),
                 "uuid": "",
@@ -591,7 +595,11 @@ class GPUStateReader:
             for i, gpu_slot in enumerate(all_gpu_slots):
                 gpu_uuid = all_gpu_uuids[i] if i < len(all_gpu_uuids) else ""
 
-                # Add to allocations
+                # Add to allocations. Slot type is full_gpu by default; a dot in
+                # the slot id (e.g. "2.0") marks a genuine MIG instance.
+                allocations[gpu_slot]["type"] = (
+                    "mig_instance" if "." in str(gpu_slot) else "full_gpu"
+                )
                 allocations[gpu_slot]["containers"].append(container_name)
                 allocations[gpu_slot]["users"][user] += 1
                 allocations[gpu_slot]["uuid"] = gpu_uuid
@@ -781,6 +789,12 @@ class GPUStateReader:
     def get_user_mig_total(self, username: str) -> int:
         """
         Get total MIG-equivalents allocated to a user across all containers.
+
+        DEPRECATED: MIG-equivalents conflate "1 full GPU" with "N MIG instances"
+        and are misleading on the GPU-slot model. Use get_user_gpu_count() for
+        the real slot count. Retained only because the allocator/wrapper code
+        (gpu_allocator_v2.py, mlc-create-wrapper.sh, container-create) still
+        consumes it; remove once the allocator PR migrates off MIG-equivalents.
         """
         allocations = self.get_user_allocations(username)
         return sum(alloc.get("mig_equiv", 1) for alloc in allocations)
