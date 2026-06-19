@@ -209,13 +209,6 @@ class TestGPUEquivalents:
         assert reader._parse_mig_compute_slices(None) == 0
 
     @pytest.mark.integration
-    def test_memory_gb_parsing(self, reader):
-        """Memory GB of a MIG profile is parsed from the '.Ngb' segment."""
-        assert reader._parse_mig_memory_gb("2g.20gb") == 20.0
-        assert reader._parse_mig_memory_gb("1g.10gb") == 10.0
-        assert reader._parse_mig_memory_gb("") == 0.0
-
-    @pytest.mark.integration
     def test_full_gpu_compute_fraction_is_one(self, reader):
         """A full GPU slot weighs exactly 1.0 gpueq."""
         assert reader.get_slot_compute_fraction("0") == 1.0

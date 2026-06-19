@@ -42,6 +42,10 @@ INFRASTRUCTURE_CONTAINER_PATTERNS = [
 ]
 INFRASTRUCTURE_LABEL = "ds01.protected"
 
+# Universal MIG compute-slice count: A100/H100 expose 7 compute slices per GPU.
+# Used as the denominator for a MIG slot's compute fraction (gpueq weight).
+MIG_COMPUTE_SLICES_PER_GPU = 7
+
 
 class GPUStateReader:
     def __init__(self, config_path="/opt/ds01-infra/config/runtime/resource-limits.yaml"):
@@ -103,41 +107,13 @@ class GPUStateReader:
         match = re.match(r"\s*(\d+)g", str(profile).strip(), re.IGNORECASE)
         return int(match.group(1)) if match else 0
 
-    @staticmethod
-    def _parse_mig_memory_gb(profile: str) -> float:
-        """Memory GB in a MIG profile (the "Ngb" of e.g. "2g.20gb").
-
-        Returns 0.0 when the profile is empty/unparseable.
-        """
-        if not profile:
-            return 0.0
-        match = re.search(r"\.(\d+(?:\.\d+)?)gb", str(profile).strip(), re.IGNORECASE)
-        return float(match.group(1)) if match else 0.0
-
     def _slices_per_gpu(self) -> int:
-        """Total compute slices per physical GPU (live, default 7).
+        """Total compute slices per physical GPU.
 
-        A100/H100 expose 7 compute slices per GPU under MIG. We query nvidia-smi
-        for the maximum advertised profile and fall back to 7 if MIG geometry is
-        unavailable (e.g. MIG off, no nvidia-smi). This is the denominator for a
-        MIG slot's compute fraction.
+        Constant 7 on A100/H100 (the universal MIG compute-slice count). This is
+        the denominator for a MIG slot's compute fraction.
         """
-        try:
-            result = subprocess.run(
-                ["/usr/bin/nvidia-smi", "mig", "-lgip"],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=30,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-            return 7
-        max_slices = 0
-        for line in result.stdout.splitlines():
-            match = re.search(r"(\d+)g\.\d", line)
-            if match:
-                max_slices = max(max_slices, int(match.group(1)))
-        return max_slices or 7
+        return MIG_COMPUTE_SLICES_PER_GPU
 
     def get_slot_compute_fraction(self, gpu_slot: str, profile: str | None = None) -> float:
         """Compute-share weight of a GPU/MIG slot in GPU-equivalents (gpueq).
@@ -148,49 +124,9 @@ class GPUStateReader:
         if self._is_full_gpu(gpu_slot):
             return 1.0
         slices = self._parse_mig_compute_slices(profile) if profile else 0
-        total = self._slices_per_gpu()
-        if slices <= 0 or total <= 0:
-            return 1.0
-        return slices / total
-
-    def get_slot_memory_fraction(self, gpu_slot: str, profile: str | None = None) -> float:
-        """Memory-share weight of a GPU/MIG slot as a fraction of one full GPU.
-
-        A full GPU is 1.0. A MIG instance is its profile memory over the GPU's
-        total memory; falls back to the compute fraction when memory is unknown.
-        """
-        if self._is_full_gpu(gpu_slot):
-            return 1.0
-        mem = self._parse_mig_memory_gb(profile) if profile else 0.0
-        total_mem = self._gpu_memory_gb()
-        if mem <= 0 or total_mem <= 0:
-            return self.get_slot_compute_fraction(gpu_slot, profile)
-        return mem / total_mem
-
-    def _gpu_memory_gb(self) -> float:
-        """Total memory (GB) of a physical GPU (live, default 80.0).
-
-        Used as the denominator for a MIG slot's memory fraction. Falls back to
-        80.0 (A100/H100 80GB) when nvidia-smi is unavailable.
-        """
-        try:
-            result = subprocess.run(
-                ["/usr/bin/nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=30,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-            return 80.0
-        for line in result.stdout.splitlines():
-            line = line.strip()
-            if line:
-                try:
-                    return float(line) / 1024.0  # MiB → GB
-                except ValueError:
-                    continue
-        return 80.0
+        if slices <= 0:
+            return 0.0
+        return slices / self._slices_per_gpu()
 
     def _get_mig_uuid_to_slot_mapping(self) -> dict[str, str]:
         """
