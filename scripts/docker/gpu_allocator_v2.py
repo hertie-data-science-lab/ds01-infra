@@ -792,7 +792,12 @@ class GPUAllocatorSmart:
             limits = self._get_user_limits(username)
         sentinel = object()
         value = sentinel
-        for key in ("max_gpu_equivalents", "max_gpu_slots", "max_gpus_per_user", "max_mig_instances"):
+        for key in (
+            "max_gpu_equivalents",
+            "max_gpu_slots",
+            "max_gpus_per_user",
+            "max_mig_instances",
+        ):
             if key in limits:
                 value = limits[key]
                 break
@@ -816,7 +821,11 @@ class GPUAllocatorSmart:
         limits = self._get_user_limits(username)
         # New key first, then legacy aliases (read for one release).
         # None (present-but-null) means unlimited; absence falls back to default 1.
-        for key in ("max_gpu_slots_per_container", "max_gpus_per_container", "max_mig_per_container"):
+        for key in (
+            "max_gpu_slots_per_container",
+            "max_gpus_per_container",
+            "max_mig_per_container",
+        ):
             if key in limits:
                 cap = limits[key]
                 break
