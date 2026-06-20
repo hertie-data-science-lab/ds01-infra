@@ -355,8 +355,13 @@ class GPUAllocatorSmart:
         try:
             with open(self.log_file, "a") as f:
                 f.write(log_entry)
+        except PermissionError:
+            # Legacy log is root-owned; non-root callers (the common path via the
+            # wrapper) can't write it. The canonical record is the event log
+            # above, so this is expected — ignore silently rather than warn.
+            pass
         except OSError as e:
-            # Log failures to stderr for debugging, but don't block
+            # Unexpected (non-permission) error: surface for debugging, don't block
             print(f"Warning: legacy log write failed: {e}", file=sys.stderr)
 
     def _get_container_interface(self, container: str) -> str:
