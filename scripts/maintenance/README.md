@@ -334,7 +334,7 @@ docker ps -a | grep test-project  # Should be empty
 tail /var/log/ds01/container-stale-cleanup.log
 ```
 
-**See:** [testing/cleanup-automation/README.md](../../testing/cleanup-automation/README.md) for comprehensive test suite
+**See:** [tests/cleanup-automation/README.md](../../tests/cleanup-automation/README.md) for comprehensive test suite
 
 ## Monitoring Cleanup Operations
 
@@ -527,4 +527,4 @@ sudo gpu-queue clean
 - [config/README.md](../../config/README.md) - Timeout configuration
 - [scripts/docker/README.md](../docker/README.md) - GPU allocation details
 - [scripts/monitoring/README.md](../monitoring/README.md) - Monitoring tools
-- [testing/cleanup-automation/README.md](../../testing/cleanup-automation/README.md) - Comprehensive test suite
+- [tests/cleanup-automation/README.md](../../tests/cleanup-automation/README.md) - Comprehensive test suite
