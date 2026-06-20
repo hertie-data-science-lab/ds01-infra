@@ -16,7 +16,7 @@ jobs:
     runs-on: [self-hosted, linux, gpu]
     steps:
       - name: Run full test suite on live system
-        working-directory: /opt/ds01-infra/testing
+        working-directory: /opt/ds01-infra/tests
         run: sudo /home/datasciencelab/anaconda3/bin/python -m pytest . -v --tb=short
 
       - name: Create issue on failure

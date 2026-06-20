@@ -5,7 +5,7 @@ pull-request flow, and code style — lives in the documentation site:
 
 **→ [Contributing](https://hertie-data-science-lab.github.io/ds01-infra/develop/contributing)**
 
-Source for that page: [`docs-develop/contributing.md`](docs-develop/contributing.md).
+Source for that page: [`docs/develop/contributing.md`](docs/develop/contributing.md).
 
 ## Quick reference
 

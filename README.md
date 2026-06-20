@@ -78,10 +78,10 @@ ds01-infra/
 ├── config/        # resource-limits.yaml + group membership
 ├── scripts/       # docker/ user/ admin/ lib/ system/ monitoring/ maintenance/
 ├── monitoring/    # Prometheus + Grafana stack
-├── testing/       # test suites
-├── docs-user/     # end-user docs (source of truth; synced to the ds01-hub site)
-├── docs-admin/    # admin & ops docs
-├── docs-develop/  # contributor docs
+├── tests/       # test suites
+├── docs/user/     # end-user docs (source of truth; synced to the ds01-hub site)
+├── docs/admin/    # admin & ops docs
+├── docs/develop/  # contributor docs
 └── website/       # Docusaurus site (full docs)
 ```
 
