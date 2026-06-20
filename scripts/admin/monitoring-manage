@@ -28,7 +28,10 @@ fi
 source "$INFRA_ROOT/scripts/lib/monitoring-perms.sh"
 
 COMPOSE_FILE="$INFRA_ROOT/monitoring/docker-compose.yaml"
-COMPOSE_PROJECT="ds01-monitoring"
+# Must match the running stack's Compose project (the monitoring/ dir-name default),
+# else start/restart/stop spin up a parallel project and collide on the explicit
+# container_names.
+COMPOSE_PROJECT="monitoring"
 
 # Colors (if not loaded from init.sh)
 RED=${RED:-'\033[0;31m'}

@@ -8,7 +8,7 @@ SHELL := /bin/bash
 SH_FILES := $(shell find scripts/ -name '*.sh' -not -path '*/aime-ml-containers/*' -not -path '*__pycache__*' 2>/dev/null)
 SHFMT_FLAGS := -i 4 -ci -s
 
-.PHONY: help lint lint-python lint-shell fmt fmt-python fmt-shell test test-all check docs-serve docs-build docs-check
+.PHONY: help lint lint-python lint-shell fmt fmt-python fmt-shell test test-all check grafana docs-serve docs-build docs-check
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -48,6 +48,17 @@ test-all: ## Run all tests including system (requires sudo + GPU)
 # ── CI mirror ─────────────────────────────────────────────────────────
 
 check: lint test ## Run full CI check locally (lint + test)
+
+# ── Monitoring ────────────────────────────────────────────────────────
+
+grafana: ## Bring up the monitoring stack + print the Grafana/Prometheus URLs
+	scripts/admin/monitoring-manage start
+	@echo ""
+	@echo "  Grafana:    http://localhost:3000"
+	@echo "  Prometheus: http://localhost:9090"
+	@echo ""
+	@echo "  VS Code (Remote-SSH): forward port 3000 in the PORTS panel, then open"
+	@echo "  http://localhost:3000 — listening ports are often auto-forwarded already."
 
 # ── Docs site (Docusaurus, full site → /ds01-infra/) ──────────────────
 
