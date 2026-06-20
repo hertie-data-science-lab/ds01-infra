@@ -20,6 +20,13 @@ repos:
         stages: [commit-msg]
         always_run: true
 
+      - id: no-root-owned-at-root
+        name: Block root-owned files at repo root
+        entry: scripts/system/check-no-root-owned-files.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+
   # Basic file hygiene
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
