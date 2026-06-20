@@ -46,7 +46,6 @@ htmlcov/
 *.log
 *.err
 *.out
-logs/*
 
 # Binary directory
 bin/

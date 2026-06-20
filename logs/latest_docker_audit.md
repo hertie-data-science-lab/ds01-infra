@@ -1,1 +1,0 @@
-/var/log/ds01-infra/audits/docker/_latest_docker_audit.md
