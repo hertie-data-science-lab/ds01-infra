@@ -650,6 +650,9 @@ def main():
         limits = parser.get_user_limits(username)
         max_containers = limits.get("max_containers_per_user", 3)
         print(max_containers if max_containers is not None else "unlimited")
+    elif "--max-ram" in sys.argv:
+        limits = parser.get_user_limits(username)
+        print(limits.get("memory", "32g"))
     elif "--max-mig-per-container" in sys.argv:
         limits = parser.get_user_limits(username)
         # New name first (max_gpu_slots_per_container), then legacy aliases.
