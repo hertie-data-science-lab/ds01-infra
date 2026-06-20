@@ -498,22 +498,6 @@ else
     echo -e "  ${DIM}Workload detector units not found (will be created in Phase 2)${NC}"
 fi
 
-# Deploy DCGM exporter systemd unit (manages restart lifecycle for docker-compose container)
-if [ -f "$INFRA_ROOT/config/deploy/systemd/ds01-dcgm-exporter.service" ]; then
-    echo -e "${DIM}Deploying DCGM exporter unit...${NC}"
-    cp "$INFRA_ROOT/config/deploy/systemd/ds01-dcgm-exporter.service" /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl enable ds01-dcgm-exporter >/dev/null 2>&1
-
-    if systemctl is-active --quiet ds01-dcgm-exporter; then
-        echo -e "  ${GREEN}✓${NC} DCGM exporter service already running"
-    else
-        echo -e "  ${YELLOW}!${NC} DCGM exporter service enabled (start with: sudo systemctl start ds01-dcgm-exporter)"
-    fi
-else
-    echo -e "  ${DIM}DCGM exporter unit not found${NC}"
-fi
-
 # Deploy DS01 metrics exporter (restart only if exporter code changed)
 EXPORTER_SRC="$INFRA_ROOT/monitoring/exporter/ds01_exporter.py"
 EXPORTER_UNIT="$INFRA_ROOT/config/deploy/systemd/ds01-exporter.service"

@@ -163,7 +163,6 @@ h.baker@hertie-school.lan:admin         # Admin account
 **Services:**
 - `ds01-workload-detector.timer/service` - GPU workload detection (60s)
 - `ds01-container-owner-tracker.service` - Container ownership tracking
-- `ds01-dcgm-exporter.service` - DCGM metrics exporter
 - `ds01-exporter.service` - Node exporter
 
 ### Sudoers Rules

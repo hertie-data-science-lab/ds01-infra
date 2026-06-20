@@ -135,11 +135,7 @@ docker compose restart prometheus
 docker compose restart alertmanager
 docker compose restart cadvisor
 docker compose restart node-exporter
-```
-
-Note: `dcgm-exporter` is managed by systemd (`ds01-dcgm-exporter.service`), not docker-compose restart:
-```bash
-sudo systemctl restart ds01-dcgm-exporter
+docker compose restart dcgm-exporter
 ```
 
 ### View Logs
@@ -213,7 +209,7 @@ docker logs ds01-grafana --tail 100
 4. If DCGM panels are empty — verify `ds01-dcgm-exporter` container is running:
    ```bash
    docker ps | grep dcgm
-   sudo systemctl status ds01-dcgm-exporter
+   docker logs --tail 50 ds01-dcgm-exporter
    ```
 
 ### Alerts not firing
