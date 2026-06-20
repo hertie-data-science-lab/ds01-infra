@@ -79,9 +79,9 @@ ds01-infra/
 ├── scripts/       # docker/ user/ admin/ lib/ system/ monitoring/ maintenance/
 ├── monitoring/    # Prometheus + Grafana stack
 ├── tests/       # test suites
-├── docs-user/     # end-user docs (source of truth; synced to the ds01-hub site)
-├── docs-admin/    # admin & ops docs
-├── docs-develop/  # contributor docs
+├── docs/user/     # end-user docs (source of truth; synced to the ds01-hub site)
+├── docs/admin/    # admin & ops docs
+├── docs/develop/  # contributor docs
 └── website/       # Docusaurus site (full docs)
 ```
 

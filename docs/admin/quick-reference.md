@@ -296,4 +296,4 @@ tail /var/log/ds01/gpu-allocations.log | grep priority
 - `config/runtime/resource-limits.yaml` — priorities, reservations, gpueq quotas
 - `scripts/docker/get_resource_limits.py` — per-user limit lookup
 
-**Full docs:** `/opt/ds01-infra/docs-admin/`
+**Full docs:** `/opt/ds01-infra/docs/admin/`

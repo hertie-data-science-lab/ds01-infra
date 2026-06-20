@@ -5,8 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'docs-user/**'
-      - '!docs-user/internal/**'
+      - 'docs/user/**'
+      - '!docs/user/internal/**'
 
   workflow_dispatch:  # Allow manual trigger
 
@@ -28,12 +28,12 @@ jobs:
 
       - name: Sync documentation
         run: |
-          # Mirror ALL of docs-user/ into the hub's docs/ (excluding any
+          # Mirror ALL of docs/user/ into the hub's docs/ (excluding any
           # internal-only subtree). Using rsync --delete keeps the target an
           # exact mirror and avoids the drift the old hand-listed copy caused
           # (e.g. silently dropping newly-added top-level files).
           mkdir -p target/docs/
-          rsync -a --delete --exclude 'internal' source/docs-user/ target/docs/
+          rsync -a --delete --exclude 'internal' source/docs/user/ target/docs/
 
       - name: Check for changes
         id: changes

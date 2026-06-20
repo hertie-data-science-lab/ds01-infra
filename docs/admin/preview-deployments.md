@@ -6,14 +6,14 @@ sidebar_position: 8
 # Docs deployment & previews
 
 DS01 documentation is built with **Docusaurus** from the content roots in this repo
-(`docs-user/`, `docs-admin/`, `docs-develop/`) by the site in `website/`.
+(`docs/user/`, `docs/admin/`, `docs/develop/`) by the site in `website/`.
 
 ## Two sites, one source of truth
 
 | Site | Repo | Content | URL |
 |---|---|---|---|
 | **Full site** | `ds01-infra` (this repo) | all three pillars | `https://hertie-data-science-lab.github.io/ds01-infra/` |
-| **End-user site** | `ds01-hub` | `docs-user/` only (synced) | `https://hertie-data-science-lab.github.io/ds01/` |
+| **End-user site** | `ds01-hub` | `docs/user/` only (synced) | `https://hertie-data-science-lab.github.io/ds01/` |
 
 The end-user site is a separate Docusaurus build in `ds01-hub`, fed by
 `sync-docs-to-hub.yml`. See that repo for its deploy workflow.

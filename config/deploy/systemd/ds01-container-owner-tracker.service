@@ -1,6 +1,6 @@
 [Unit]
 Description=DS01 Container Ownership Tracker
-Documentation=file:///opt/ds01-infra/docs-admin/architecture.md
+Documentation=file:///opt/ds01-infra/docs/admin/architecture.md
 After=docker.service
 Requires=docker.service
 

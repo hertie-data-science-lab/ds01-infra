@@ -9,7 +9,7 @@ Two-tier CI with path-based filtering, local development mirror via Makefile, ma
 | CI | `ci.yml` | PR to main, dispatch | Tier 1 — lint + test on every PR |
 | System CI | `ci-system.yml` | Nightly 03:00 UTC, dispatch, callable | Tier 2 — full suite on GPU hardware |
 | Release | `release.yml` | Tag push `v*.*.*`, dispatch | Create GitHub Release |
-| Docs sync | `sync-docs-to-hub.yml` | Push to main (docs changes), dispatch | Sync docs-user/ to ds01-hub |
+| Docs sync | `sync-docs-to-hub.yml` | Push to main (docs changes), dispatch | Sync docs/user/ to ds01-hub |
 
 All workflows support `workflow_dispatch` for manual triggering.
 

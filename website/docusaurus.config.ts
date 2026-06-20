@@ -4,9 +4,9 @@ import type * as Preset from '@docusaurus/preset-classic';
 
 // Full ds01-infra documentation site. Three audience pillars, each a
 // plugin-content-docs instance with its own sidebar + navbar dropdown:
-//   ../docs-user     -> /guide     (end-user; also published standalone via ds01-hub)
-//   ../docs-admin    -> /admin     (evergreen admin/ops; ephemeral docs excluded below)
-//   ../docs-develop  -> /develop   (contributor docs; links out to in-repo READMEs)
+//   ../docs/user     -> /guide     (end-user; also published standalone via ds01-hub)
+//   ../docs/admin    -> /admin     (evergreen admin/ops; ephemeral docs excluded below)
+//   ../docs/develop  -> /develop   (contributor docs; links out to in-repo READMEs)
 //
 // Content lives in sibling dirs at the repo root; this Docusaurus instance
 // lives in website/ and points each plugin at ../<dir>.
@@ -48,11 +48,11 @@ const config: Config = {
         // local-search SearchBar resolves the 'default' docs instance, so one
         // pillar must hold that id. Admin + Developer are plugins below.
         docs: {
-          path: '../docs-user',
+          path: '../docs/user',
           routeBasePath: 'guide',
           sidebarPath: './sidebarsUser.ts',
-          editUrl: `${EDIT_BASE}/docs-user/`,
-          // docs-user/ has both README.md and index.md at root (Docusaurus
+          editUrl: `${EDIT_BASE}/docs/user/`,
+          // docs/user/ has both README.md and index.md at root (Docusaurus
           // treats both as the folder index -> collision). Keep index.md as
           // the pillar landing; README.md stays for GitHub repo browsing only.
           exclude: ['README.md'],
@@ -68,10 +68,10 @@ const config: Config = {
       '@docusaurus/plugin-content-docs',
       {
         id: 'admin',
-        path: '../docs-admin',
+        path: '../docs/admin',
         routeBasePath: 'admin',
         sidebarPath: './sidebarsAdmin.ts',
-        editUrl: `${EDIT_BASE}/docs-admin/`,
+        editUrl: `${EDIT_BASE}/docs/admin/`,
         // Publish evergreen admin docs only. Ephemeral working docs
         // (planning logs, point-in-time audits, completed-migration incident
         // reports) are excluded rather than moved.
@@ -89,10 +89,10 @@ const config: Config = {
       '@docusaurus/plugin-content-docs',
       {
         id: 'develop',
-        path: '../docs-develop',
+        path: '../docs/develop',
         routeBasePath: 'develop',
         sidebarPath: './sidebarsDevelop.ts',
-        editUrl: `${EDIT_BASE}/docs-develop/`,
+        editUrl: `${EDIT_BASE}/docs/develop/`,
       },
     ],
     [
@@ -100,7 +100,7 @@ const config: Config = {
       {
         hashed: true,
         language: ['en'],
-        docsDir: ['../docs-user', '../docs-admin', '../docs-develop'],
+        docsDir: ['../docs/user', '../docs/admin', '../docs/develop'],
         docsRouteBasePath: ['guide', 'admin', 'develop'],
         indexBlog: false,
       },

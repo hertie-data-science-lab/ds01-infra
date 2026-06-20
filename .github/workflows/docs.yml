@@ -3,7 +3,7 @@ name: Build docs site
 # Builds the Docusaurus full documentation site under website/ and deploys to
 # this repo's own GitHub Pages on push to main. PR runs build-only (no deploy)
 # as an authoritative correctness gate (onBrokenLinks: 'throw'), independent of
-# the Cloudflare Pages preview surface (see docs-admin/preview-deployments.md).
+# the Cloudflare Pages preview surface (see docs/admin/preview-deployments.md).
 #
 # Production URL: https://hertie-data-science-lab.github.io/ds01-infra/
 # The public end-user subset is a separate site built in ds01-hub (→ /ds01/).
@@ -13,17 +13,17 @@ on:
     branches: [main]
     paths:
       - "website/**"
-      - "docs-user/**"
-      - "docs-admin/**"
-      - "docs-develop/**"
+      - "docs/user/**"
+      - "docs/admin/**"
+      - "docs/develop/**"
       - ".github/workflows/docs.yml"
   push:
     branches: [main]
     paths:
       - "website/**"
-      - "docs-user/**"
-      - "docs-admin/**"
-      - "docs-develop/**"
+      - "docs/user/**"
+      - "docs/admin/**"
+      - "docs/develop/**"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
