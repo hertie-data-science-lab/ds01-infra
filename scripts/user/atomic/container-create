@@ -232,6 +232,7 @@ WORKSPACE_DIR=""
 DATA_DIR=""
 DRY_RUN=false
 NUM_GPUS=1              # Number of GPU slots to request (CLI override)
+NUM_GPUS_SPECIFIED=false  # Whether --num-gpus was passed explicitly on the CLI
 PREFER_FULL=false       # Deprecated: prefer full GPU (no-op, slots are full GPUs)
 
 while [[ $# -gt 0 ]]; do
@@ -258,7 +259,13 @@ while [[ $# -gt 0 ]]; do
             ;;
         --num-gpus=*)
             NUM_GPUS="${1#*=}"
+            NUM_GPUS_SPECIFIED=true
             shift
+            ;;
+        --num-gpus)
+            NUM_GPUS="$2"
+            NUM_GPUS_SPECIFIED=true
+            shift 2
             ;;
         --prefer-full)
             PREFER_FULL=true
@@ -765,12 +772,12 @@ CONTAINER_TAG="${CONTAINER_NAME}._.${USER_ID}"
 # =============================================================================
 # GPU Slot Count Selection (for GPU-enabled containers)
 # =============================================================================
-# One unit = one GPU slot (a full GPU today; a MIG instance later). Shown for all
-# users with multi-GPU permissions, unless:
-# - CPU_ONLY mode is selected
-# - User already specified --num-gpus on command line
+# One unit = one GPU slot (a full GPU today; a MIG instance later). The user's
+# cap (MAX_OPTION) is the min of their per-container limit, remaining quota, and
+# the physical GPU count. It is computed once and then used to either validate an
+# explicit --num-gpus, or drive the interactive picker when none was supplied.
 
-if [ "$CPU_ONLY" != true ] && [ "$NUM_GPUS" -eq 1 ]; then
+if [ "$CPU_ONLY" != true ]; then
     # Get user's limits (slot-based)
     MAX_SLOTS_PER_CONTAINER=$(python3 "$RESOURCE_PARSER" "$USERNAME" --max-mig-per-container 2>/dev/null || echo "1")
     MAX_SLOTS_TOTAL=$(python3 "$RESOURCE_PARSER" "$USERNAME" --max-gpus 2>/dev/null || echo "2")
@@ -786,69 +793,76 @@ if [ "$CPU_ONLY" != true ] && [ "$NUM_GPUS" -eq 1 ]; then
         [ "$REMAINING_QUOTA" -lt 0 ] && REMAINING_QUOTA=0
     fi
 
-    # Only show GPU selection if user can have more than 1 GPU slot per container
-    if [ "$MAX_SLOTS_PER_CONTAINER" != "1" ] && [ "$MAX_SLOTS_PER_CONTAINER" != "" ]; then
-        # Count physical GPUs available (each GPU = 1 slot; MIG off)
-        TOTAL_GPUS=$(nvidia-smi -L 2>/dev/null | grep -c "^GPU") || TOTAL_GPUS=4
-        [ "$TOTAL_GPUS" -lt 1 ] && TOTAL_GPUS=4
+    # Count physical GPUs available (each GPU = 1 slot; MIG off)
+    TOTAL_GPUS=$(nvidia-smi -L 2>/dev/null | grep -c "^GPU") || TOTAL_GPUS=4
+    [ "$TOTAL_GPUS" -lt 1 ] && TOTAL_GPUS=4
 
-        # Determine max option: min(per_container_limit, remaining_quota, system_available)
-        if [ "$MAX_SLOTS_PER_CONTAINER" = "unlimited" ] || [ "$MAX_SLOTS_PER_CONTAINER" = "null" ]; then
-            MAX_OPTION=$REMAINING_QUOTA
-        else
-            MAX_OPTION=$MAX_SLOTS_PER_CONTAINER
-            [ "$MAX_OPTION" -gt "$REMAINING_QUOTA" ] && MAX_OPTION=$REMAINING_QUOTA
-        fi
-        [ "$MAX_OPTION" -gt "$TOTAL_GPUS" ] && MAX_OPTION=$TOTAL_GPUS
+    # Determine max option: min(per_container_limit, remaining_quota, system_available)
+    if [ "$MAX_SLOTS_PER_CONTAINER" = "unlimited" ] || [ "$MAX_SLOTS_PER_CONTAINER" = "null" ] || [ -z "$MAX_SLOTS_PER_CONTAINER" ]; then
+        MAX_OPTION=$REMAINING_QUOTA
+    else
+        MAX_OPTION=$MAX_SLOTS_PER_CONTAINER
+        [ "$MAX_OPTION" -gt "$REMAINING_QUOTA" ] && MAX_OPTION=$REMAINING_QUOTA
+    fi
+    [ "$MAX_OPTION" -gt "$TOTAL_GPUS" ] && MAX_OPTION=$TOTAL_GPUS
 
-        # Check if user has any remaining quota
-        if [ "$MAX_OPTION" -le 0 ]; then
-            echo -e "${RED}Cannot allocate GPU resources.${NC}"
-            echo ""
-            echo "Your limits:"
-            echo "  • Per container: up to $MAX_SLOTS_PER_CONTAINER GPUs"
-            echo "  • Total (all containers): up to $MAX_SLOTS_TOTAL GPUs"
-            echo ""
-            echo "Current usage:"
-            echo "  • You have $CURRENT_ALLOC GPUs allocated"
-            echo "  • Remaining quota: $REMAINING_QUOTA"
-            echo ""
-            echo -e "${CYAN}To free up resources:${NC}"
-            echo "  container-retire <name>   # Remove a container and free its GPU"
-            echo "  check-limits              # View your current usage"
+    # Check if user has any remaining quota
+    if [ "$MAX_OPTION" -le 0 ]; then
+        echo -e "${RED}Cannot allocate GPU resources.${NC}"
+        echo ""
+        echo "Your limits:"
+        echo "  • Per container: up to $MAX_SLOTS_PER_CONTAINER GPUs"
+        echo "  • Total (all containers): up to $MAX_SLOTS_TOTAL GPUs"
+        echo ""
+        echo "Current usage:"
+        echo "  • You have $CURRENT_ALLOC GPUs allocated"
+        echo "  • Remaining quota: $REMAINING_QUOTA"
+        echo ""
+        echo -e "${CYAN}To free up resources:${NC}"
+        echo "  container-retire <name>   # Remove a container and free its GPU"
+        echo "  check-limits              # View your current usage"
+        exit 1
+    fi
+
+    if [ "$NUM_GPUS_SPECIFIED" = true ]; then
+        # Explicit --num-gpus: validate against the cap, never prompt
+        if ! [[ "$NUM_GPUS" =~ ^[0-9]+$ ]] || [ "$NUM_GPUS" -lt 1 ]; then
+            echo -e "${RED}Invalid --num-gpus value: '$NUM_GPUS' (expected a positive integer).${NC}"
             exit 1
         fi
-
-        # Only show selection menu if user can allocate more than 1
-        if [ "$MAX_OPTION" -gt 1 ]; then
-            echo -e "${BOLD}GPU Allocation:${NC}"
+        if [ "$NUM_GPUS" -gt "$MAX_OPTION" ]; then
+            echo -e "${RED}Requested $NUM_GPUS GPU slot(s) exceeds your available maximum of $MAX_OPTION.${NC}"
+            echo "  • Per container: up to $MAX_SLOTS_PER_CONTAINER   • Remaining quota: $REMAINING_QUOTA   • System free: $TOTAL_GPUS"
             echo ""
-            echo -e "${DIM}Mode: Full GPUs — each GPU is ~40GB VRAM${NC}"
-            echo ""
-            if [ "$CURRENT_ALLOC" -gt 0 ]; then
-                echo "Current allocation: $CURRENT_ALLOC GPUs"
-            fi
-            echo "Available for this container: up to $MAX_OPTION GPUs"
-            echo ""
-            echo "How many GPUs do you need?"
-            echo ""
-
-            # Show dynamic options
-            for i in $(seq 1 $MAX_OPTION); do
-                if [ "$i" -eq 1 ]; then
-                    echo -e "  ${BOLD}${i})${NC} ${i} GPU ${GREEN}(recommended)${NC}"
-                else
-                    echo -e "  ${BOLD}${i})${NC} ${i} GPUs"
-                fi
-            done
-            echo ""
-            read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
-            read -p "Enter number of GPUs [1-$MAX_OPTION, default: 1]: " GPU_CHOICE </dev/tty
-            GPU_CHOICE=${GPU_CHOICE:-1}
-        else
-            # User can only allocate 1 GPU, skip selection
-            GPU_CHOICE=1
+            echo -e "Run ${CYAN}check-limits${NC} to see your current usage."
+            exit 1
         fi
+    elif [ "$MAX_OPTION" -gt 1 ]; then
+        # No explicit count and the user may allocate >1 → interactive picker
+        echo -e "${BOLD}GPU Allocation:${NC}"
+        echo ""
+        echo -e "${DIM}Mode: Full GPUs — each GPU is ~40GB VRAM${NC}"
+        echo ""
+        if [ "$CURRENT_ALLOC" -gt 0 ]; then
+            echo "Current allocation: $CURRENT_ALLOC GPUs"
+        fi
+        echo "Available for this container: up to $MAX_OPTION GPUs"
+        echo ""
+        echo "How many GPUs do you need?"
+        echo ""
+
+        # Show dynamic options
+        for i in $(seq 1 $MAX_OPTION); do
+            if [ "$i" -eq 1 ]; then
+                echo -e "  ${BOLD}${i})${NC} ${i} GPU ${GREEN}(recommended)${NC}"
+            else
+                echo -e "  ${BOLD}${i})${NC} ${i} GPUs"
+            fi
+        done
+        echo ""
+        read -r -t 0.1 -n 10000 discard </dev/tty 2>/dev/null || true
+        read -p "Enter number of GPUs [1-$MAX_OPTION, default: 1]: " GPU_CHOICE </dev/tty
+        GPU_CHOICE=${GPU_CHOICE:-1}
 
         # Validate choice
         if [[ "$GPU_CHOICE" =~ ^[0-9]+$ ]] && [ "$GPU_CHOICE" -ge 1 ] && [ "$GPU_CHOICE" -le "$MAX_OPTION" ]; then
@@ -857,21 +871,24 @@ if [ "$CPU_ONLY" != true ] && [ "$NUM_GPUS" -eq 1 ]; then
             NUM_GPUS=1
         fi
         echo ""
+    else
+        # No explicit count and only one slot is allowed
+        NUM_GPUS=1
+    fi
 
-        # Informational notice for multi-GPU requests
-        if [ "$NUM_GPUS" -gt 1 ]; then
-            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo -e "${CYAN}ℹ  Multi-GPU Allocation${NC}"
-            echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-            echo ""
-            echo -e "  Requesting: ${BOLD}$NUM_GPUS full GPUs${NC}"
-            echo ""
-            echo -e "  ${CYAN}Useful for:${NC}"
-            echo -e "    • Data-parallel training (DDP)"
-            echo -e "    • Large models requiring multi-GPU memory"
-            echo -e "    • Hyperparameter sweeps on separate GPUs"
-            echo ""
-        fi
+    # Informational notice for multi-GPU requests
+    if [ "$NUM_GPUS" -gt 1 ]; then
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${CYAN}ℹ  Multi-GPU Allocation${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+        echo -e "  Requesting: ${BOLD}$NUM_GPUS full GPUs${NC}"
+        echo ""
+        echo -e "  ${CYAN}Useful for:${NC}"
+        echo -e "    • Data-parallel training (DDP)"
+        echo -e "    • Large models requiring multi-GPU memory"
+        echo -e "    • Hyperparameter sweeps on separate GPUs"
+        echo ""
     fi
 fi
 
@@ -1083,8 +1100,8 @@ if [ -z "$IMAGE_NAME" ] && [ -n "$CONTAINER_NAME" ]; then
     fi
 fi
 
-# Create workspace directory if it doesn't exist
-if [ ! -d "$WORKSPACE_DIR" ]; then
+# Create workspace directory if it doesn't exist (skip during --dry-run)
+if [ ! -d "$WORKSPACE_DIR" ] && [ "$DRY_RUN" != true ]; then
     if [ "$GUIDED" = true ]; then
         echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${BOLD}Creating Workspace Directory${NC}"
