@@ -315,8 +315,8 @@ class ResourceLimitParser:
 
         output = f"\nResource limits for user '{username}' (group: {group}):\n"
         output += "\n  GPU Limits:\n"
-        output += f"    Max GPU-equivalents:      {max_gpus_str}\n"
-        output += f"    Max GPU units/container:   {max_gpus_container_str}\n"
+        output += f"    Max GPUs (simultaneous):  {max_gpus_str}\n"
+        output += f"    Max GPUs per container:   {max_gpus_container_str}\n"
         output += f"    Allow full GPU:           {'Yes' if allow_full else 'No'}\n"
         output += f"    Priority level:           {limits.get('priority', 10)}\n"
         output += f"    Max containers:           {limits.get('max_containers_per_user', 3)}\n"
