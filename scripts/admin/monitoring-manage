@@ -24,6 +24,9 @@ if [[ -f "$INFRA_ROOT/scripts/lib/init.sh" ]]; then
     source "$INFRA_ROOT/scripts/lib/init.sh"
 fi
 
+# Shared monitoring config-perms normaliser (also used by config/permissions-manifest.sh)
+source "$INFRA_ROOT/scripts/lib/monitoring-perms.sh"
+
 COMPOSE_FILE="$INFRA_ROOT/monitoring/docker-compose.yaml"
 COMPOSE_PROJECT="ds01-monitoring"
 
@@ -72,34 +75,14 @@ check_compose() {
     fi
 }
 
-# Re-assert world-read on the bind-mounted monitoring config trees.
-# The deploy account's umask (0077) makes `git pull`/checkout write updated
-# config files mode 600 — unreadable by the container users (Prometheus runs as
-# nobody, Grafana as 472) — which silently breaks Prometheus reload and Grafana
-# provisioning. `sudo deploy` fixes this too (permissions-manifest.sh); this keeps
-# start/restart/update/reload self-healing without requiring a deploy.
+# Normalise perms on the bind-mounted monitoring config trees so the container
+# users can read them after a umask-0077 pull. Delegates to the shared helper
+# (scripts/lib/monitoring-perms.sh) that permissions-manifest.sh also uses.
 fix_permissions() {
-    local dirs=(
-        "$INFRA_ROOT/monitoring/prometheus"
-        "$INFRA_ROOT/monitoring/alertmanager"
-        "$INFRA_ROOT/monitoring/grafana/provisioning"
-    )
-    local fixed=0 dir
-
-    for dir in "${dirs[@]}"; do
-        [[ -d $dir ]] || continue
-
-        # World-readable files
-        while IFS= read -r -d '' file; do
-            chmod o+r "$file" 2>/dev/null && ((fixed++)) || true
-        done < <(find "$dir" -type f ! -perm -o=r -print0 2>/dev/null)
-
-        # Traversable directories
-        find "$dir" -type d ! -perm -o=x -exec chmod o+x {} \; 2>/dev/null || true
-    done
-
-    if [[ $fixed -gt 0 ]]; then
-        echo -e "${YELLOW}Fixed world-read on $fixed monitoring config file(s)${NC}"
+    local fixed
+    fixed=$(normalize_monitoring_perms "$INFRA_ROOT")
+    if [[ ${fixed:-0} -gt 0 ]]; then
+        echo -e "${YELLOW}Fixed perms on $fixed monitoring config file(s)${NC}"
     fi
 }
 
