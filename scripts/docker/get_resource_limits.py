@@ -315,8 +315,8 @@ class ResourceLimitParser:
 
         output = f"\nResource limits for user '{username}' (group: {group}):\n"
         output += "\n  GPU Limits:\n"
-        output += f"    Max GPU-equivalents:      {max_gpus_str}\n"
-        output += f"    Max GPU units/container:   {max_gpus_container_str}\n"
+        output += f"    Max GPUs (simultaneous total):  {max_gpus_str}\n"
+        output += f"    Max GPUs per container:         {max_gpus_container_str}\n"
         output += f"    Allow full GPU:           {'Yes' if allow_full else 'No'}\n"
         output += f"    Priority level:           {limits.get('priority', 10)}\n"
         output += f"    Max containers:           {limits.get('max_containers_per_user', 3)}\n"
@@ -608,6 +608,38 @@ def main():
         print(" ".join(args))
     elif "--group" in sys.argv:
         print(parser.get_user_group(username))
+    elif "--json" in sys.argv:
+        import json
+
+        limits = parser.get_user_limits(username)
+        max_gpus = _resolve_max_gpu_equivalents(limits)
+        if max_gpus is _SENTINEL:
+            max_gpus = 1.0
+        max_slots = _resolve_max_gpu_slots_per_container(limits)
+        if max_slots is _SENTINEL:
+            max_slots = 1
+        max_ctr = limits.get("max_containers_per_user", 3)
+        idle_t = limits.get("idle_timeout_h")
+        gpu_h = limits.get("gpu_hold_after_stop_h")
+        ctr_h = limits.get("container_hold_after_stop_h")
+        max_rt = limits.get("max_runtime_h")
+        print(
+            json.dumps(
+                {
+                    "group": parser.get_user_group(username),
+                    "max_gpus": "unlimited" if max_gpus is None else _format_gpueq(max_gpus),
+                    "max_gpus_per_container": "unlimited" if max_slots is None else str(max_slots),
+                    "max_containers": "unlimited" if max_ctr is None else str(max_ctr),
+                    "cpu_cores": str(limits.get("max_cpus") or limits.get("cpus", 16)),
+                    "memory": str(limits.get("memory", "32g")),
+                    "storage_workspace": str(limits.get("storage_workspace", "N/A")),
+                    "idle_timeout": f"{idle_t}h" if idle_t is not None else "N/A",
+                    "gpu_hold": f"{gpu_h}h" if gpu_h is not None else "N/A",
+                    "container_hold": f"{ctr_h}h" if ctr_h is not None else "N/A",
+                    "max_runtime": f"{max_rt}h" if max_rt is not None else "unlimited",
+                }
+            )
+        )
     elif "--max-gpus" in sys.argv:
         limits = parser.get_user_limits(username)
         max_gpus = _resolve_max_gpu_equivalents(limits)
