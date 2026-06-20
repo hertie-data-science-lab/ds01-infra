@@ -637,7 +637,7 @@ else:
     # If no --memory specified, use per-container default from user's config
     if [ "$requested_memory_bytes" -eq 0 ]; then
         local user_limits
-        user_limits=$(python3 "$RESOURCE_PARSER" "$user" 2>/dev/null | grep "RAM:" | awk '{print $2}' || echo "32g")
+        user_limits=$(python3 "$RESOURCE_PARSER" "$user" --max-ram 2>/dev/null || echo "32g")
         requested_memory_bytes=$(echo "$user_limits" | python3 -c "
 import sys
 size_str = sys.stdin.read().strip()
