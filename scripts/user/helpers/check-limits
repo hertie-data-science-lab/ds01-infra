@@ -69,31 +69,33 @@ parse_limit() {
 
 # ── Data collection ──────────────────────────────────────────────────────
 
-# Get human-readable limits (default output)
-limits_text=$(python3 "$SCRIPT_DIR/docker/get_resource_limits.py" "$USERNAME" 2>/dev/null)
+# Get all limits from the parser's machine-readable JSON. Grepping the
+# human-readable output silently broke after #76 relabelled it; the JSON
+# interface is stable regardless of display wording.
+limits_json=$(python3 "$SCRIPT_DIR/docker/get_resource_limits.py" "$USERNAME" --json 2>/dev/null)
 
-if [[ -z "$limits_text" ]]; then
+if [[ -z "$limits_json" ]]; then
     echo -e "${RED}Could not retrieve limits. Contact admin.${NC}"
     exit 1
 fi
 
-# Parse from human-readable output
-group=$(echo "$limits_text" | grep -oP '\(group:\s*\K[^)]+' || echo "unknown")
-# GPU quotas: read via the parser's machine-readable flags rather than
-# grepping its display text, so relabelling the output can't silently
-# break this (the #76 label rename did exactly that).
-max_gpus=$(python3 "$SCRIPT_DIR/docker/get_resource_limits.py" "$USERNAME" --max-gpus 2>/dev/null)
-max_gpus_per=$(python3 "$SCRIPT_DIR/docker/get_resource_limits.py" "$USERNAME" --max-mig-per-container 2>/dev/null)
-max_containers=$(echo "$limits_text" | grep -oP 'Max containers:\s*\K\S+' || echo "3")
-cpu_cores=$(echo "$limits_text" | grep -oP 'CPU cores:\s*\K\S+' || echo "8")
-memory=$(echo "$limits_text" | grep -oP 'RAM:\s*\K\S+' || echo "32g")
-storage=$(echo "$limits_text" | grep -oP 'Workspace.*:\s*\K\S+' || echo "N/A")
+# Extract a field from the limits JSON
+jget() { echo "$limits_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('$1',''))" 2>/dev/null; }
+
+group=$(jget group)
+[[ -z "$group" ]] && group="unknown"
+max_gpus=$(jget max_gpus)
+max_gpus_per=$(jget max_gpus_per_container)
+max_containers=$(jget max_containers)
+cpu_cores=$(jget cpu_cores)
+memory=$(jget memory)
+storage=$(jget storage_workspace)
 
 # Lifecycle
-idle_timeout=$(echo "$limits_text" | grep -oP 'Idle timeout:\s*\K\S+' || echo "2h")
-max_runtime=$(echo "$limits_text" | grep -oP 'Max runtime:\s*\K\S+' || echo "24h")
-gpu_hold=$(echo "$limits_text" | grep -oP 'GPU hold after stop:\s*\K\S+' || echo "30m")
-container_hold=$(echo "$limits_text" | grep -oP 'Container hold \(stopped\):\s*\K\S+' || echo "7d")
+idle_timeout=$(jget idle_timeout)
+max_runtime=$(jget max_runtime)
+gpu_hold=$(jget gpu_hold)
+container_hold=$(jget container_hold)
 
 max_gpus=$(parse_limit "$max_gpus")
 max_containers=$(parse_limit "$max_containers")
