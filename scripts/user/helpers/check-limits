@@ -79,8 +79,11 @@ fi
 
 # Parse from human-readable output
 group=$(echo "$limits_text" | grep -oP '\(group:\s*\K[^)]+' || echo "unknown")
-max_gpus=$(echo "$limits_text" | grep -oP 'Max GPUs \(simultaneous\):\s*\K\S+' || echo "1")
-max_gpus_per=$(echo "$limits_text" | grep -oP 'Max GPUs per container:\s*\K\S+' || echo "1")
+# GPU quotas: read via the parser's machine-readable flags rather than
+# grepping its display text, so relabelling the output can't silently
+# break this (the #76 label rename did exactly that).
+max_gpus=$(python3 "$SCRIPT_DIR/docker/get_resource_limits.py" "$USERNAME" --max-gpus 2>/dev/null)
+max_gpus_per=$(python3 "$SCRIPT_DIR/docker/get_resource_limits.py" "$USERNAME" --max-mig-per-container 2>/dev/null)
 max_containers=$(echo "$limits_text" | grep -oP 'Max containers:\s*\K\S+' || echo "3")
 cpu_cores=$(echo "$limits_text" | grep -oP 'CPU cores:\s*\K\S+' || echo "8")
 memory=$(echo "$limits_text" | grep -oP 'RAM:\s*\K\S+' || echo "32g")
