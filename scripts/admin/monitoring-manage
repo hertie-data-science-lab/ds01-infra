@@ -46,6 +46,7 @@ Commands:
   start     Start monitoring stack
   stop      Stop monitoring stack
   restart   Restart monitoring stack
+  reload    Hot-reload Prometheus/Alertmanager config (self-heals perms; no restart)
   logs      Follow monitoring logs (Ctrl+C to exit)
   update    Pull latest images and restart
   build     Rebuild custom exporter image
@@ -71,25 +72,34 @@ check_compose() {
     fi
 }
 
-# Fix permissions on Grafana provisioning files
-# Required because user umask (0077) creates files with restrictive permissions
-# Grafana container runs as user 472, needs read access to dashboard JSON files
+# Re-assert world-read on the bind-mounted monitoring config trees.
+# The deploy account's umask (0077) makes `git pull`/checkout write updated
+# config files mode 600 — unreadable by the container users (Prometheus runs as
+# nobody, Grafana as 472) — which silently breaks Prometheus reload and Grafana
+# provisioning. `sudo deploy` fixes this too (permissions-manifest.sh); this keeps
+# start/restart/update/reload self-healing without requiring a deploy.
 fix_permissions() {
-    local grafana_prov_dir="$INFRA_ROOT/monitoring/grafana/provisioning"
-    local fixed=0
+    local dirs=(
+        "$INFRA_ROOT/monitoring/prometheus"
+        "$INFRA_ROOT/monitoring/alertmanager"
+        "$INFRA_ROOT/monitoring/grafana/provisioning"
+    )
+    local fixed=0 dir
 
-    if [[ -d $grafana_prov_dir ]]; then
-        # Find files that aren't world-readable and fix them
+    for dir in "${dirs[@]}"; do
+        [[ -d $dir ]] || continue
+
+        # World-readable files
         while IFS= read -r -d '' file; do
             chmod o+r "$file" 2>/dev/null && ((fixed++)) || true
-        done < <(find "$grafana_prov_dir" -type f ! -perm -o=r -print0 2>/dev/null)
+        done < <(find "$dir" -type f ! -perm -o=r -print0 2>/dev/null)
 
-        # Ensure directories are executable (traversable)
-        find "$grafana_prov_dir" -type d ! -perm -o=x -exec chmod o+x {} \; 2>/dev/null || true
+        # Traversable directories
+        find "$dir" -type d ! -perm -o=x -exec chmod o+x {} \; 2>/dev/null || true
+    done
 
-        if [[ $fixed -gt 0 ]]; then
-            echo -e "${YELLOW}Fixed permissions on $fixed provisioning file(s)${NC}"
-        fi
+    if [[ $fixed -gt 0 ]]; then
+        echo -e "${YELLOW}Fixed world-read on $fixed monitoring config file(s)${NC}"
     fi
 }
 
@@ -219,6 +229,28 @@ build() {
     echo "Run 'monitoring-manage restart' to use new image."
 }
 
+reload() {
+    check_compose
+    echo -e "${BLUE}Reloading monitoring configuration...${NC}"
+
+    # Normalise config perms first — umask-600 files break a hot reload
+    fix_permissions
+
+    if curl -fsS -X POST http://localhost:9090/-/reload >/dev/null 2>&1; then
+        echo -e "  Prometheus:    ${GREEN}reloaded${NC} (prometheus.yml + rules)"
+    else
+        echo -e "  Prometheus:    ${RED}reload failed${NC} (running? check config/perms)"
+    fi
+
+    if curl -fsS -X POST http://localhost:9093/-/reload >/dev/null 2>&1; then
+        echo -e "  Alertmanager:  ${GREEN}reloaded${NC} (alertmanager.yml)"
+    else
+        echo -e "  Alertmanager:  ${YELLOW}not reloaded${NC} (down? applies on next start)"
+    fi
+
+    echo -e "${GREEN}Done.${NC} Grafana provisioning auto-reloads from its bind mount (~30s)."
+}
+
 # Main
 case "${1:-status}" in
     status)
@@ -232,6 +264,9 @@ case "${1:-status}" in
         ;;
     restart)
         restart
+        ;;
+    reload)
+        reload
         ;;
     logs)
         logs "${2:-}"
