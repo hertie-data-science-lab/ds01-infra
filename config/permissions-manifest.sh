@@ -53,15 +53,14 @@ chmod 644 "$INFRA_ROOT"/config/runtime/*.yaml "$INFRA_ROOT"/config/runtime/*.yml
 chmod 644 "$INFRA_ROOT"/config/runtime/*.txt 2>/dev/null
 chmod 644 "$INFRA_ROOT"/config/runtime/groups/*.members 2>/dev/null
 
-# Monitoring stack config (must be world-readable for containerised services)
+# Monitoring stack config (must be world-readable for containerised services).
+# The bind-mounted config trees (prometheus/alertmanager/grafana provisioning) are
+# normalised by the shared helper so deploy and monitoring-manage stay in sync.
+if [ -f "$INFRA_ROOT/scripts/lib/monitoring-perms.sh" ]; then
+    source "$INFRA_ROOT/scripts/lib/monitoring-perms.sh"
+    normalize_monitoring_perms "$INFRA_ROOT" >/dev/null
+fi
 chmod 644 "$INFRA_ROOT"/monitoring/*.yaml 2>/dev/null
-chmod 644 "$INFRA_ROOT"/monitoring/prometheus/*.yml 2>/dev/null
-chmod 644 "$INFRA_ROOT"/monitoring/prometheus/rules/*.yml 2>/dev/null
-chmod 644 "$INFRA_ROOT"/monitoring/alertmanager/*.yml 2>/dev/null
-chmod 644 "$INFRA_ROOT"/monitoring/alertmanager/templates/*.tmpl 2>/dev/null
-chmod 644 "$INFRA_ROOT"/monitoring/grafana/provisioning/dashboards/*.yml 2>/dev/null
-chmod 644 "$INFRA_ROOT"/monitoring/grafana/provisioning/dashboards/dashboards/*.json 2>/dev/null
-chmod 644 "$INFRA_ROOT"/monitoring/grafana/provisioning/datasources/*.yml 2>/dev/null
 chmod 644 "$INFRA_ROOT"/monitoring/exporter/*.py 2>/dev/null
 
 # =============================================================================
