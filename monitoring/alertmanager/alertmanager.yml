@@ -2,10 +2,13 @@
 # Teams-only alerting via msteamsv2_configs
 #
 # SETUP:
-#   Replace PLACEHOLDER_TEAMS_WEBHOOK_URL with the actual Power Automate webhook URL.
-#   This will be configured in Plan 05 (Teams webhook integration checkpoint).
+#   The Teams webhook URL is read at runtime from the gitignored secret file
+#   config/runtime/teams-webhook-url.txt (mounted read-only into the container at
+#   /etc/alertmanager/teams-webhook-url.txt). Put the Power Automate (logic.azure.com)
+#   workflow URL in that file — it must never be committed (this repo is public).
+#   The same file is the single source of truth for ds01-monthly-report.
 #
-# NOTE: Requires Alertmanager v0.28.0+ for msteamsv2_configs support.
+# NOTE: Requires Alertmanager v0.28.0+ for msteamsv2_configs + webhook_url_file support.
 #   Current image: prom/alertmanager:v0.28.1
 
 global:
@@ -57,7 +60,7 @@ inhibit_rules:
 receivers:
   - name: 'ds01-teams'
     msteamsv2_configs:
-      - webhook_url: 'PLACEHOLDER_TEAMS_WEBHOOK_URL'
+      - webhook_url_file: '/etc/alertmanager/teams-webhook-url.txt'
         send_resolved: true
         title: '[DS01] {{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
         text: |
@@ -69,7 +72,7 @@ receivers:
 
   - name: 'ds01-teams-critical'
     msteamsv2_configs:
-      - webhook_url: 'PLACEHOLDER_TEAMS_WEBHOOK_URL'
+      - webhook_url_file: '/etc/alertmanager/teams-webhook-url.txt'
         send_resolved: true
         title: '[DS01 CRITICAL] {{ .CommonLabels.alertname }}'
         text: |

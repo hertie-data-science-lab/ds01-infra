@@ -227,6 +227,9 @@ services:
       - "127.0.0.1:9093:9093"
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # Webhook secret (gitignored; same file ds01-monthly-report reads). Read at
+      # runtime via webhook_url_file so the URL never lands in the tracked config.
+      - ../config/runtime/teams-webhook-url.txt:/etc/alertmanager/teams-webhook-url.txt:ro
       - alertmanager-data:/alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
