@@ -94,7 +94,7 @@ make test          # Unit + integration (excludes system tests)
 make test-all      # All tests including system (requires sudo + GPU)
 ```
 
-See the [test suite README](https://github.com/hertie-data-science-lab/ds01-infra/blob/main/testing/README.md)
+See the [test suite README](https://github.com/hertie-data-science-lab/ds01-infra/blob/main/tests/README.md)
 for test structure and markers.
 
 ## Releases

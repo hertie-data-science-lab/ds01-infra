@@ -36,5 +36,5 @@ this site is planned follow-up work — see the note on the [Developer home](./i
 
 - [`config/README.md`](https://github.com/hertie-data-science-lab/ds01-infra/blob/main/config/README.md)
   — configuration lifecycle, runtime vs deploy-time, `resource-limits.yaml` reference.
-- [`testing/README.md`](https://github.com/hertie-data-science-lab/ds01-infra/blob/main/testing/README.md)
+- [`tests/README.md`](https://github.com/hertie-data-science-lab/ds01-infra/blob/main/tests/README.md)
   — test suite architecture (unit/integration/system), running tests, markers.

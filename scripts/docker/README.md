@@ -207,7 +207,7 @@ set -e  # Re-enable
 
 **Prevention:** When writing wrapper scripts, always use `set +e` / `set -e` pairs around command substitutions that may fail, OR use `|| true` pattern.
 
-See: [testing/cleanup-automation/FINDINGS.md](../../testing/cleanup-automation/FINDINGS.md) for detailed analysis.
+See: [tests/cleanup-automation/FINDINGS.md](../../tests/cleanup-automation/FINDINGS.md) for detailed analysis.
 
 ---
 
@@ -689,7 +689,7 @@ sudo scripts/system/setup-docker-permissions.sh --dry-run
 
 ```bash
 # Run test suite
-scripts/testing/docker-permissions/test-permissions.sh
+scripts/tests/docker-permissions/test-permissions.sh
 
 # As admin - should see all containers
 docker ps -a

@@ -142,13 +142,13 @@ Three tiers, mapped to CI:
 
 | Tier | Directory | Count | Marker | Runs in |
 |------|-----------|-------|--------|---------|
-| Unit | `testing/unit/` | 648 | `unit` | Tier 1 + Tier 2 |
-| Integration | `testing/integration/` | 143 | `integration` | Tier 1 + Tier 2 |
-| System | `testing/system/` | 32 | `system` | Tier 2 only |
+| Unit | `tests/unit/` | 648 | `unit` | Tier 1 + Tier 2 |
+| Integration | `tests/integration/` | 143 | `integration` | Tier 1 + Tier 2 |
+| System | `tests/system/` | 32 | `system` | Tier 2 only |
 
 Tier 1 runs `pytest -m "not system"` (791 tests). Tier 2 runs everything (823 tests).
 
-See [testing/README.md](https://github.com/hertie-data-science-lab/ds01-infra/blob/main/testing/README.md) for test details.
+See [tests/README.md](https://github.com/hertie-data-science-lab/ds01-infra/blob/main/tests/README.md) for test details.
 
 ## Troubleshooting
 

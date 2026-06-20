@@ -40,10 +40,10 @@ fmt-shell: ## shfmt write
 # ── Testing ───────────────────────────────────────────────────────────
 
 test: ## Run unit + integration tests (excludes system)
-	cd testing && python -m pytest . -m "not system" -v --tb=short
+	cd tests && python -m pytest . -m "not system" -v --tb=short
 
 test-all: ## Run all tests including system (requires sudo + GPU)
-	cd testing && sudo python -m pytest . -v --tb=short
+	cd tests && sudo python -m pytest . -v --tb=short
 
 # ── CI mirror ─────────────────────────────────────────────────────────
 

@@ -406,8 +406,8 @@ grep -A10 user_overrides config/runtime/resource-limits.yaml
 ### Test scripts
 
 ```bash
-python3 /opt/ds01-infra/testing/unit/test_gpu_allocator_mig_detection.py
-python3 /opt/ds01-infra/testing/functional/test_gpu_allocator_functional.py
+python3 /opt/ds01-infra/tests/unit/test_gpu_allocator_mig_detection.py
+python3 /opt/ds01-infra/tests/functional/test_gpu_allocator_functional.py
 ```
 
 ---
