@@ -165,14 +165,18 @@ sudo journalctl -u ds01-exporter -n 50
 ### Reload Configuration (without restart)
 
 ```bash
-# Reload Prometheus config and rules
-curl -s -X POST http://localhost:9090/-/reload
-
-# Reload Alertmanager config
-curl -s -X POST http://localhost:9093/-/reload
+# Hot-reload Prometheus + Alertmanager config (self-heals file permissions first)
+monitoring-manage reload
 ```
 
 Use after editing `prometheus.yml`, `ds01_alerts.yml`, `ds01_recording.yml`, or `alertmanager.yml`.
+
+> **Always reload via `monitoring-manage reload`, not raw `curl`.** The deploy
+> account's umask (`0077`) makes `git pull` write updated config files mode `600`,
+> which the Prometheus/Grafana container users can't read — a raw
+> `curl -X POST .../-/reload` then fails with HTTP 500 and silently keeps the old
+> rules. `monitoring-manage reload` re-asserts world-read on the config trees
+> first (`sudo deploy` also does, via `permissions-manifest.sh`).
 
 ### Start/Stop Full Stack
 
