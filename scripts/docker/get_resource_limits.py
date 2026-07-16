@@ -350,7 +350,9 @@ class ResourceLimitParser:
 
     def get_gpu_allocation_config(self):
         """Get gpu_allocation section from config"""
-        return self.config.get("gpu_allocation", {})
+        # `or {}`: a comments-only section parses to None, and the dict default
+        # of .get() only applies to a missing key, not a present-but-null one.
+        return self.config.get("gpu_allocation") or {}
 
     def get_policies(self):
         """Get policies section from config"""
