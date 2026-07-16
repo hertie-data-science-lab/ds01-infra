@@ -119,5 +119,41 @@ class TestUserGpuEquivalents:
         assert reader.get_user_gpu_equivalents("carol") == pytest.approx(1.0 + 1 / 7)
 
 
+# =============================================================================
+# Null gpu_allocation section (regression: comments-only YAML -> None)
+# =============================================================================
+
+
+class TestNullGpuAllocationSection:
+    """A comments-only `gpu_allocation:` block parses to None. `.get(key, {})`
+    returns that None (the default only fills a *missing* key), so any downstream
+    .get() crashed with AttributeError — and, since it fires once per enumerated
+    GPU container, it took down every allocation and the stale-release cleanup as
+    soon as one GPU container existed.
+    """
+
+    def _reader_with_config(self, tmp_path, body):
+        cfg = tmp_path / "resource-limits.yaml"
+        cfg.write_text(body)
+        module = _load_reader_module()
+        return module.GPUStateReader(config_path=str(cfg))
+
+    def test_comments_only_section_defaults_not_crash(self, tmp_path):
+        # `gpu_allocation:` with only comments under it -> None.
+        reader = self._reader_with_config(
+            tmp_path,
+            "gpu_allocation:\n  # slots_per_gpu: 1  (all keys commented out)\n",
+        )
+        assert reader._get_mig_instances_per_gpu() == 1
+
+    def test_missing_section_defaults(self, tmp_path):
+        reader = self._reader_with_config(tmp_path, "defaults: {}\n")
+        assert reader._get_mig_instances_per_gpu() == 1
+
+    def test_populated_section_is_read(self, tmp_path):
+        reader = self._reader_with_config(tmp_path, "gpu_allocation:\n  slots_per_gpu: 7\n")
+        assert reader._get_mig_instances_per_gpu() == 7
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

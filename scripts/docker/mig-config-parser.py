@@ -18,7 +18,9 @@ def main():
         with open(config_file) as f:
             config = yaml.safe_load(f)
 
-        mig_config = config.get("gpu_allocation", {}).get("mig_gpus", {})
+        # `or {}`: a comments-only section parses to None, so the dict default
+        # of .get() never applies — guard both levels against a present-but-null value.
+        mig_config = (config.get("gpu_allocation") or {}).get("mig_gpus") or {}
 
         # Convert to list format for easier bash processing
         result = []

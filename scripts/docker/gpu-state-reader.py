@@ -79,7 +79,9 @@ class GPUStateReader:
         MIG off) — matching the unified slot model.
         """
         config = self._load_config()
-        gpu_config = config.get("gpu_allocation", {})
+        # `or {}`: a comments-only `gpu_allocation:` section parses to None, so the
+        # dict default of .get() never applies — guard the null explicitly.
+        gpu_config = config.get("gpu_allocation") or {}
         return gpu_config.get("slots_per_gpu", gpu_config.get("mig_instances_per_gpu", 1))
 
     def _is_full_gpu(self, gpu_slot: str) -> bool:
