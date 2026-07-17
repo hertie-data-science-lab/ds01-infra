@@ -22,8 +22,15 @@ else
     DS01_VERSION="unknown"
 fi
 
-# Get git info for commit hash
-if [ -d "$INFRA_DIR/.git" ]; then
+# Get commit/release info. Prod is detached (no .git) and takes its SHA from
+# the deploy state file (also a handy cutover-verification signal); a dev clone
+# or the staging clone (which have .git) falls back to git.
+DEPLOY_SHA_FILE="/var/lib/ds01/deploy/current-sha"
+if [ -f "$DEPLOY_SHA_FILE" ]; then
+    GIT_COMMIT=$(cut -c1-12 "$DEPLOY_SHA_FILE" 2>/dev/null || echo "unknown")
+    GIT_BRANCH="main (detached prod)"
+    GIT_DATE=$(date -r "$DEPLOY_SHA_FILE" '+%Y-%m-%d' 2>/dev/null || echo "unknown")
+elif [ -d "$INFRA_DIR/.git" ]; then
     cd "$INFRA_DIR"
     GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
     GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")

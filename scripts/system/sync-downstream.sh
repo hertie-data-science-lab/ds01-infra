@@ -12,14 +12,41 @@
 
 set -euo pipefail
 
-REPO_DIR="/opt/ds01-infra"
+# Detached-prod backup: prod (/opt/ds01-infra) has no .git, so drive git with
+# the STAGING clone's repo (--git-dir) against the PROD work-tree. That keeps
+# force-adding the prod-only, git-ignored runtime state (config/runtime/*
+# members/overrides, teams-webhook-url.txt, .planning, ...) that a dev clone or
+# staging never has — so downstream stays a complete backup.
+#
+# The prod post-commit hook no longer exists (no .git in prod); this is driven
+# by cron/timer (see config/deploy/cron.d/ds01-maintenance) as the checkout
+# owner (datasciencelab) for SSH auth + ownership.
+#
+# Requires: the staging clone has a 'downstream' remote configured.
+
+REPO_DIR="/opt/ds01-infra"               # work-tree (live prod)
+STAGING_GIT_DIR="/opt/ds01-staging/.git" # repo (staging clone)
 REMOTE="downstream"
-BRANCH=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+BRANCH="main"
 LOG_FILE="/tmp/ds01-sync-downstream.log"
 
-# Redirect all output to log (silent when run from hooks)
+# Redirect all output to log (silent when run from cron/timer)
 exec >>"$LOG_FILE" 2>&1
-echo "--- sync started: $(date -Iseconds) branch=$BRANCH ---"
+echo "--- sync started: $(date -Iseconds) ---"
+
+if [ ! -d "$STAGING_GIT_DIR" ]; then
+    echo "staging repo $STAGING_GIT_DIR not found — skipping"
+    exit 0
+fi
+
+# Drive all git commands against the staging repo with the prod work-tree.
+export GIT_DIR="$STAGING_GIT_DIR"
+export GIT_WORK_TREE="$REPO_DIR"
+
+if ! git remote get-url "$REMOTE" >/dev/null 2>&1; then
+    echo "remote '$REMOTE' not configured in staging — skipping (add it at cutover)"
+    exit 0
+fi
 
 cd "$REPO_DIR"
 

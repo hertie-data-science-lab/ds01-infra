@@ -191,15 +191,30 @@ deploy_cmd() {
         return 1
     fi
 
-    rm -f "$DEST_DIR/$name" 2>/dev/null
-    if ln -sf "$target" "$DEST_DIR/$name" 2>/dev/null; then
+    # Skip when the symlink is already correct — avoids needlessly swapping a
+    # command that is already fine (notably /usr/local/bin/docker).
+    if [ "$(readlink "$DEST_DIR/$name" 2>/dev/null)" = "$target" ]; then
+        CATEGORY_SUCCESS[$category]=$((${CATEGORY_SUCCESS[$category]:-0} + 1))
+        ((TOTAL_SUCCESS++))
+        $VERBOSE && echo -e "  ${GREEN}✓${NC} $name (unchanged)"
+        return 0
+    fi
+
+    # Atomic swap: create a temp symlink then rename it over the destination, so
+    # the command name is never momentarily absent. The old rm -f + ln -sf left
+    # a window with no /usr/local/bin/docker, during which PATH falls through to
+    # the real /usr/bin/docker — bypassing GPU allocation + isolation (exactly
+    # what the wrapper exists to enforce). rename(2) within one directory is atomic.
+    local tmp="$DEST_DIR/.$name.deploy.$$"
+    if ln -s "$target" "$tmp" 2>/dev/null && mv -Tf "$tmp" "$DEST_DIR/$name" 2>/dev/null; then
         CATEGORY_SUCCESS[$category]=$((${CATEGORY_SUCCESS[$category]:-0} + 1))
         ((TOTAL_SUCCESS++))
         $VERBOSE && echo -e "  ${GREEN}✓${NC} $name"
         return 0
     else
+        rm -f "$tmp" 2>/dev/null
         CATEGORY_FAIL[$category]=$((${CATEGORY_FAIL[$category]:-0} + 1))
-        CATEGORY_ERRORS[$category]+="  ${RED}✗${NC} $name (copy failed)\n"
+        CATEGORY_ERRORS[$category]+="  ${RED}✗${NC} $name (symlink failed)\n"
         ((TOTAL_FAIL++))
         return 1
     fi
@@ -347,6 +362,7 @@ deploy_cmd "$USER_WIZARDS/user-setup" "new-user" "Legacy"
 # --- Admin Commands ---
 $VERBOSE && echo -e "${DIM}Admin:${NC}"
 deploy_cmd "$INFRA_ROOT/scripts/system/deploy.sh" "deploy" "Admin"
+deploy_cmd "$INFRA_ROOT/scripts/system/sync.sh" "ds01-sync" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/admin/dashboard" "ds01-dashboard" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/gpu-status-dashboard.py" "ds01-gpu" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/container-dashboard.sh" "ds01-containers" "Admin"
@@ -456,11 +472,17 @@ echo -e "${DIM}Deploying sudoers.d files...${NC}"
 for sudoers_file in "$INFRA_ROOT"/config/deploy/sudoers.d/ds01-*; do
     [ -f "$sudoers_file" ] || continue
     name="$(basename "$sudoers_file")"
+    # Validate BEFORE installing — a malformed file in /etc/sudoers.d/ can break
+    # sudo for everyone. Only install a source that parses cleanly.
+    if ! visudo -cf "$sudoers_file" >/dev/null 2>&1; then
+        echo -e "  ${RED}✗${NC} $name failed 'visudo -c' — NOT installed"
+        continue
+    fi
     cp "$sudoers_file" /etc/sudoers.d/"$name"
     chmod 440 /etc/sudoers.d/"$name"
 done
 
-echo -e "  ${GREEN}✓${NC} Sudoers.d files deployed (440)"
+echo -e "  ${GREEN}✓${NC} Sudoers.d files deployed (440, visudo-validated)"
 
 # --- Deploy cron.d files (644 — read by cron daemon) ---
 echo -e "${DIM}Deploying cron.d files...${NC}"
@@ -562,39 +584,63 @@ else
     echo -e "  ${DIM}Workload detector units not found (will be created in Phase 2)${NC}"
 fi
 
-# Deploy DS01 metrics exporter (restart only if exporter code changed)
-EXPORTER_SRC="$INFRA_ROOT/monitoring/exporter/ds01_exporter.py"
-EXPORTER_UNIT="$INFRA_ROOT/config/deploy/systemd/ds01-exporter.service"
-if [ -f "$EXPORTER_UNIT" ]; then
-    echo -e "${DIM}Deploying DS01 exporter unit...${NC}"
-    cp "$EXPORTER_UNIT" /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl enable ds01-exporter >/dev/null 2>&1
+# ---------------------------------------------------------------------------
+# Code-caching daemons: exporter, container-owner-tracker, container-sync
+# ---------------------------------------------------------------------------
+# These three long-running services import their Python once at start and only
+# pick up new code on restart. Refresh their units (reloading systemd only if a
+# unit actually changed) then try-restart all three, so a deploy propagates code
+# changes to every one of them — not just the exporter.
+#
+# Replaces the old exporter-only, mtime-gated block: mtime gating was fragile
+# (rsync/checkout can reset mtimes) and never touched the other two daemons, so
+# owner-tracker/sync silently kept running stale code after a deploy.
 
-    if systemctl is-active --quiet ds01-exporter; then
-        # Restart if the exporter source has changed since the service started
-        SERVICE_START=$(systemctl show ds01-exporter --property=ActiveEnterTimestamp --value)
-        if [ -n "$SERVICE_START" ] && [ -f "$EXPORTER_SRC" ]; then
-            SERVICE_EPOCH=$(date -d "$SERVICE_START" +%s 2>/dev/null || echo 0)
-            FILE_EPOCH=$(stat -c %Y "$EXPORTER_SRC" 2>/dev/null || echo 0)
-            if [ "$FILE_EPOCH" -gt "$SERVICE_EPOCH" ]; then
-                systemctl restart ds01-exporter >/dev/null 2>&1
-                echo -e "  ${GREEN}✓${NC} DS01 exporter restarted (code updated)"
-            else
-                echo -e "  ${GREEN}✓${NC} DS01 exporter running (no code changes)"
-            fi
-        fi
-    else
-        systemctl start ds01-exporter >/dev/null 2>&1
-        if systemctl is-active --quiet ds01-exporter; then
-            echo -e "  ${GREEN}✓${NC} DS01 exporter started"
-        else
-            echo -e "  ${YELLOW}!${NC} DS01 exporter failed to start (check journalctl -u ds01-exporter)"
-        fi
+echo -e "${DIM}Refreshing code-caching daemons...${NC}"
+
+units_changed=false
+for unit in ds01-exporter.service ds01-container-owner-tracker.service; do
+    src="$INFRA_ROOT/config/deploy/systemd/$unit"
+    dst="/etc/systemd/system/$unit"
+    if [ ! -f "$src" ]; then
+        echo -e "  ${YELLOW}!${NC} $unit source missing, skipping"
+        continue
     fi
-else
-    echo -e "  ${DIM}DS01 exporter unit not found${NC}"
-fi
+    if ! cmp -s "$src" "$dst" 2>/dev/null; then
+        cp "$src" "$dst"
+        units_changed=true
+        echo -e "  ${GREEN}✓${NC} $unit installed/updated"
+    else
+        $VERBOSE && echo -e "  ${GREEN}✓${NC} $unit unchanged"
+    fi
+done
+
+# NOTE: ds01-container-sync.service is installed on prod but not yet tracked in
+# config/deploy/systemd/. It is still enabled/restarted below (it is present on
+# the box); a fresh box will not get it until its unit is added to the repo.
+
+# daemon-reload only if a unit file actually changed.
+$units_changed && systemctl daemon-reload
+
+DAEMONS="ds01-exporter ds01-container-owner-tracker ds01-container-sync"
+systemctl enable $DAEMONS >/dev/null 2>&1 || true
+# Restart the ones that are running so they load the new code; || true tolerates
+# a fresh box where a unit is not yet installed.
+systemctl try-restart $DAEMONS || true
+# Start any that are enabled but not running (fresh box or a crashed daemon).
+for svc in $DAEMONS; do
+    if systemctl is-enabled --quiet "$svc" 2>/dev/null && ! systemctl is-active --quiet "$svc" 2>/dev/null; then
+        systemctl start "$svc" >/dev/null 2>&1 || true
+    fi
+done
+
+for svc in $DAEMONS; do
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} $svc active"
+    else
+        echo -e "  ${YELLOW}!${NC} $svc not active (check: journalctl -u $svc)"
+    fi
+done
 
 # ============================================================================
 # Resource Enforcement: Generate Per-User Aggregate Limits
