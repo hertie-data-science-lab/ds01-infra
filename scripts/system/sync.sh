@@ -13,9 +13,9 @@
 #   ds01-sync --rollback       re-release the previous good SHA
 #   ds01-sync --list           show release history + current SHA
 #
-# Safety model: a smoke failure aborts before prod is mutated; a side-effect
-# failure auto-rolls-back to the last good SHA; current-sha only advances after
-# a fully successful release.
+# Safety model: a smoke failure aborts before prod is mutated; a side-effect OR
+# post-deploy-health-gate failure auto-rolls-back to the last good SHA;
+# current-sha only advances after a fully successful, health-gated release.
 
 set -euo pipefail
 
@@ -145,6 +145,52 @@ run_side_effects() {
     "$DEPLOY"
 }
 
+# Post-deploy health gate: probe the LIVE system after side-effects. Returns
+# non-zero (→ rollback) only on deploy-breaking conditions. Full regression is
+# NOT re-run here — it runs pre-merge (ci.yml) and nightly (ci-system); the
+# @system tests allocate real GPUs and would fight users' jobs. This is a fast,
+# non-destructive probe instead.
+health_gate() {
+    log "post-deploy health gate"
+    local bad=0 svc dw hc
+
+    # Invariants a good release MUST preserve.
+    for svc in ds01-exporter ds01-container-owner-tracker ds01-container-sync; do
+        systemctl is-active --quiet "$svc" || {
+            warn "health: $svc is not active"
+            bad=1
+        }
+    done
+
+    dw=$(readlink -f /usr/local/bin/docker 2>/dev/null || true)
+    if [ "$dw" != "$INFRA_ROOT/scripts/docker/docker-wrapper.sh" ]; then
+        warn "health: /usr/local/bin/docker resolves to '${dw:-missing}', not the wrapper (GPU isolation bypass risk)"
+        bad=1
+    fi
+
+    python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" --help >/dev/null 2>&1 ||
+        {
+            warn "health: get_resource_limits.py --help failed"
+            bad=1
+        }
+
+    # Broader system integrity. A CRITICAL result (exit >= 2, e.g. Docker down)
+    # rolls back; non-critical drift (exit 1) is logged, not rolled back — it is
+    # usually pre-existing and handled by config-watchdog / other reconcilers.
+    if [ -x "$INFRA_ROOT/scripts/monitoring/ds01-health-check" ]; then
+        "$INFRA_ROOT/scripts/monitoring/ds01-health-check" >/dev/null 2>&1
+        hc=$?
+        if [ "$hc" -ge 2 ]; then
+            warn "health: ds01-health-check CRITICAL (exit $hc)"
+            bad=1
+        elif [ "$hc" -eq 1 ]; then
+            log "health: ds01-health-check reported non-critical issues (exit 1); not rolling back"
+        fi
+    fi
+
+    return "$bad"
+}
+
 # <target_sha>  — full release pipeline used by both deploy and rollback.
 do_release() {
     local new=$1 prev
@@ -158,17 +204,29 @@ do_release() {
 
     release_to_prod "$prev" "$new"
 
+    # Apply side-effects, then health-gate the LIVE system. Either failing rolls
+    # back to the last good SHA.
+    local failure=""
     if ! run_side_effects; then
-        warn "side-effects FAILED for $new — auto-rolling back to ${prev:-none}"
-        record failure "$new" "side-effects failed; rolling back to ${prev:-none}"
+        failure="side-effects"
+    elif ! health_gate; then
+        failure="post-deploy health gate"
+    fi
+
+    if [ -n "$failure" ]; then
+        warn "$failure FAILED for $new — auto-rolling back to ${prev:-none}"
+        record failure "$new" "$failure failed; rolling back to ${prev:-none}"
         if [ -n "$prev" ] && [ "$prev" != "$new" ]; then
+            # Rollback re-runs side-effects but NOT the health gate, to avoid a
+            # rollback loop if the gate itself is flaky; $prev was healthy when
+            # it was last released.
             if build_and_smoke "$prev" && release_to_prod "$new" "$prev" && run_side_effects; then
-                record rollback "$prev" "auto-rollback after failed release of $new"
-                die "release of $new failed; rolled back to $prev (current-sha unchanged)"
+                record rollback "$prev" "auto-rollback after $failure failure on $new"
+                die "release of $new failed ($failure); rolled back to $prev (current-sha unchanged)"
             fi
-            die "ROLLBACK FAILED after failed release of $new — prod may be inconsistent; investigate NOW"
+            die "ROLLBACK FAILED after $failure failure on $new — prod may be inconsistent; investigate NOW"
         fi
-        die "release of $new failed and there is no previous SHA to roll back to"
+        die "release of $new failed ($failure) and there is no previous SHA to roll back to"
     fi
 
     # Success — advance current-sha ONLY now, never ahead of what is live.
