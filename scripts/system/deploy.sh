@@ -36,13 +36,9 @@ NC='\033[0m'
 # Parse arguments
 VERBOSE=false
 SYNC=false
-PASSTHRU_ARGS=() # args to forward across the post-sync re-exec (--sync is consumed)
 for arg in "$@"; do
     case $arg in
-        -v | --verbose)
-            VERBOSE=true
-            PASSTHRU_ARGS+=("$arg")
-            ;;
+        -v | --verbose) VERBOSE=true ;;
         --sync) SYNC=true ;;
         -h | --help)
             echo "Usage: sudo deploy [OPTIONS]"
@@ -119,10 +115,11 @@ if $SYNC; then
     echo -e "  ${GREEN}✓${NC} Smoke checks passed"
 
     # Re-exec the now-updated deploy.sh (without --sync) so side-effects run from
-    # the freshly-merged code rather than this stale in-memory copy.
+    # the freshly-merged code rather than this stale in-memory copy. Forward -v
+    # if it was given.
     echo -e "${DIM}Re-executing deploy for side-effects...${NC}"
     echo ""
-    exec "$SELF" "${PASSTHRU_ARGS[@]}"
+    if $VERBOSE; then exec "$SELF" -v; else exec "$SELF"; fi
 fi
 
 # Verify Docker cgroup driver early (warn only, don't block deployment)
