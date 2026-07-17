@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# prod-git-guard: refuse commits made directly in the PRODUCTION checkout on a
+# branch other than main. Belt-and-suspenders only — the structural fix is the
+# Phase 2 detached prod (no .git at all). Inert in dev clones.
+
+if [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "/opt/ds01-infra" ]; then
+    branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    if [ "$branch" != "main" ]; then
+        echo "prod-git-guard: refusing to commit in /opt/ds01-infra on '$branch'." >&2
+        echo "  Prod tracks main only. Develop in a dev clone (e.g. ~/workspace/ds01-infra)." >&2
+        exit 1
+    fi
+fi
+
+DS01_HOOK_NAME=pre-commit exec "$(dirname "$0")/chain" "$@"

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# chain — passthrough shim for the repo-owned git hooks.
+#
+# Activating these hooks sets core.hooksPath to this .githooks/ directory (see
+# scripts/system/install-prod-git-guards.sh). core.hooksPath *shadows* the
+# repo-default .git/hooks/, where the externally-managed dotconfigs hooks live
+# as symlinks. This shim re-runs whichever default hook was shadowed, so adding
+# our guards never drops anything dotconfigs does.
+#
+# It is a no-op (exit 0) when there is no matching default hook — e.g. a fresh
+# clone without dotconfigs, or the post-cutover prod directory with no .git.
+#
+# Guard hooks invoke us with DS01_HOOK_NAME set; passthrough hooks are symlinks
+# to this script, so the hook name comes from basename "$0".
+
+hook="${DS01_HOOK_NAME:-$(basename "$0")}"
+
+git_dir="$(git rev-parse --absolute-git-dir 2>/dev/null)" || exit 0
+orig="$git_dir/hooks/$hook"
+
+if [ -x "$orig" ]; then
+    exec "$orig" "$@"
+fi
+exit 0
