@@ -34,7 +34,7 @@ Metrics collection, health checks, and monitoring tools.
 4. `com.docker.compose.*` labels → compose
 5. Fallback → docker
 
-**Idle timeouts by container type** (from `config/resource-limits.yaml`):
+**Idle timeouts by container type** (from `config/runtime/resource-limits.yaml`):
 - `orchestration/atomic`: User's configured idle_timeout_h
 - `devcontainer`: null (exempt, only subject to max_runtime_h)
 - `compose`: 0.5 (30 min)
