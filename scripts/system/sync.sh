@@ -56,6 +56,7 @@ record() {
     local outcome=$1 sha=$2
     shift 2
     printf '%s\t%s\t%s\t%s\n' "$(now)" "$outcome" "$sha" "$*" >>"$HISTORY_LOG"
+    chmod 644 "$HISTORY_LOG" 2>/dev/null || true
 }
 
 current_sha() { [ -f "$CURRENT_SHA_FILE" ] && cat "$CURRENT_SHA_FILE" || true; }
@@ -231,6 +232,7 @@ do_release() {
 
     # Success — advance current-sha ONLY now, never ahead of what is live.
     echo "$new" >"$CURRENT_SHA_FILE"
+    chmod 644 "$CURRENT_SHA_FILE" 2>/dev/null || true
     record success "$new" "released (prev=${prev:-none})"
     log "${GREEN}released $new${NC}"
 }
@@ -271,6 +273,9 @@ main() {
     [ -d "$STAGING/.git" ] || die "staging clone not found at $STAGING"
 
     mkdir -p "$STATE_DIR"
+    # World-readable so `version` (run by any user) and --list can read
+    # current-sha/history; the SHA + release log are not sensitive.
+    chmod 755 "$STATE_DIR" 2>/dev/null || true
 
     # Mandatory mutex: prevents CI + manual (or two admins) interleaving into a
     # chimera tree.
