@@ -1,0 +1,18 @@
+# DS01 ds01-sync Runner Sudoers
+# Grants the CI self-hosted runner account passwordless sudo for ds01-sync ONLY.
+# File: /etc/sudoers.d/ds01-sync-runner
+#
+# The runner must run as `datasciencelab` — the service/owner account that owns
+# /opt/ds01-infra, the staging clone, and the SSH keys (see
+# .github/workflows/deploy.yml). Do not run the runner as a personal account.
+#
+# DEPLOYMENT: deploy.sh installs this and validates it with `visudo -c` first;
+# or manually:
+#   sudo cp .../config/deploy/sudoers.d/ds01-sync-runner /etc/sudoers.d/
+#   sudo chmod 440 /etc/sudoers.d/ds01-sync-runner && sudo visudo -c
+#
+# Narrow by design: exactly ds01-sync, nothing else. Defence in depth — tag
+# creation is gated by a GitHub ruleset (admins only) and ds01-sync itself
+# validates the --ref format and that it is an ancestor of origin/main.
+# Both paths listed because sudo matches literal paths, not canonicalised symlinks.
+datasciencelab ALL=(root) NOPASSWD: /usr/local/bin/ds01-sync, /opt/ds01-infra/scripts/system/sync.sh

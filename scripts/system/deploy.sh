@@ -472,11 +472,17 @@ echo -e "${DIM}Deploying sudoers.d files...${NC}"
 for sudoers_file in "$INFRA_ROOT"/config/deploy/sudoers.d/ds01-*; do
     [ -f "$sudoers_file" ] || continue
     name="$(basename "$sudoers_file")"
+    # Validate BEFORE installing — a malformed file in /etc/sudoers.d/ can break
+    # sudo for everyone. Only install a source that parses cleanly.
+    if ! visudo -cf "$sudoers_file" >/dev/null 2>&1; then
+        echo -e "  ${RED}✗${NC} $name failed 'visudo -c' — NOT installed"
+        continue
+    fi
     cp "$sudoers_file" /etc/sudoers.d/"$name"
     chmod 440 /etc/sudoers.d/"$name"
 done
 
-echo -e "  ${GREEN}✓${NC} Sudoers.d files deployed (440)"
+echo -e "  ${GREEN}✓${NC} Sudoers.d files deployed (440, visudo-validated)"
 
 # --- Deploy cron.d files (644 — read by cron daemon) ---
 echo -e "${DIM}Deploying cron.d files...${NC}"

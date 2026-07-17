@@ -24,8 +24,8 @@ set -euo pipefail
 #
 # Requires: the staging clone has a 'downstream' remote configured.
 
-REPO_DIR="/opt/ds01-infra"                 # work-tree (live prod)
-STAGING_GIT_DIR="/opt/ds01-staging/.git"   # repo (staging clone)
+REPO_DIR="/opt/ds01-infra"               # work-tree (live prod)
+STAGING_GIT_DIR="/opt/ds01-staging/.git" # repo (staging clone)
 REMOTE="downstream"
 BRANCH="main"
 LOG_FILE="/tmp/ds01-sync-downstream.log"

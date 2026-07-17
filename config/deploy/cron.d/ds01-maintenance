@@ -54,7 +54,7 @@ INFRA_ROOT=/opt/ds01-infra
 # ============================================================================
 # Config Watchdog
 # Quick: recover from test crash artifacts (daily at noon)
-# Full:  verify config matches git HEAD (daily at 1am)
+# Full:  verify config matches the deployed source, alert + restore (daily at 1am)
 # ============================================================================
 
 0 12 * * * root $INFRA_ROOT/scripts/maintenance/config-watchdog.sh 2>&1
@@ -81,6 +81,15 @@ INFRA_ROOT=/opt/ds01-infra
 # Scan /home/ for new users and update config/runtime/groups/*.members
 # Logs user.added events for monthly report user growth tracking
 30 4 * * * root $INFRA_ROOT/scripts/system/sync-group-membership.sh >> /var/log/ds01/docker-group-cron.log 2>&1
+
+# ============================================================================
+# Downstream Backup (daily at 05:00)
+# ============================================================================
+# Mirror the full prod tree — including prod-only git-ignored runtime state —
+# to the downstream remote. Runs as the checkout owner (datasciencelab) for SSH
+# auth + the staging repo; replaces the old prod post-commit hook (no .git in
+# detached prod). No-op unless the staging clone + downstream remote exist.
+0 5 * * * datasciencelab $INFRA_ROOT/scripts/system/sync-downstream.sh
 
 # ============================================================================
 # Log Management and Retention
