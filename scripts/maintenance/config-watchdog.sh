@@ -28,6 +28,24 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] config-watchdog: $1" | tee -a "$LOG_FILE"
 }
 
+# alert_teams <summary> [detail] — post a drift alert to Teams if a webhook is
+# configured (env DS01_TEAMS_WEBHOOK_URL or config/runtime/teams-webhook-url.txt).
+# Never fails the watchdog: a missing/placeholder webhook or a failed POST is a
+# no-op warning.
+alert_teams() {
+    local summary=$1 detail=${2:-} url="${DS01_TEAMS_WEBHOOK_URL:-}"
+    if [ -z "$url" ] && [ -r "$INFRA_ROOT/config/runtime/teams-webhook-url.txt" ]; then
+        url=$(head -1 "$INFRA_ROOT/config/runtime/teams-webhook-url.txt" | tr -d '[:space:]')
+    fi
+    case "$url" in "" | PLACEHOLDER*) return 0 ;; esac
+    local text="$summary"
+    [ -n "$detail" ] && text="$summary"$'\n\n```\n'"$detail"$'\n```'
+    local payload
+    payload=$(python3 -c 'import json,sys; print(json.dumps({"text": sys.argv[1]}))' "$text" 2>/dev/null) || return 0
+    curl -sS -m 10 -X POST -H "Content-Type: application/json" -d "$payload" "$url" >/dev/null 2>&1 ||
+        log "WARNING: Teams drift alert POST failed"
+}
+
 restored=false
 
 # --- Quick checks (test crash artifacts) ---
@@ -55,9 +73,25 @@ fi
 # --- Full check (--full flag, daily) ---
 
 if [ "${1:-}" = "--full" ]; then
-    # Compare live config against git HEAD (the source of truth)
-    git_config=$(git -C "$INFRA_ROOT" show HEAD:config/runtime/resource-limits.yaml 2>/dev/null) || {
-        log "WARNING: Could not read config from git HEAD, skipping integrity check"
+    # Compare live config against the DEPLOYED source of truth. Prod has no .git
+    # (detached prod), so read from the staging clone at the deployed SHA, AND
+    # as the checkout owner — root would hit git's dubious-ownership guard and
+    # silently disable this check.
+    #
+    # Emergency path: an on-box hand-edit to resource-limits.yaml is reverted
+    # here (01:00 daily) or at the next sync UNLESS a PR lands the change first.
+    CURRENT_SHA_FILE="/var/lib/ds01/deploy/current-sha"
+    STAGING="/opt/ds01-staging"
+    OWNER="datasciencelab"
+
+    sha=$(cat "$CURRENT_SHA_FILE" 2>/dev/null || true)
+    if [ -z "$sha" ]; then
+        log "No deployed SHA at $CURRENT_SHA_FILE, skipping integrity check"
+        exit 0
+    fi
+
+    git_config=$(runuser -u "$OWNER" -- git -C "$STAGING" show "$sha:config/runtime/resource-limits.yaml" 2>/dev/null) || {
+        log "WARNING: Could not read reference config from staging at $sha, skipping integrity check"
         exit 0
     }
 
@@ -65,8 +99,11 @@ if [ "${1:-}" = "--full" ]; then
     git_hash=$(echo "$git_config" | sha256sum | cut -d' ' -f1)
 
     if [ "$live_hash" != "$git_hash" ]; then
-        log "WARNING: Config has drifted from git HEAD. Restoring."
+        log "WARNING: Config has drifted from deployed source ($sha). Alerting + restoring."
+        # Alert (with a diff) in ADDITION to restoring, so silent drift is visible.
+        drift_diff=$(diff <(echo "$git_config") "$CONFIG_FILE" 2>/dev/null | head -40 || true)
+        alert_teams "DS01 config drift on $(hostname): config/runtime/resource-limits.yaml differs from deployed $sha and is being restored." "$drift_diff"
         echo "$git_config" >"$CONFIG_FILE"
-        logger -t ds01-watchdog "Config drift detected and restored from git HEAD"
+        logger -t ds01-watchdog "Config drift detected and restored from deployed SHA $sha"
     fi
 fi
