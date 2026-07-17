@@ -89,7 +89,7 @@ Minimal 2.5% modification to AIME's mlc-create:
 
 - Tracked as `"physical_gpu:instance"` (e.g., `"0:0"`, `"0:1"`)
 - Auto-detected via `nvidia-smi mig -lgi`
-- Profile configured in `config/resource-limits.yaml` → `gpu_allocation.mig_profile`
+- Profile configured in `config/runtime/resource-limits.yaml` → `gpu_allocation.mig_profile`
 
 ## GPU Allocator Commands
 

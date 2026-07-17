@@ -44,23 +44,34 @@ docker info  # Should work without sudo
 - If docker group doesn't exist: `sudo groupadd docker`
 - If docker daemon not running: `sudo systemctl start docker`
 
-### deploy-commands.sh (alias: `deploy`)
+### deploy.sh (alias: `deploy`)
 
-Deploy all DS01 commands to `/usr/local/bin/`.
+Deploy all DS01 commands to `/usr/local/bin/` and reapply system side-effects
+(permissions, systemd units, sudoers, cron, code-caching daemon restarts).
 
-**Purpose:** Make all DS01 commands globally accessible (copies, not symlinks)
+**Purpose:** Make all DS01 commands globally accessible and keep on-disk state
+(symlinks, config-derived system files) in sync with the checked-out code.
 
 **Usage:**
 ```bash
 sudo deploy
-# or
-sudo /opt/ds01-infra/scripts/system/deploy-commands.sh
+# or, from the deployed tree
+sudo /opt/ds01-infra/scripts/system/deploy.sh
 ```
 
 **What it does:**
-1. Sets permissions on source files (755 for scripts, 644 for configs)
-2. Copies all commands to `/usr/local/bin/` (not symlinks, for security)
-3. Makes commands accessible to all users
+1. Validates `config/runtime/resource-limits.yaml` and enforces the permissions
+   manifest (`config/permissions-manifest.sh`)
+2. Symlinks all commands into `/usr/local/bin/` (atomic swap, not copies — see
+   [system-config.md](../../docs/admin/system-config.md))
+3. Deploys profile.d/sudoers.d/cron.d files, systemd units, and restarts the
+   code-caching daemons (`ds01-exporter`, `ds01-container-owner-tracker`,
+   `ds01-container-sync`) so they pick up new code
+4. Makes commands accessible to all users
+
+`deploy.sh` only reapplies side-effects against the code **already on disk** —
+it does not fetch new code. To update the code first, use `ds01-sync` (see
+[maintenance.md](../../docs/admin/maintenance.md)).
 
 Deploys all 50+ commands organized by tier:
 
@@ -120,7 +131,7 @@ sudo systemctl daemon-reload
    - Top-level slice for all DS01 containers
 
 2. **Creates group slices:** `ds01-{group}.slice`
-   - One per group in `config/resource-limits.yaml`
+   - One per group in `config/runtime/resource-limits.yaml`
    - Enforces group-wide resource limits
    - Example: `ds01-students.slice`, `ds01-researchers.slice`
 
@@ -147,7 +158,7 @@ ds01.slice
 
 **When to run:**
 - After initial deployment
-- After modifying `config/resource-limits.yaml` group settings
+- After modifying `config/runtime/resource-limits.yaml` group settings
 - After adding new groups
 
 **Verify:**
@@ -271,7 +282,7 @@ sudo pip3 install pyyaml
 
 **5. Configure resource limits:**
 ```bash
-sudo vim config/resource-limits.yaml
+sudo vim config/runtime/resource-limits.yaml
 # Add your users and groups
 ```
 
@@ -283,7 +294,7 @@ sudo systemctl daemon-reload
 
 **7. Create command symlinks:**
 ```bash
-sudo scripts/system/update-symlinks.sh
+sudo deploy
 ```
 
 **8. Verify installation:**
@@ -306,7 +317,7 @@ sudo ds01-sync
 
 **Update symlinks:**
 ```bash
-sudo scripts/system/update-symlinks.sh
+sudo deploy
 ```
 
 **Update systemd slices (if config changed):**
@@ -336,7 +347,7 @@ sudo usermod -aG video newstudent  # GPU access
 sudo scripts/system/add-user-to-docker.sh newstudent
 
 # 3. Add to resource config
-sudo vim config/resource-limits.yaml
+sudo vim config/runtime/resource-limits.yaml
 # Add to appropriate group under 'members' list
 
 # 4. User logs out and back in
@@ -367,7 +378,7 @@ sudo gpasswd -d <username> docker
 
 **Remove from resource config:**
 ```bash
-sudo vim config/resource-limits.yaml
+sudo vim config/runtime/resource-limits.yaml
 # Remove from groups.members list
 ```
 
@@ -394,7 +405,7 @@ python3 scripts/docker/gpu_allocator.py release --container <container-name>
 
 **User overrides:**
 ```bash
-sudo vim config/resource-limits.yaml
+sudo vim config/runtime/resource-limits.yaml
 ```
 
 Add to `user_overrides` section:
@@ -489,7 +500,7 @@ docker system prune
 
 **Configuration:**
 ```bash
-sudo cp config/resource-limits.yaml config/resource-limits.yaml.bak
+sudo cp config/runtime/resource-limits.yaml config/runtime/resource-limits.yaml.bak
 ```
 
 **State files:**
@@ -536,7 +547,7 @@ ls -la /usr/local/bin/ | grep ds01
 
 **Fix:**
 ```bash
-sudo scripts/system/update-symlinks.sh
+sudo deploy
 ```
 
 ### Systemd Slices Not Created
@@ -577,7 +588,7 @@ groups | grep docker  # Should show docker now
 **Check:**
 ```bash
 # Verify YAML syntax
-python3 -c "import yaml; yaml.safe_load(open('config/resource-limits.yaml'))"
+python3 -c "import yaml; yaml.safe_load(open('config/runtime/resource-limits.yaml'))"
 
 # Test user limits
 python3 scripts/docker/get_resource_limits.py <username>

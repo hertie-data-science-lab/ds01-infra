@@ -10,7 +10,7 @@ DS01 automates container lifecycle management through cron jobs that enforce:
 - GPU release after stop
 - Container removal after stop
 
-**Key principle:** Each user's containers are checked against **their own** resource limits from `config/resource-limits.yaml`.
+**Key principle:** Each user's containers are checked against **their own** resource limits from `config/runtime/resource-limits.yaml`.
 
 ## Cleanup Scripts
 
@@ -185,7 +185,7 @@ sudo bash scripts/maintenance/cleanup-stale-containers.sh
 
 ## Configuration
 
-All timeouts configured per-user in `config/resource-limits.yaml`:
+All timeouts configured per-user in `config/runtime/resource-limits.yaml`:
 
 ```yaml
 defaults:
@@ -237,7 +237,7 @@ Cron configuration deployed separately to `/etc/cron.d/`:
 
 **Setup short timeout:**
 ```yaml
-# config/resource-limits.yaml
+# config/runtime/resource-limits.yaml
 user_overrides:
   testuser:
     idle_timeout_h: 0.01  # 36 seconds
@@ -407,7 +407,7 @@ python3 scripts/docker/get_resource_limits.py <username>
 
 **Check YAML syntax:**
 ```bash
-python3 -c "import yaml; yaml.safe_load(open('config/resource-limits.yaml'))"
+python3 -c "import yaml; yaml.safe_load(open('config/runtime/resource-limits.yaml'))"
 ```
 
 **Common issues:**
@@ -481,7 +481,7 @@ backup-logs --verify
 
 **Configuration:**
 ```yaml
-# config/resource-limits.yaml
+# config/runtime/resource-limits.yaml
 advanced:
   log_retention_days: 30    # Days before archiving
   log_archive_days: 365     # Days before deleting archives

@@ -531,7 +531,7 @@ image-delete old-project-image
 
 ## Resource Limits
 
-All containers are created with resource limits from `/opt/ds01-infra/config/resource-limits.yaml`.
+All containers are created with resource limits from `/opt/ds01-infra/config/runtime/resource-limits.yaml`.
 
 **Check your limits:**
 ```bash
@@ -637,8 +637,8 @@ exit
 
 **Solution:**
 ```bash
-# Update symlinks (admin)
-sudo /opt/ds01-infra/scripts/system/update-symlinks.sh
+# Redeploy commands (admin)
+sudo deploy
 ```
 
 ## Advanced Usage

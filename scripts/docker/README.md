@@ -38,7 +38,7 @@ scripts/docker/mlc-create-wrapper.sh <container-name> <image-name> <user>
 ### Resource Management
 
 **get_resource_limits.py** - YAML configuration parser
-- Reads `/opt/ds01-infra/config/resource-limits.yaml`
+- Reads `/opt/ds01-infra/config/runtime/resource-limits.yaml`
 - Resolves user limits with priority: user_overrides > groups > defaults
 - Returns Docker-compatible resource arguments
 
@@ -146,7 +146,7 @@ python3 scripts/docker/gpu_allocator.py validate \
 - Extracts MIG instance details
 - Used by gpu_allocator.py for MIG-aware allocation
 
-**MIG configuration** (in `config/resource-limits.yaml`):
+**MIG configuration** (in `config/runtime/resource-limits.yaml`):
 ```yaml
 gpu_allocation:
   enable_mig: true
@@ -607,7 +607,7 @@ set -e  # Re-enable
 nvidia-smi mig -lgi
 
 # Check config
-grep -A5 gpu_allocation config/resource-limits.yaml
+grep -A5 gpu_allocation config/runtime/resource-limits.yaml
 
 # Test MIG parser
 python3 scripts/docker/mig-config-parser.py

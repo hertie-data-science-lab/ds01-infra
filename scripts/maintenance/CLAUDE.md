@@ -53,7 +53,7 @@ cleanup-stale-containers.sh (remove container)
 
 Both `enforce-max-runtime.sh` and `check-idle-containers.sh` use container type detection:
 
-**Max runtimes by container type** (from `config/resource-limits.yaml`):
+**Max runtimes by container type** (from `config/runtime/resource-limits.yaml`):
 - `orchestration/atomic`: User's configured max_runtime_h
 - `devcontainer`: 168 (7 days)
 - `compose`: 72 (3 days)
