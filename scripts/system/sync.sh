@@ -128,7 +128,11 @@ compute_deletions() {
 release_to_prod() {
     local prev=$1 new=$2 f
     log "publishing staging -> prod (rsync, no --delete)"
-    rsync -a --delay-updates \
+    # --chmod=D755: force transferred directories to 755. The staging clone is
+    # made under the owner's umask (077 → 0700 dirs); without this, rsync -a
+    # would propagate 0700 onto prod and lock users out of the runtime tree.
+    # Files keep their source perms (the permissions-manifest re-enforces them).
+    rsync -a --delay-updates --chmod=D755 \
         --exclude='.git' \
         --exclude='aime-ml-containers/' \
         "$STAGING/" "$INFRA_ROOT/"

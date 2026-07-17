@@ -19,6 +19,17 @@
 echo -e "${DIM}Enforcing permissions...${NC}"
 
 # =============================================================================
+# Runtime directory traversal (755)
+# =============================================================================
+# Users must be able to traverse into + read the runtime tree to run commands
+# and read config. A detached-prod rsync release from a umask-077 staging clone
+# propagates 0700 dirs (rsync -a preserves source perms); re-enforce 755 on the
+# runtime dirs. NOT personal/admin dirs (hb_learning, .planning, docs, tests,
+# website) — those stay at whatever restrictive perms they have.
+chmod 755 "$INFRA_ROOT" "$INFRA_ROOT"/config "$INFRA_ROOT"/lib 2>/dev/null
+find "$INFRA_ROOT"/scripts -type d -exec chmod 755 {} + 2>/dev/null
+
+# =============================================================================
 # Executable Scripts (755)
 # =============================================================================
 
