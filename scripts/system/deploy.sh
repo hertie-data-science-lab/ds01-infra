@@ -362,6 +362,7 @@ deploy_cmd "$USER_WIZARDS/user-setup" "new-user" "Legacy"
 # --- Admin Commands ---
 $VERBOSE && echo -e "${DIM}Admin:${NC}"
 deploy_cmd "$INFRA_ROOT/scripts/system/deploy.sh" "deploy" "Admin"
+deploy_cmd "$INFRA_ROOT/scripts/system/sync.sh" "ds01-sync" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/admin/dashboard" "ds01-dashboard" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/gpu-status-dashboard.py" "ds01-gpu" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/container-dashboard.sh" "ds01-containers" "Admin"
