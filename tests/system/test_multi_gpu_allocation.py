@@ -17,6 +17,8 @@ import uuid
 
 import pytest
 
+from .conftest import retry_with_backoff
+
 GPU_ALLOCATOR = "/opt/ds01-infra/scripts/docker/gpu_allocator_v2.py"
 TEST_USER = "ds01-ci-bot"
 # Alpine is a ~5MB image; we only need a container handle for label/cgroup checks,
@@ -67,14 +69,25 @@ def probe_container_name() -> str:
     """Unique container name used as allocate-multi's state key; cleaned up after."""
     name = f"ds01-test-multi-{uuid.uuid4().hex[:8]}"
     yield name
+    # Release the GPU allocation before removing the container: release_gpu reads
+    # the container's current GPU assignment from Docker (the SSOT), so it has to
+    # run while the container still exists. Best-effort — tests that never create
+    # a real container (e.g. the bare allocate-multi CLI calls below) leave
+    # nothing to release, and that's fine (NOT_ALLOCATED).
+    _alloc_cli("release", name)
     _real_docker("rm", "-f", name, timeout=15)
 
 
 @pytest.mark.system
 @pytest.mark.requires_gpu
-def test_allocate_multi_returns_distinct_uuids(probe_container_name: str) -> None:
+def test_allocate_multi_returns_distinct_uuids(
+    probe_container_name: str, require_free_gpus
+) -> None:
     """allocate-multi ds01-ci-bot <name> 2 emits DOCKER_IDS with 2 distinct UUIDs."""
-    result = _alloc_cli("allocate-multi", TEST_USER, probe_container_name, "2")
+    require_free_gpus(2)
+    result = retry_with_backoff(
+        lambda: _alloc_cli("allocate-multi", TEST_USER, probe_container_name, "api", "2")
+    )
 
     assert result.returncode == 0, f"allocate-multi failed: {result.stderr}\n{result.stdout}"
 
@@ -89,19 +102,24 @@ def test_allocate_multi_returns_distinct_uuids(probe_container_name: str) -> Non
 
 @pytest.mark.system
 @pytest.mark.requires_gpu
-def test_wrapper_labels_container_with_multi_gpu_slots(probe_container_name: str) -> None:
+def test_wrapper_labels_container_with_multi_gpu_slots(
+    probe_container_name: str, require_free_gpus
+) -> None:
     """docker run --gpus 2 --label ds01.interface=api: wrapper records both slots on the container."""
+    require_free_gpus(2)
     # `create` so we don't need the container's payload to actually run
-    create = _sudo_docker(
-        "create",
-        "--name",
-        probe_container_name,
-        "--label",
-        "ds01.interface=api",
-        "--gpus",
-        "2",
-        TEST_IMAGE,
-        "true",
+    create = retry_with_backoff(
+        lambda: _sudo_docker(
+            "create",
+            "--name",
+            probe_container_name,
+            "--label",
+            "ds01.interface=api",
+            "--gpus",
+            "2",
+            TEST_IMAGE,
+            "true",
+        )
     )
     assert create.returncode == 0, (
         f"docker create --gpus 2 failed (exit={create.returncode})\n"
@@ -124,8 +142,13 @@ def test_wrapper_labels_container_with_multi_gpu_slots(probe_container_name: str
 @pytest.mark.system
 @pytest.mark.requires_gpu
 def test_allocate_multi_quota_exceeded_fast_fails(probe_container_name: str) -> None:
-    """Requesting more GPUs than any sensible limit returns EXCEEDS_* immediately, no retry spin."""
-    result = _alloc_cli("allocate-multi", TEST_USER, probe_container_name, "99", timeout=10)
+    """Requesting more GPUs than any sensible limit returns EXCEEDS_* immediately, no retry spin.
+
+    No require_free_gpus gate here: the quota check rejects 99 GPUs before the
+    allocator ever looks at real GPU availability, so this never touches a live
+    GPU and doesn't need one free to run meaningfully.
+    """
+    result = _alloc_cli("allocate-multi", TEST_USER, probe_container_name, "api", "99", timeout=10)
 
     assert result.returncode != 0, f"99 GPUs shouldn't succeed:\n{result.stdout}"
     assert "EXCEEDS_" in result.stdout + result.stderr, (
@@ -136,20 +159,25 @@ def test_allocate_multi_quota_exceeded_fast_fails(probe_container_name: str) -> 
 
 @pytest.mark.system
 @pytest.mark.requires_gpu
-def test_wrapper_rejects_multi_gpu_without_name() -> None:
+def test_wrapper_rejects_multi_gpu_without_name(require_free_gpus) -> None:
     """Wrapper auto-generates --name for N>1, so the alloc succeeds. Teardown via auto-name pattern."""
+    require_free_gpus(2)
     # docker run --gpus 2 without --name should now succeed (auto-name fix in #43).
     # The container won't actually do anything (alpine true exits immediately).
-    result = _sudo_docker(
-        "run",
-        "--rm",
-        "--label",
-        "ds01.interface=api",
-        "--gpus",
-        "2",
-        TEST_IMAGE,
-        "true",
-        timeout=60,
+    # --rm means Docker removes the container itself on exit, which releases the
+    # GPU allocation (Docker-derived state) without any extra cleanup here.
+    result = retry_with_backoff(
+        lambda: _sudo_docker(
+            "run",
+            "--rm",
+            "--label",
+            "ds01.interface=api",
+            "--gpus",
+            "2",
+            TEST_IMAGE,
+            "true",
+            timeout=60,
+        )
     )
     # Expect success — auto-naming kicks in, allocator succeeds, container runs+exits.
     assert result.returncode == 0, (

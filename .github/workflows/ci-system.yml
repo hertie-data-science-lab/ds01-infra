@@ -2,7 +2,8 @@ name: System CI
 
 on:
   schedule:
-    - cron: '0 3 * * *'  # Nightly at 03:00 UTC
+    - cron: '0 3 * * 1-6'  # Nightly Mon-Sat 03:00 UTC — light: no GPU allocation
+    - cron: '0 3 * * 0'    # Weekly Sunday 03:00 UTC — full: includes GPU tests
   workflow_dispatch:
   workflow_call:
 
@@ -12,16 +13,32 @@ concurrency:
 
 jobs:
   system-tests:
-    name: Full test suite (GPU + system)
+    name: System tests (tiered)
     runs-on: [self-hosted, linux, gpu]
     steps:
-      - name: Run full test suite on live system
+      - name: Select scope
+        id: scope
+        # Nightly Mon-Sat cron -> LIGHT (perms/access/config/lifecycle, no GPU
+        # allocation; seconds). Everything else (Sunday cron, workflow_dispatch,
+        # workflow_call) -> FULL (adds GPU allocation tests).
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "${{ github.event.schedule }}" = "0 3 * * 1-6" ]; then
+            echo "marker=system and not requires_gpu" >> "$GITHUB_OUTPUT"
+            echo "label=light (nightly, no GPU)" >> "$GITHUB_OUTPUT"
+          else
+            echo "marker=system" >> "$GITHUB_OUTPUT"
+            echo "label=full (GPU + system)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run test suite (${{ steps.scope.outputs.label }})
         working-directory: /opt/ds01-infra/tests
         # -o addopts="" clears tests/pytest.ini's default `-m "not system"`, so this
         # actually runs the system (GPU/live-box) tests — the whole point of this
         # job. Without it, plain `pytest .` inherits the ini filter and silently
         # deselects every system test (PR CI on ubuntu already covers not-system).
-        run: sudo /home/datasciencelab/anaconda3/bin/python -m pytest . -o addopts="" -v --tb=short
+        run: |
+          sudo /home/datasciencelab/anaconda3/bin/python -m pytest . -o addopts="" \
+            -m "${{ steps.scope.outputs.marker }}" -v --tb=short
 
       - name: Create issue on failure
         if: failure()
@@ -32,12 +49,12 @@ jobs:
             --search "System CI failed" --state open --json number -q '.[0].number')
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --repo "${{ github.repository }}" \
-              --body "Still failing: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+              --body "Still failing (${{ steps.scope.outputs.label }} run): ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           else
             gh issue create \
               --repo "${{ github.repository }}" \
-              --title "System CI failed ($(date -u +%Y-%m-%d))" \
-              --body "Nightly system CI failed on $(date -u).
+              --title "System CI failed ($(date -u +%Y-%m-%d)) [${{ steps.scope.outputs.label }}]" \
+              --body "System CI (${{ steps.scope.outputs.label }}) failed on $(date -u).
 
           **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
