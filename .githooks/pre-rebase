@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# prod-git-guard: refuse rebases in the PRODUCTION checkout outright. A rebase
+# rewrites history under the live runtime and is never legitimate there.
+# Inert in dev clones.
+
+if [ "$(git rev-parse --show-toplevel 2>/dev/null)" = "/opt/ds01-infra" ]; then
+    echo "prod-git-guard: refusing to rebase in /opt/ds01-infra (live runtime)." >&2
+    echo "  Rebase in a dev clone; prod only ever fast-forwards main." >&2
+    exit 1
+fi
+
+DS01_HOOK_NAME=pre-rebase exec "$(dirname "$0")/chain" "$@"
