@@ -20,6 +20,7 @@ ALL containers with GPU access are subject to lifecycle enforcement regardless o
 | `backup-logs.sh` | Backup log files |
 | `setup-scratch-dirs.sh` | Setup scratch directories |
 | `ensure-admin-sudo.sh` | Ensure admin has sudo access |
+| `config-watchdog.sh` | Detects drift in prod's `resource-limits.yaml` vs. the deployed SHA in the `/opt/ds01-staging` clone; restores it and Teams-alerts (`--full`, daily) |
 
 Note: `check-idle-containers.sh` is in `scripts/monitoring/` (see that CLAUDE.md)
 

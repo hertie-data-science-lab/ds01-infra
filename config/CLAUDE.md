@@ -28,6 +28,12 @@ Resource configuration and lifecycle-based hierarchy.
 
 **Changes take effect immediately** - no restart needed.
 
+**Don't hand-edit `resource-limits.yaml` directly in prod (`/opt/ds01-infra`).** Prod is a
+detached directory (no `.git`) updated via `ds01-sync`; `config-watchdog.sh --full` (daily)
+compares the live file against the reference in the `/opt/ds01-staging` clone at the
+deployed SHA, Teams-alerts on drift, and overwrites the hand-edit back to the deployed
+version. Make config changes in a dev clone, land them via a normal PR, then release.
+
 ## Deploy Configuration (deploy/)
 
 **Directories deployed to system locations:**

@@ -56,12 +56,15 @@ container deploy        # launch a container with a GPU
 **Administrators** — see [Admin → Installation](https://hertie-data-science-lab.github.io/ds01-infra/admin/installation) for the full deployment guide. In short:
 
 ```bash
-sudo git clone https://github.com/hertie-data-science-lab/ds01-infra /opt/ds01-infra
+sudo -u datasciencelab git clone https://github.com/hertie-data-science-lab/ds01-infra /opt/ds01-staging
+sudo /opt/ds01-staging/scripts/system/sync.sh   # builds + smoke-tests, then releases to /opt/ds01-infra
 cd /opt/ds01-infra
-sudo scripts/system/deploy-commands.sh        # deploy commands to PATH
-sudo scripts/system/setup-resource-slices.sh  # configure systemd slices
+sudo scripts/system/setup-resource-slices.sh    # configure systemd slices
 sudo scripts/system/add-user-to-docker.sh alice
 ```
+
+`/opt/ds01-infra` is a detached release directory (no `.git`) — all subsequent updates go
+through `ds01-sync`, not `git pull`. See [Admin → Versioning](https://hertie-data-science-lab.github.io/ds01-infra/admin/versioning) for the release/update model.
 
 ## Requirements
 

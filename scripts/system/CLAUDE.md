@@ -6,7 +6,9 @@ System administration, deployment, and user management.
 
 | File | Purpose |
 |------|---------|
-| `deploy.sh` | Deploy DS01 commands to /usr/local/bin |
+| `sync.sh` | `ds01-sync` — detached-prod release orchestrator: builds + smoke-tests in `/opt/ds01-staging`, rsyncs to `/opt/ds01-infra`, runs `deploy.sh`, health-gates, auto-rolls-back |
+| `deploy.sh` | Side-effects stage (symlinks to /usr/local/bin, manifest/permissions, systemd units, sudoers, code-caching daemon restarts) — invoked by `ds01-sync`, or standalone to reapply side-effects against whatever is already on disk |
+| `install-prod-git-guards.sh` | Installs repo-owned git hooks (`.githooks/`) that refuse commits/rebases in the prod checkout — interim belt-and-suspenders, inert once prod has no `.git` |
 | `add-user-to-docker.sh` | Add user to docker group with proper setup |
 | `setup-resource-slices.sh` | Create systemd cgroup slices |
 | `create-user-slice.sh` | Create per-user systemd slice |
@@ -15,14 +17,31 @@ System administration, deployment, and user management.
 | `deploy-cron-jobs.sh` | Deploy cron job configurations |
 | `deploy-pam-bashrc.sh` | Deploy PAM/bashrc configurations |
 
+## Deployment model
+
+`/opt/ds01-infra` (prod) is a **detached** directory — a real tree with no `.git`. It is
+never `git pull`ed or checked out directly. Updates go through `ds01-sync`, which builds
+and smoke-tests each release in the `/opt/ds01-staging` clone before publishing:
+
+```bash
+# Update prod to latest main (or a specific tag)
+sudo ds01-sync
+sudo ds01-sync --ref v1.6.0
+sudo ds01-sync --rollback   # re-release the previous good SHA
+sudo ds01-sync --list       # release history + current SHA
+
+# Reapply side-effects only (symlinks/systemd/sudoers) against the CODE ALREADY
+# ON DISK in prod — does not fetch or change code
+sudo deploy
+```
+
+CI triggers `ds01-sync --ref <tag>` on a pushed `v*.*.*` tag via `.github/workflows/deploy.yml`
+(self-hosted runner). Dev happens in a separate clone (e.g. `~/workspace/ds01-infra`); never
+edit or `git` in `/opt/ds01-infra` or `/opt/ds01-staging`.
+
 ## Common Operations
 
 ```bash
-# Deploy commands (after editing scripts)
-sudo scripts/system/deploy.sh
-# or use alias:
-sudo deploy
-
 # Add new user
 sudo scripts/system/add-user-to-docker.sh <username>
 # User must log out and back in
