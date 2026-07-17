@@ -236,6 +236,12 @@ cat /var/lib/ds01/opa/container-owners.json | python3 -m json.tool
 
 ## Deployment
 
+> **Legacy walkthrough below predates the detached-prod model.** `/opt/ds01-infra` is now
+> a real directory with no `.git`, populated and updated via `ds01-sync` (see "Updating
+> Deployment" below, [Versioning & Releases](../../docs/admin/versioning.md), and the root
+> [README](../../README.md#getting-started) for the current bootstrap flow) — do not
+> `git clone`/`git pull` straight into `/opt/ds01-infra`.
+
 ### Initial Deployment
 
 **1. Clone repository:**
@@ -290,9 +296,12 @@ systemctl status ds01.slice
 ### Updating Deployment
 
 **Update code:**
+
+`/opt/ds01-infra` is a detached release directory (no `.git`) — it is updated via
+`ds01-sync` (staging clone + rsync + health gate), not `git pull`:
+
 ```bash
-cd /opt/ds01-infra
-sudo git pull
+sudo ds01-sync
 ```
 
 **Update symlinks:**

@@ -14,7 +14,7 @@ Admin tools, dashboards, and system management utilities.
 | `alias-create` | Create command aliases |
 | `user-activity-report` | Generate user activity reports |
 | `help` | System help |
-| `version` | Show DS01 version |
+| `version` | Show DS01 version — reads `/var/lib/ds01/deploy/current-sha`, reports `main (detached prod)@<sha>` |
 
 ## Common Operations
 

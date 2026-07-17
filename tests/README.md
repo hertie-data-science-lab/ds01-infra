@@ -27,7 +27,10 @@ tests/
 │   ├── conftest.py          # System test fixtures (config backup, lowered timeouts)
 │   ├── test_container_lifecycle.py
 │   ├── test_lifecycle_enforcement.py
-│   └── test_container_workflow.py
+│   ├── test_container_workflow.py
+│   ├── test_multi_gpu_allocation.py
+│   ├── test_user_access.py  # role-based (user_role/admin_role) access + perms guards
+│   └── test_zz_teardown_verification.py
 ├── fixtures/                # Test data
 │   ├── resource-limits-test.yaml
 │   └── mock_gpu_state.json
@@ -60,9 +63,14 @@ sudo ./run-tests.sh system   # Real system (~15 min, needs root + GPU)
 
 | Category | Tests | Speed | Dependencies | What it Tests |
 |----------|-------|-------|--------------|---------------|
-| **unit** | 648 | Fast (<1s) | None | Pure logic, mocked deps |
-| **integration** | 143 | Medium | Docker (optional) | Real scripts via subprocess |
-| **system** | 32 | Slow (~15 min) | Docker + GPU + sudo | Full system with real containers |
+| **unit** | 664 | Fast (<1s) | None | Pure logic, mocked deps |
+| **integration** | 150 | Medium | Docker (optional) | Real scripts via subprocess |
+| **system** | 50 | Slow (~15 min) | Docker + GPU + sudo | Full system with real containers |
+
+Of the 50 system tests, 37 don't need a GPU (`system and not requires_gpu`) — that's the
+subset CI runs nightly Mon–Sat; the full 50 (including the 13 GPU-allocation tests) run
+Sunday and on manual/`workflow_call` dispatch. See
+[docs/admin/ci.md](../docs/admin/ci.md) for the CI scheduling.
 
 ## Test Markers
 
@@ -85,6 +93,8 @@ Available markers:
 - `requires_docker` - Needs Docker daemon
 - `requires_gpu` - Needs nvidia-smi/GPU
 - `requires_root` - Needs root privileges
+- `user_role` - Role-based tests for the unprivileged user's access/experience
+- `admin_role` - Role-based tests for the admin/service (deploy, allocation) path
 
 ## Legacy Test Suites
 

@@ -7,8 +7,9 @@ Two-tier CI with path-based filtering, local development mirror via Makefile, ma
 | Workflow | File | Trigger | Purpose |
 |----------|------|---------|---------|
 | CI | `ci.yml` | PR to main, dispatch | Tier 1 — lint + test on every PR |
-| System CI | `ci-system.yml` | Nightly 03:00 UTC, dispatch, callable | Tier 2 — full suite on GPU hardware |
+| System CI | `ci-system.yml` | Nightly 03:00 UTC (tiered), dispatch, callable | Tier 2 — system suite on GPU hardware |
 | Release | `release.yml` | Tag push `v*.*.*`, dispatch | Create GitHub Release |
+| Deploy | `deploy.yml` | Tag push `v*.*.*`, dispatch | Release to prod via `sudo ds01-sync --ref <tag>` (see [Versioning](./versioning)) |
 | Docs sync | `sync-docs-to-hub.yml` | Push to main (docs changes), dispatch | Sync docs/user/ to ds01-hub |
 
 All workflows support `workflow_dispatch` for manual triggering.
@@ -43,13 +44,28 @@ Runs on every PR to main. Uses [dorny/paths-filter](https://github.com/dorny/pat
 
 ## Tier 2: System CI (`ci-system.yml`)
 
-Runs nightly at 03:00 UTC on the self-hosted GPU runner (`[self-hosted, linux, gpu]`). Executes the **full** test suite with no marker filter — a superset of Tier 1 plus the 32 system tests requiring real Docker, GPU, and sudo.
+Runs on the self-hosted GPU runner (`[self-hosted, linux, gpu]`), tiered so nightly runs
+never compete with users' GPU jobs:
+
+| Schedule | Scope | Marker | What it covers |
+|----------|-------|--------|----------------|
+| Nightly Mon–Sat, 03:00 UTC | Light | `system and not requires_gpu` | Perms/access/config/lifecycle system tests — no GPU allocation |
+| Weekly Sun, 03:00 UTC | Full | `system` | Everything, including GPU allocation tests |
+| `workflow_dispatch` / `workflow_call` | Full | `system` | Same as Sunday |
 
 ```bash
-sudo /home/datasciencelab/anaconda3/bin/python -m pytest . -v --tb=short
+sudo /home/datasciencelab/anaconda3/bin/python -m pytest . -o addopts="" -m "<marker>" -v --tb=short
 ```
 
-On failure: checks for an existing open issue before creating a new one. If one exists, adds a comment instead.
+`-o addopts=""` clears `tests/pytest.ini`'s default `-m "not system"` — without it, the
+system tests would be silently deselected (Tier 1 on ubuntu already covers `not system`).
+
+Includes role-based guards under the `user_role`/`admin_role` markers (e.g.
+`tests/system/test_user_access.py`) that catch permission regressions such as the
+umask-077 class (runtime dirs not traversable, deploy state not world-readable).
+
+On failure: checks for an existing open issue before creating a new one (labelled with the
+run's scope). If one exists, adds a comment instead.
 
 Also supports `workflow_call` for use as a release gate if needed.
 
@@ -142,11 +158,17 @@ Three tiers, mapped to CI:
 
 | Tier | Directory | Count | Marker | Runs in |
 |------|-----------|-------|--------|---------|
-| Unit | `tests/unit/` | 648 | `unit` | Tier 1 + Tier 2 |
-| Integration | `tests/integration/` | 143 | `integration` | Tier 1 + Tier 2 |
-| System | `tests/system/` | 32 | `system` | Tier 2 only |
+| Unit | `tests/unit/` | 664 | `unit` | Tier 1 + Tier 2 |
+| Integration | `tests/integration/` | 150 | `integration` | Tier 1 + Tier 2 |
+| System | `tests/system/` | 50 | `system` | Tier 2 only |
 
-Tier 1 runs `pytest -m "not system"` (791 tests). Tier 2 runs everything (823 tests).
+Tier 1 runs `pytest -m "not system"` (814 tests). Tier 2 runs `system` tests only — 37 of the
+50 are `system and not requires_gpu` (nightly Mon–Sat); the remaining 13 need a free GPU and
+only run in the Sunday/dispatch full pass.
+
+Two role-based markers cut across the above, for CI runs scoped to a persona rather than a
+tier: `user_role` (the unprivileged user's access/experience) and `admin_role` (deploy/
+allocation paths).
 
 See [tests/README.md](https://github.com/hertie-data-science-lab/ds01-infra/blob/main/tests/README.md) for test details.
 

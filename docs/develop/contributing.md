@@ -99,7 +99,9 @@ for test structure and markers.
 
 ## Releases
 
-Releases are manual, tag-triggered. See [the CI & release process](/admin/ci) for the full process.
+Releases are manual, tag-triggered. **Pushing a `vX.Y.Z` tag both cuts a GitHub Release and
+deploys it to prod** (via `ds01-sync`) — see [Versioning & Releases](/admin/versioning) and
+[the CI & release process](/admin/ci) for the full process.
 
 ```bash
 # Update VERSION, commit, tag, push

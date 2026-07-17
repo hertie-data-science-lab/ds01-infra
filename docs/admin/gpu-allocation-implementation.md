@@ -178,9 +178,12 @@ fraction. With MIG off, this step is skipped entirely.
 
 ### **Step 2: Set up /var directories**
 
+Prod (`/opt/ds01-infra`) is a detached directory with no `.git` — it is kept current via
+`ds01-sync`, not `git pull` (see [Versioning & Releases](./versioning.md)). Run the setup
+script directly against the already-deployed code:
+
 ```bash
 cd /opt/ds01-infra
-git pull
 sudo ./scripts/system/setup-var-directories.sh
 ```
 

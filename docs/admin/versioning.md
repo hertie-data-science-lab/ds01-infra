@@ -2,6 +2,13 @@
 
 DS01 Infrastructure uses [Semantic Versioning](https://semver.org/) with manual tag-triggered releases.
 
+> **A pushed `vX.Y.Z` tag both cuts a GitHub Release AND deploys to prod.** `release.yml`
+> creates the release; `deploy.yml` (self-hosted runner) runs `sudo ds01-sync --ref vX.Y.Z`
+> in parallel, which builds + smoke-tests the tag in the `/opt/ds01-staging` clone before
+> releasing it to `/opt/ds01-infra` (health-gated, auto-rollback on failure). Don't push a
+> `v*` tag unless you mean to ship to production now. See [Deployment](#deployment-ds01-sync)
+> below.
+
 ## Version Bump Rules
 
 ```
@@ -45,6 +52,35 @@ gh workflow run release.yml -f tag=v1.5.0
 ```
 
 Or via the GitHub UI: Actions → Release → Run workflow → enter tag.
+
+## Deployment (`ds01-sync`)
+
+`deploy.yml` fires on the same `v*.*.*` tag push (or `workflow_dispatch`) and, on the
+self-hosted runner, runs:
+
+```bash
+sudo ds01-sync --ref vX.Y.Z
+```
+
+`ds01-sync` builds and smoke-tests the tag in the `/opt/ds01-staging` clone, rsyncs it to
+the detached prod directory `/opt/ds01-infra` (no `.git` there — never `git pull`/`checkout`
+in prod), runs `deploy.sh`'s side-effects, and health-gates the live system, auto-rolling
+back to the last good SHA on failure. `current-sha` and release history live outside the
+tree in `/var/lib/ds01/deploy/` (`current-sha`, `history.log`) — not in-tree `.git`.
+
+Manual operations (admin, on the box):
+
+```bash
+sudo ds01-sync                 # release origin/main
+sudo ds01-sync --ref v1.6.0    # release a specific tag (must be an ancestor of main)
+sudo ds01-sync --rollback      # re-release the previous good SHA
+sudo ds01-sync --list          # show release history + current SHA
+```
+
+`sudo deploy` (`deploy.sh`) on its own only reapplies side-effects (symlinks, systemd
+units, sudoers, permissions) against whatever code is already on disk in prod — it does
+not fetch or change code. Use `version` to check what's actually deployed; it reads
+`/var/lib/ds01/deploy/current-sha` and reports `main (detached prod)@<sha>`.
 
 ## Commit Messages
 
