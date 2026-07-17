@@ -35,15 +35,20 @@ NC='\033[0m'
 
 # Parse arguments
 VERBOSE=false
+SYNC=false
 for arg in "$@"; do
     case $arg in
         -v | --verbose) VERBOSE=true ;;
+        --sync) SYNC=true ;;
         -h | --help)
             echo "Usage: sudo deploy [OPTIONS]"
             echo ""
             echo "Deploy DS01 commands to /usr/local/bin"
             echo ""
             echo "Options:"
+            echo "  --sync           Fast-forward /opt/ds01-infra from origin/main"
+            echo "                   (git as datasciencelab; ff-only, never rebase;"
+            echo "                   smoke-tested) before deploying"
             echo "  -v, --verbose    Show each command being deployed"
             echo "  -h, --help       Show this help"
             exit 0
@@ -56,6 +61,65 @@ if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Error: This command requires sudo${NC}"
     echo "Run with: sudo deploy"
     exit 1
+fi
+
+# ============================================================================
+# --sync: fast-forward the checkout from origin/main before deploying
+# ============================================================================
+# Interim (Phase 1) update path. Replaces the old fetch + stash + merge dance:
+# tracked modes now match prod's on-disk state (see the mode-hygiene commit), so
+# a plain ff-only merge lands cleanly with nothing to stash. Git runs as the
+# checkout owner (datasciencelab) so SSH auth and file ownership stay correct;
+# running as root would trip git's dubious-ownership guard and lack the SSH key.
+#
+# Superseded at the Phase 2 cutover by `ds01-sync` (prod loses its .git and is
+# projected from a staging clone via rsync).
+
+die() {
+    echo -e "${RED}Error:${NC} $*" >&2
+    exit 1
+}
+
+run_smoke_checks() {
+    # Cheap import/parse checks: catch a broken sync before touching prod side-effects.
+    python3 -c "import sys; sys.path.insert(0, '$INFRA_ROOT/scripts/docker'); import gpu_state_reader" ||
+        return 1
+    python3 "$INFRA_ROOT/scripts/docker/get_resource_limits.py" --help >/dev/null 2>&1 ||
+        return 1
+    python3 -c "import yaml; yaml.safe_load(open('$INFRA_ROOT/config/runtime/resource-limits.yaml'))" ||
+        return 1
+}
+
+if $SYNC; then
+    echo -e "${BOLD}Syncing $INFRA_ROOT from origin/main...${NC}"
+
+    # Git as the checkout owner, not root.
+    GIT=(runuser -u datasciencelab -- git -C "$INFRA_ROOT")
+
+    branch=$("${GIT[@]}" rev-parse --abbrev-ref HEAD 2>/dev/null) ||
+        die "$INFRA_ROOT is not a git checkout (already detached? use ds01-sync)"
+    [ "$branch" = "main" ] ||
+        die "refusing to sync: $INFRA_ROOT is on '$branch', not 'main'"
+
+    "${GIT[@]}" fetch --quiet origin ||
+        die "git fetch origin failed (SSH key / network?)"
+
+    # ff-only: never rebase or create a merge commit on the prod checkout.
+    if ! "${GIT[@]}" merge --ff-only origin/main; then
+        die "origin/main is not a fast-forward of local main. Refusing to rebase prod; reconcile in a dev clone first."
+    fi
+    echo -e "  ${GREEN}✓${NC} Fast-forwarded to $("${GIT[@]}" rev-parse --short HEAD)"
+
+    echo -e "${DIM}Running smoke checks...${NC}"
+    run_smoke_checks || die "smoke check failed after sync — NOT running side-effects"
+    echo -e "  ${GREEN}✓${NC} Smoke checks passed"
+
+    # Re-exec the now-updated deploy.sh (without --sync) so side-effects run from
+    # the freshly-merged code rather than this stale in-memory copy. Forward -v
+    # if it was given.
+    echo -e "${DIM}Re-executing deploy for side-effects...${NC}"
+    echo ""
+    if $VERBOSE; then exec "$SELF" -v; else exec "$SELF"; fi
 fi
 
 # Verify Docker cgroup driver early (warn only, don't block deployment)
