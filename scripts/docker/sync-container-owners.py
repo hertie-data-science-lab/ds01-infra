@@ -250,7 +250,7 @@ def build_ownership_data() -> dict[str, Any]:
         }
 
         # Preserve tracker metadata if available
-        for field in ("owner_uid", "interface", "detection_method", "created_at"):
+        for field in ("owner_uid", "interface", "detection_method", "created_at", "detected_at"):
             if field in existing_entry:
                 entry[field] = existing_entry[field]
 

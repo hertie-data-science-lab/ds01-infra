@@ -1,0 +1,30 @@
+[Unit]
+Description=DS01 Container Ownership Sync
+Documentation=file:///opt/ds01-infra/docs/admin/architecture.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+# Query the REAL Docker socket so the periodic reconcile sees every container,
+# not only those routed through the /usr/local/bin/docker wrapper.
+Environment=DOCKER_HOST=unix:///var/run/docker-real.sock
+ExecStart=/usr/bin/python3 /opt/ds01-infra/scripts/docker/sync-container-owners.py --watch --interval 5
+Restart=always
+RestartSec=5
+User=root
+Group=docker
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ds01-container-sync
+
+# Hardening
+ProtectSystem=strict
+ReadWritePaths=/var/lib/ds01/opa
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

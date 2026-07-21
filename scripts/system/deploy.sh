@@ -599,7 +599,7 @@ fi
 echo -e "${DIM}Refreshing code-caching daemons...${NC}"
 
 units_changed=false
-for unit in ds01-exporter.service ds01-container-owner-tracker.service; do
+for unit in ds01-exporter.service ds01-container-owner-tracker.service ds01-container-sync.service; do
     src="$INFRA_ROOT/config/deploy/systemd/$unit"
     dst="/etc/systemd/system/$unit"
     if [ ! -f "$src" ]; then
@@ -614,10 +614,6 @@ for unit in ds01-exporter.service ds01-container-owner-tracker.service; do
         $VERBOSE && echo -e "  ${GREEN}✓${NC} $unit unchanged"
     fi
 done
-
-# NOTE: ds01-container-sync.service is installed on prod but not yet tracked in
-# config/deploy/systemd/. It is still enabled/restarted below (it is present on
-# the box); a fresh box will not get it until its unit is added to the repo.
 
 # daemon-reload only if a unit file actually changed.
 $units_changed && systemctl daemon-reload
