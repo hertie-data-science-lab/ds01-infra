@@ -217,7 +217,7 @@ echo ""
 echo "5. Updating container creation scripts..."
 
 # Modify mlc-create-from-image to include init script
-SCRIPT_PATH="/opt/ds01-infra/scripts/mlc-create-from-image.sh"
+SCRIPT_PATH="/opt/ds01-infra/scripts/docker/mlc-create-from-image.sh"
 
 if ! grep -q "container-init.sh" "$SCRIPT_PATH"; then
     # Add volume mount for init script in docker run command

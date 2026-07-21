@@ -47,7 +47,7 @@ chmod 755 "$INFRA_ROOT"/scripts/admin/* 2>/dev/null
 chmod 755 "$INFRA_ROOT"/scripts/monitoring/*.sh "$INFRA_ROOT"/scripts/monitoring/*.py 2>/dev/null
 chmod 755 "$INFRA_ROOT"/scripts/maintenance/*.sh 2>/dev/null
 chmod 755 "$INFRA_ROOT"/scripts/system/*.sh "$INFRA_ROOT"/scripts/system/*.py 2>/dev/null
-chmod 755 "$INFRA_ROOT"/scripts/user/ds01-login-check 2>/dev/null
+chmod 755 "$INFRA_ROOT"/scripts/user/helpers/ds01-login-check 2>/dev/null
 
 # =============================================================================
 # Configuration Files (644) and Directories (755)
