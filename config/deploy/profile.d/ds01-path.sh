@@ -1,7 +1,6 @@
 #!/bin/sh
 # DS01 Infrastructure - System-wide PATH configuration
-# Source: /opt/ds01-infra/config/etc-mirrors/profile.d/ds01-path.sh
-# Deploy: sudo cp /opt/ds01-infra/config/etc-mirrors/profile.d/ds01-path.sh /etc/profile.d/
+# Deployed to /etc/profile.d/ automatically by scripts/system/deploy.sh (sudo deploy).
 #
 # Ensures /usr/local/bin is in PATH for all users (domain + local)
 # Required for DS01 CLI commands: container-*, image-*, ds01-dashboard, etc.

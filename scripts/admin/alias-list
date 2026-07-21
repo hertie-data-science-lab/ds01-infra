@@ -276,7 +276,7 @@ show_symlinks() {
             done
         else
             echo -e "${YELLOW}  No DS01 symlinks found in /usr/local/bin${NC}"
-            echo -e "  Run: ${CYAN}sudo /opt/ds01-infra/scripts/system/update-symlinks.sh${NC}"
+            echo -e "  Run: ${CYAN}sudo deploy${NC}"
         fi
     else
         echo -e "${YELLOW}  /usr/local/bin not accessible${NC}"
