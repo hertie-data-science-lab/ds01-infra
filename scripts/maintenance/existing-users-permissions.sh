@@ -9,8 +9,11 @@ for dir in /home/*; do
         # Get the directory name
         dirname=$(basename "$dir")
 
-        # Skip the special directories if needed
-        if [ "$dirname" != "." ] && [ "$dirname" != ".." ]; then
+        # Skip special / intentionally-shared directories.
+        # /home/shared is the collaborative root (scripts/admin/shared-workspace) and must
+        # never be forced to 0700 like a private home.
+        if [ "$dirname" != "." ] && [ "$dirname" != ".." ] &&
+            [ "$dirname" != "lost+found" ] && [ "$dirname" != "shared" ]; then
             sudo chmod 700 "$dir"
             echo "Updated: $dir"
         fi
