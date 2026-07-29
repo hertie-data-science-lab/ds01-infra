@@ -1,7 +1,7 @@
 # Contributing to DS01 Infrastructure
 
-The full contributing guide — development setup, local CI, commit conventions, the
-pull-request flow, and code style — lives in the documentation site:
+The full contributing guide - development setup, local CI, commit conventions, the
+pull-request flow, and code style - lives in the documentation site:
 
 **→ [Contributing](https://hertie-data-science-lab.github.io/ds01-infra/develop/contributing)**
 

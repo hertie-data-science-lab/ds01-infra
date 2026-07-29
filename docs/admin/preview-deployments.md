@@ -49,7 +49,7 @@ runs `scripts/cloudflare-build.sh`, which mirrors the production build but sets
    | Production branch | `main` |
 4. Node/`.nvmrc` is read automatically (pinned to `20`); no env vars required.
 
-No GitHub Actions secrets are needed — the GitHub App handles auth. Open or push to a
+No GitHub Actions secrets are needed - the GitHub App handles auth. Open or push to a
 docs PR and the CF App comments a `*.pages.dev` preview URL once the build completes.
 
 ## Local preview

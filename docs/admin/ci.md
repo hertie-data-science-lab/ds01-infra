@@ -6,8 +6,8 @@ Two-tier CI with path-based filtering, local development mirror via Makefile, ma
 
 | Workflow | File | Trigger | Purpose |
 |----------|------|---------|---------|
-| CI | `ci.yml` | PR to main, dispatch | Tier 1 — lint + test on every PR |
-| System CI | `ci-system.yml` | Nightly 03:00 UTC (tiered), dispatch, callable | Tier 2 — system suite on GPU hardware |
+| CI | `ci.yml` | PR to main, dispatch | Tier 1 - lint + test on every PR |
+| System CI | `ci-system.yml` | Nightly 03:00 UTC (tiered), dispatch, callable | Tier 2 - system suite on GPU hardware |
 | Release | `release.yml` | Tag push `v*.*.*`, dispatch | Create GitHub Release |
 | Deploy | `deploy.yml` | Tag push `v*.*.*`, dispatch | Release to prod via `sudo ds01-deploy --ref <tag>` (see [Versioning](./versioning)) |
 | Docs sync | `sync-docs-to-hub.yml` | Push to main (docs changes), dispatch | Sync docs/user/ to ds01-hub |
@@ -16,7 +16,7 @@ All workflows support `workflow_dispatch` for manual triggering.
 
 ## Tier 1: CI (`ci.yml`)
 
-Runs on every PR to main. Uses [dorny/paths-filter](https://github.com/dorny/paths-filter) to skip irrelevant jobs — a docs-only PR runs nothing; a Python-only change skips shell checks.
+Runs on every PR to main. Uses [dorny/paths-filter](https://github.com/dorny/paths-filter) to skip irrelevant jobs - a docs-only PR runs nothing; a Python-only change skips shell checks.
 
 **Jobs:**
 
@@ -28,7 +28,7 @@ Runs on every PR to main. Uses [dorny/paths-filter](https://github.com/dorny/pat
 | Shellcheck | Shell changed | `shellcheck -x -S warning` on all scripts | 12s |
 | Tests | Python or shell changed | `pytest -m "not system"` (unit + integration) | 19s |
 | Lint workflows | Workflows changed | [actionlint](https://github.com/rhysd/actionlint) on workflow YAML | 13s |
-| **CI** | **Always** | **Gate job — passes if all above pass or skip** | 3s |
+| **CI** | **Always** | **Gate job - passes if all above pass or skip** | 3s |
 
 **Branch protection** requires the single `CI` gate job. Individual jobs can be skipped by path filtering without blocking the PR.
 
@@ -49,7 +49,7 @@ never compete with users' GPU jobs:
 
 | Schedule | Scope | Marker | What it covers |
 |----------|-------|--------|----------------|
-| Nightly Mon–Sat, 03:00 UTC | Light | `system and not requires_gpu` | Perms/access/config/lifecycle system tests — no GPU allocation |
+| Nightly Mon-Sat, 03:00 UTC | Light | `system and not requires_gpu` | Perms/access/config/lifecycle system tests - no GPU allocation |
 | Weekly Sun, 03:00 UTC | Full | `system` | Everything, including GPU allocation tests |
 | `workflow_dispatch` / `workflow_call` | Full | `system` | Same as Sunday |
 
@@ -57,7 +57,7 @@ never compete with users' GPU jobs:
 sudo /home/datasciencelab/anaconda3/bin/python -m pytest . -o addopts="" -m "<marker>" -v --tb=short
 ```
 
-`-o addopts=""` clears `tests/pytest.ini`'s default `-m "not system"` — without it, the
+`-o addopts=""` clears `tests/pytest.ini`'s default `-m "not system"` - without it, the
 system tests would be silently deselected (Tier 1 on ubuntu already covers `not system`).
 
 Includes role-based guards under the `user_role`/`admin_role` markers (e.g.
@@ -162,8 +162,8 @@ Three tiers, mapped to CI:
 | Integration | `tests/integration/` | 150 | `integration` | Tier 1 + Tier 2 |
 | System | `tests/system/` | 50 | `system` | Tier 2 only |
 
-Tier 1 runs `pytest -m "not system"` (814 tests). Tier 2 runs `system` tests only — 37 of the
-50 are `system and not requires_gpu` (nightly Mon–Sat); the remaining 13 need a free GPU and
+Tier 1 runs `pytest -m "not system"` (814 tests). Tier 2 runs `system` tests only - 37 of the
+50 are `system and not requires_gpu` (nightly Mon-Sat); the remaining 13 need a free GPU and
 only run in the Sunday/dispatch full pass.
 
 Two role-based markers cut across the above, for CI runs scoped to a persona rather than a
@@ -180,7 +180,7 @@ Check if any individual job was *cancelled* (not just skipped). The gate job tre
 
 ### Shellcheck fails on new code
 
-Run locally: `make lint-shell`. Shellcheck reads `.shellcheckrc` for suppressions. If you get SC2155 (declare and assign separately), it's suppressed — ensure `.shellcheckrc` is present.
+Run locally: `make lint-shell`. Shellcheck reads `.shellcheckrc` for suppressions. If you get SC2155 (declare and assign separately), it's suppressed - ensure `.shellcheckrc` is present.
 
 ### shfmt fails
 
@@ -192,4 +192,4 @@ CI runs on Ubuntu with Python 3.13. Locally you may be using conda. Ensure pytes
 
 ### Nightly system CI creates duplicate issues
 
-It shouldn't — the workflow checks for existing open issues with "System CI failed" before creating new ones. If duplicates appear, check the `gh issue list --search` logic in `ci-system.yml`.
+It shouldn't - the workflow checks for existing open issues with "System CI failed" before creating new ones. If duplicates appear, check the `gh issue list --search` logic in `ci-system.yml`.

@@ -1,7 +1,7 @@
 # Shared Collaborative Workspaces
 
-Shared workspaces let several users work on the **same files** — a shared codebase, a
-common dataset, joint results — on the host and inside their GPU containers. They live
+Shared workspaces let several users work on the **same files** - a shared codebase, a
+common dataset, joint results - on the host and inside their GPU containers. They live
 under `/home/shared/<name>` and are managed with the `shared-workspace` admin command.
 
 They are the collaborative counterpart to a user's private `~/workspace/<project>`: the
@@ -30,7 +30,7 @@ change ACLs); `list` does not. The command lives at `scripts/admin/shared-worksp
 
 ---
 
-## How access works — and why ACLs, not a group
+## How access works - and why ACLs, not a group
 
 Each member is granted access with a **per-user POSIX ACL** (`setfacl -m u:<user>:rwX`),
 plus a matching **default ACL** so new files inherit the same grants. Access is
@@ -59,7 +59,7 @@ DS01 keeps personal homes private: `/etc/profile.d/ds01-home-enforce.sh` runs
 `existing-users-permissions.sh` can sweep `/home/*` back to `0700`. `/home/shared` is
 exempt from all of these:
 
-- The login hook only ever touches a **real user's own `$HOME`** — `/home/shared` is
+- The login hook only ever touches a **real user's own `$HOME`** - `/home/shared` is
   nobody's home, so it is never touched.
 - Both sweep scripts skip `shared` explicitly (alongside `lost+found`).
 - `config/permissions-manifest.sh` re-asserts `/home/shared` as `root:ds-admin 0755` on
@@ -96,6 +96,6 @@ sudo bash scripts/maintenance/fix-home-permissions.sh --check   # no issue for /
 
 - *A member can't write a file another member created* → confirm the workspace has a
   **default** ACL (`getfacl` shows `default:user:<uid>:rwx`). Files created before that
-  member was added won't carry their entry — re-run `add-member` (it applies recursively).
+  member was added won't carry their entry - re-run `add-member` (it applies recursively).
 - *Access works on the host but not in the container* → confirm you mounted the path with
   `--workspace`; the container sees `/workspace`, not `/home/shared`.

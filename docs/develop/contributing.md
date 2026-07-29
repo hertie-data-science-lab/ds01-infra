@@ -77,7 +77,7 @@ feat!: new container API     # breaking change
 
 ### Bash Scripts
 
-- Formatted with shfmt (`-i 4 -ci -s` — 4-space indent, case indent, simplify)
+- Formatted with shfmt (`-i 4 -ci -s` - 4-space indent, case indent, simplify)
 - Linted with shellcheck (`-x -S warning`)
 - Use `set -e` for error handling, include usage functions
 
@@ -100,7 +100,7 @@ for test structure and markers.
 ## Releases
 
 Releases are manual, tag-triggered. **Pushing a `vX.Y.Z` tag both cuts a GitHub Release and
-deploys it to prod** (via `ds01-deploy`) — see [Versioning & Releases](/admin/versioning) and
+deploys it to prod** (via `ds01-deploy`) - see [Versioning & Releases](/admin/versioning) and
 [the CI & release process](/admin/ci) for the full process.
 
 ```bash
