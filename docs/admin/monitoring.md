@@ -173,11 +173,11 @@ Use after editing `prometheus.yml`, `ds01_alerts.yml`, `ds01_recording.yml`, or 
 
 > **Always reload via `monitoring-manage reload`, not raw `curl`.** Releases are built
 > in the `/opt/ds01-staging` clone, whose git checkout inherits a restrictive umask
-> (`0077`) and writes updated config files mode `600`; `ds01-sync` then rsyncs those
+> (`0077`) and writes updated config files mode `600`; `ds01-deploy` then rsyncs those
 > modes straight through to prod, where the Prometheus/Grafana container users can't
 > read them — a raw `curl -X POST .../-/reload` then fails with HTTP 500 and silently
 > keeps the old rules. `monitoring-manage reload` re-asserts world-read on the config
-> trees first (`sudo deploy` also does, via `permissions-manifest.sh`).
+> trees first (`sudo ds01-apply` also does, via `permissions-manifest.sh`).
 
 ### Start/Stop Full Stack
 

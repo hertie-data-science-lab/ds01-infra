@@ -392,7 +392,7 @@ def test_cron_deployed_matches_repo():
     repo_content = repo_cron.read_text()
     deployed_content = deployed_cron.read_text()
     assert repo_content == deployed_content, (
-        "Deployed cron file differs from repo. Run: sudo deploy"
+        "Deployed cron file differs from repo. Run: sudo ds01-apply"
     )
 
 

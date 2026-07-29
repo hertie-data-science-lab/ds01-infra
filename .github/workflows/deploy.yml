@@ -1,16 +1,16 @@
 name: Deploy
 
-# Tag-gated release of the live runtime via ds01-sync (staging clone + rsync).
+# Tag-gated release of the live runtime via ds01-deploy (staging clone + rsync).
 # Fires on a vX.Y.Z tag push, or manual dispatch. The self-hosted runner (which
-# must run as datasciencelab) invokes ds01-sync, which builds + smoke-tests in
+# must run as datasciencelab) invokes ds01-deploy, which builds + smoke-tests in
 # /opt/ds01-staging before publishing to /opt/ds01-infra and auto-rolls-back on
 # failure.
 #
 # Controls (defence in depth):
 #   - restrict v* tag creation to admins via a GitHub ruleset
 #   - the 'production' environment below can require a reviewer (one-click gate)
-#   - narrow sudoers (config/deploy/sudoers.d/ds01-sync-runner): ds01-sync only
-#   - ds01-sync validates the --ref format and ancestry of origin/main
+#   - narrow sudoers (config/deploy/sudoers.d/ds01-deploy-runner): ds01-deploy only
+#   - ds01-deploy validates the --ref format and ancestry of origin/main
 
 on:
   push:
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Release to prod via ds01-sync
+    name: Release to prod via ds01-deploy
     runs-on: [self-hosted, linux, gpu]
     # Optional one-click human gate: configure the 'production' environment in
     # repo settings with a required reviewer. Harmless if left unconfigured.
@@ -47,5 +47,5 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Release via ds01-sync
-        run: sudo /usr/local/bin/ds01-sync --ref "${{ steps.tag.outputs.tag }}"
+      - name: Release via ds01-deploy
+        run: sudo /usr/local/bin/ds01-deploy --ref "${{ steps.tag.outputs.tag }}"

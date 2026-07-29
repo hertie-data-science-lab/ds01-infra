@@ -11,7 +11,7 @@ model. For the day-to-day update/rollback flow once installed, see
 Prod (`/opt/ds01-infra`) is a **detached** directory — a real tree with **no `.git`**.
 It is never `git pull`ed or checked out directly. The canonical checkout lives in a
 **staging clone** at `/opt/ds01-staging`; every release is built and smoke-tested there
-by `ds01-sync` (`scripts/system/sync.sh`) before being rsynced to prod, side-effected
+by `ds01-deploy` (`scripts/system/sync.sh`) before being rsynced to prod, side-effected
 (`deploy.sh`), and health-gated. See [scripts/system/CLAUDE.md](https://github.com/hertie-data-science-lab/ds01-infra/blob/main/scripts/system/CLAUDE.md) for the full deploy-model
 writeup this doc builds on.
 
@@ -23,11 +23,11 @@ writeup this doc builds on.
 | GPU | NVIDIA GPU with MIG support (A100, H100) or any CUDA GPU |
 | Docker | 20.10+ with NVIDIA Container Toolkit |
 | Python | 3.8+ with PyYAML (`sudo pip3 install pyyaml` or `sudo apt install python3-yaml`) |
-| A `datasciencelab` system account | Owns the staging clone and runs `ds01-sync`'s git operations; needs SSH (or HTTPS, since the repo is public) access to fetch `origin` |
+| A `datasciencelab` system account | Owns the staging clone and runs `ds01-deploy`'s git operations; needs SSH (or HTTPS, since the repo is public) access to fetch `origin` |
 
 ## Fresh-box bootstrap
 
-**1. Create the staging clone** (owned by `datasciencelab` — `ds01-sync` always runs
+**1. Create the staging clone** (owned by `datasciencelab` — `ds01-deploy` always runs
 git as this user, never as root, to avoid tripping git's dubious-ownership guard and
 because SSH auth lives in that account):
 
@@ -36,7 +36,7 @@ sudo -u datasciencelab git clone https://github.com/hertie-data-science-lab/ds01
 ```
 
 **2. First release.** Prod doesn't exist yet, so run `sync.sh` directly from staging
-(before `deploy.sh` has had a chance to symlink `ds01-sync` into `/usr/local/bin/`):
+(before `deploy.sh` has had a chance to symlink `ds01-deploy` into `/usr/local/bin/`):
 
 ```bash
 sudo /opt/ds01-staging/scripts/system/sync.sh
@@ -44,11 +44,11 @@ sudo /opt/ds01-staging/scripts/system/sync.sh
 
 This builds + smoke-tests `origin/main` in staging, rsyncs it to `/opt/ds01-infra`
 (creating it), and — as part of the same run — executes `deploy.sh`'s side-effects:
-symlinks all commands into `/usr/local/bin/` (including `deploy` and `ds01-sync`
+symlinks all commands into `/usr/local/bin/` (including `ds01-apply` and `ds01-deploy`
 themselves), installs `config/deploy/{profile.d,sudoers.d,cron.d}/*` into `/etc/`,
 installs the workload-detector and code-caching-daemon systemd units, and enforces
 the permissions manifest. It then health-gates the result and only advances
-`current-sha` (in `/var/lib/ds01/deploy/`) on success. From here on, `ds01-sync` is
+`current-sha` (in `/var/lib/ds01/deploy/`) on success. From here on, `ds01-deploy` is
 on `PATH`.
 
 **3. Configure Docker for cgroup enforcement** (one-time host config; not part of the
@@ -111,10 +111,10 @@ sudo cp /opt/ds01-infra/config/deploy/logrotate.d/ds01 /etc/logrotate.d/
 **8. Verify:**
 
 ```bash
-which user-setup container-create deploy ds01-sync
-sudo ds01-sync --list          # current-sha + release history
+which user-setup container-create ds01-apply ds01-deploy
+sudo ds01-deploy --list          # current-sha + release history
 version                        # DS01 version, deployed SHA, GPU/Docker info
-sudo ds01-health                # post-deploy health probe (same checks ds01-sync runs)
+sudo ds01-health                # post-deploy health probe (same checks ds01-deploy runs)
 systemctl status ds01.slice
 ```
 
@@ -123,7 +123,7 @@ See [Setup checklist](./setup-checklist.md) for a condensed version of the above
 ## One-time cutover to detached prod
 
 This section applies only when migrating a box where `/opt/ds01-infra` **already
-exists as a live git checkout** (the pre-`ds01-sync` "Phase 1" interim model) to the
+exists as a live git checkout** (the pre-`ds01-deploy` "Phase 1" interim model) to the
 current detached-prod model. On a genuinely fresh box (bootstrap above), prod is
 created directly by `rsync` and never has a `.git` — there is nothing to cut over.
 
@@ -133,7 +133,7 @@ created directly by `rsync` and never has a `.git` — there is nothing to cut o
 > repeating this on another box.
 
 1. **Ensure the staging clone exists** at `/opt/ds01-staging` (step 1 above), with a
-   full history of `main` — `ds01-sync` will build releases from it going forward.
+   full history of `main` — `ds01-deploy` will build releases from it going forward.
 2. **Add a `downstream` remote to the staging clone**, if off-site backup via
    `sync-downstream.sh` is wanted (see [Maintenance → Downstream backup](./maintenance.md#downstream-backup)):
    ```bash
@@ -149,7 +149,7 @@ created directly by `rsync` and never has a `.git` — there is nothing to cut o
    `config/runtime/` on disk (it's git-ignored there and survives an `rsync` without
    `--delete` — see `sync.sh`'s `release_to_prod`), so nothing is lost when `.git` is
    removed.
-5. **Remove prod's `.git`** — this is what "detaches" prod and is what `ds01-sync`
+5. **Remove prod's `.git`** — this is what "detaches" prod and is what `ds01-deploy`
    checks for (`sync.sh` refuses to run while `/opt/ds01-infra/.git` exists):
    ```bash
    sudo rm -rf /opt/ds01-infra/.git
@@ -167,5 +167,5 @@ created directly by `rsync` and never has a `.git` — there is nothing to cut o
    no repository left for hooks to run against. No action needed; it's harmless to
    leave configured.
 
-From this point on, prod is managed exclusively via `ds01-sync` — see
+From this point on, prod is managed exclusively via `ds01-deploy` — see
 [Maintenance](./maintenance.md).

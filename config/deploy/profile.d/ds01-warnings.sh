@@ -2,7 +2,7 @@
 # /opt/ds01-infra/config/deploy/profile.d/ds01-warnings.sh
 # DS01 Login Warnings
 #
-# Deployed to /etc/profile.d/ automatically by scripts/system/deploy.sh (sudo deploy).
+# Deployed to /etc/profile.d/ automatically by scripts/system/deploy.sh (sudo ds01-apply).
 
 # Only run for interactive shells
 [[ $- != *i* ]] && return

@@ -30,8 +30,8 @@ step lives there. Use this as a fresh-box, top-to-bottom checklist.
 
 ## Verification
 
-- [ ] `which user-setup container-create deploy ds01-sync`
-- [ ] `sudo ds01-sync --list` shows a current-sha
+- [ ] `which user-setup container-create ds01-apply ds01-deploy`
+- [ ] `sudo ds01-deploy --list` shows a current-sha
 - [ ] `version` reports the expected DS01 version and deployed SHA
 - [ ] `sudo ds01-health` — no CRITICAL findings
 - [ ] `systemctl status ds01.slice` — active

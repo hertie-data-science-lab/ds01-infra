@@ -276,7 +276,7 @@ show_symlinks() {
             done
         else
             echo -e "${YELLOW}  No DS01 symlinks found in /usr/local/bin${NC}"
-            echo -e "  Run: ${CYAN}sudo deploy${NC}"
+            echo -e "  Run: ${CYAN}sudo ds01-apply${NC}"
         fi
     else
         echo -e "${YELLOW}  /usr/local/bin not accessible${NC}"

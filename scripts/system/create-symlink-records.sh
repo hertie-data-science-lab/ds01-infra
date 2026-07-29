@@ -1,6 +1,6 @@
 #!/bin/bash
 # Create symlink records in usr-mirrors (doesn't require sudo)
-# Actual symlink creation into /usr/local/bin is done by scripts/system/deploy.sh (sudo deploy)
+# Actual symlink creation into /usr/local/bin is done by scripts/system/deploy.sh (sudo ds01-apply)
 
 set -e
 
@@ -99,5 +99,5 @@ echo ""
 echo "Symlink records created in: $MIRROR_DIR"
 echo ""
 echo "To create actual symlinks in /usr/local/bin, run:"
-echo "  sudo deploy"
+echo "  sudo ds01-apply"
 echo ""

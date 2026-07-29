@@ -5,17 +5,17 @@ side-effects, the automated cron jobs, config-drift handling, and where the logs
 live. For first-time setup see [Installation](./installation.md); for the config
 model itself see [System configuration](./system-config.md).
 
-## Updating (`ds01-sync`)
+## Updating (`ds01-deploy`)
 
 `/opt/ds01-infra` is detached (no `.git`) and is only ever updated through
-`ds01-sync` (`scripts/system/sync.sh`), which builds and smoke-tests each release
+`ds01-deploy` (`scripts/system/sync.sh`), which builds and smoke-tests each release
 in the `/opt/ds01-staging` clone before publishing it:
 
 ```bash
-sudo ds01-sync                 # release origin/main
-sudo ds01-sync --ref v1.6.0    # release a specific v* tag (must be an ancestor of main)
-sudo ds01-sync --rollback      # re-release the previous good SHA
-sudo ds01-sync --list          # show release history + current SHA
+sudo ds01-deploy                 # release origin/main
+sudo ds01-deploy --ref v1.6.0    # release a specific v* tag (must be an ancestor of main)
+sudo ds01-deploy --rollback      # re-release the previous good SHA
+sudo ds01-deploy --list          # show release history + current SHA
 ```
 
 A smoke-check failure in staging aborts before prod is touched. A side-effects or
@@ -26,28 +26,28 @@ same pipeline against the previous good SHA on demand.
 
 CI triggers this automatically: pushing a `v*.*.*` tag runs
 `.github/workflows/deploy.yml` on the self-hosted runner, which calls
-`sudo ds01-sync --ref <tag>`. See [Versioning](./versioning.md) for the release side
+`sudo ds01-deploy --ref <tag>`. See [Versioning](./versioning.md) for the release side
 of that flow.
 
-## Reapplying side-effects only (`deploy`)
+## Reapplying side-effects only (`ds01-apply`)
 
 ```bash
-sudo deploy               # symlinks, permissions, systemd units, sudoers, cron, etc.
-sudo deploy --verbose      # show each command being (re)deployed
+sudo ds01-apply               # symlinks, permissions, systemd units, sudoers, cron, etc.
+sudo ds01-apply --verbose      # show each command being (re)deployed
 ```
 
-`deploy` (`deploy.sh`) reapplies side-effects — command symlinks into
+`ds01-apply` (`deploy.sh`) reapplies side-effects — command symlinks into
 `/usr/local/bin/`, the permissions manifest, `config/deploy/{profile.d,sudoers.d,
 cron.d}/*`, systemd units, and a restart of the code-caching daemons
 (`ds01-exporter`, `ds01-container-owner-tracker`, `ds01-container-sync`) — against
 whatever code is **already on disk** in prod. It does **not** fetch or change code;
-`ds01-sync` calls it automatically as part of every release, but it's also safe to
+`ds01-deploy` calls it automatically as part of every release, but it's also safe to
 run standalone, e.g. after a manual permissions fix or to pick up a config change
 without cutting a release.
 
 ## Scheduled maintenance (cron)
 
-Installed from `config/deploy/cron.d/` by `deploy.sh` (part of every `ds01-sync`
+Installed from `config/deploy/cron.d/` by `deploy.sh` (part of every `ds01-deploy`
 release). Two files:
 
 ### `ds01-maintenance`
@@ -96,9 +96,9 @@ release). Two files:
 
 **Practical implication:** don't hand-edit `config/runtime/resource-limits.yaml` (or
 any file under `config/runtime/`) directly in prod — it will be reverted at the next
-`--full` run (or at the next `ds01-sync`) unless the change also lands via a normal
+`--full` run (or at the next `ds01-deploy`) unless the change also lands via a normal
 PR into `main`. Make config changes in a dev clone, land them via PR, then release
-with `ds01-sync`.
+with `ds01-deploy`.
 
 ## Downstream backup
 
@@ -109,7 +109,7 @@ runtime state (`config/runtime/*.members`, `user-overrides.yaml`,
 configured on the staging clone. It drives git via the staging repo's `.git` against
 prod's work-tree (prod itself has no `.git`), and is a no-op if the staging clone
 has no `downstream` remote configured (see [Installation → Cutover](./installation.md#one-time-cutover-to-detached-prod)).
-Logs to `/tmp/ds01-sync-downstream.log`.
+Logs to `/tmp/ds01-deploy-downstream.log`.
 
 ## Log locations
 
@@ -119,8 +119,8 @@ Logs to `/tmp/ds01-sync-downstream.log`.
 | `/var/log/ds01/events.jsonl` | Centralised structured event log |
 | `/var/log/ds01/gpu-allocations.log` | GPU allocation history |
 | `/var/log/ds01/config-watchdog.log` | Config-watchdog full-check output |
-| `/tmp/ds01-sync-downstream.log` | Downstream backup output |
-| `/var/lib/ds01/deploy/current-sha`, `history.log` | Deployed SHA + full release history (`sudo ds01-sync --list`) |
+| `/tmp/ds01-deploy-downstream.log` | Downstream backup output |
+| `/var/lib/ds01/deploy/current-sha`, `history.log` | Deployed SHA + full release history (`sudo ds01-deploy --list`) |
 
 Log rotation is configured in `config/deploy/logrotate.d/ds01` (daily, 30-day
 retention for `*.log`; weekly/dateext for the larger `.jsonl` files) — this is

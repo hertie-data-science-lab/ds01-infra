@@ -59,7 +59,7 @@ echo -n "  /usr/local/bin/shell-setup ... "
 if [ -L /usr/local/bin/shell-setup ]; then
     echo "✓"
 else
-    echo "✗ (run sudo deploy)"
+    echo "✗ (run sudo ds01-apply)"
 fi
 
 echo ""

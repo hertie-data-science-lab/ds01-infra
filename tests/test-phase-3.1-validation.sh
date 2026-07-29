@@ -136,7 +136,7 @@ else
 fi
 
 echo ""
-echo "POST-DEPLOY CHECKS (require sudo deploy):"
+echo "POST-DEPLOY CHECKS (require sudo ds01-apply):"
 echo ""
 
 # SC2: Non-admin can run commands (check symlink targets are executable)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ds01-sync — detached-prod release orchestrator (Phase 2).
+# ds01-deploy — detached-prod release orchestrator (Phase 2).
 #
 # Projects GitHub `main` (or a v* tag) into the live runtime at /opt/ds01-infra,
 # which is a REAL directory with NO .git. The canonical checkout lives in a
@@ -8,10 +8,10 @@
 # current-sha + history live outside the tree in /var/lib/ds01/deploy/.
 #
 # Usage (root):
-#   ds01-sync                  release origin/main
-#   ds01-sync --ref v1.2.3     release a specific v* tag (must be an ancestor of main)
-#   ds01-sync --rollback       re-release the previous good SHA
-#   ds01-sync --list           show release history + current SHA
+#   ds01-deploy                  release origin/main
+#   ds01-deploy --ref v1.2.3     release a specific v* tag (must be an ancestor of main)
+#   ds01-deploy --rollback       re-release the previous good SHA
+#   ds01-deploy --list           show release history + current SHA
 #
 # Safety model: a smoke failure aborts before prod is mutated; a side-effect OR
 # post-deploy-health-gate failure auto-rolls-back to the last good SHA;
@@ -36,10 +36,10 @@ YELLOW=$'\033[1;33m'
 BOLD=$'\033[1m'
 NC=$'\033[0m'
 
-log() { echo "${BOLD}ds01-sync:${NC} $*"; }
-warn() { echo "${YELLOW}ds01-sync:${NC} $*" >&2; }
+log() { echo "${BOLD}ds01-deploy:${NC} $*"; }
+warn() { echo "${YELLOW}ds01-deploy:${NC} $*" >&2; }
 die() {
-    echo "${RED}ds01-sync error:${NC} $*" >&2
+    echo "${RED}ds01-deploy error:${NC} $*" >&2
     exit 1
 }
 
@@ -271,7 +271,7 @@ main() {
         exit 0
     fi
 
-    [ "$(id -u)" -eq 0 ] || die "must run as root (sudo ds01-sync)"
+    [ "$(id -u)" -eq 0 ] || die "must run as root (sudo ds01-deploy)"
     [ ! -e "$INFRA_ROOT/.git" ] ||
         die "$INFRA_ROOT/.git exists — prod is not detached (cutover not done?); refusing"
     [ -d "$STAGING/.git" ] || die "staging clone not found at $STAGING"
@@ -284,7 +284,7 @@ main() {
     # Mandatory mutex: prevents CI + manual (or two admins) interleaving into a
     # chimera tree.
     exec 9>"$LOCK_FILE"
-    flock -n 9 || die "another ds01-sync is already running (lock: $LOCK_FILE)"
+    flock -n 9 || die "another ds01-deploy is already running (lock: $LOCK_FILE)"
 
     fetch_staging
 

@@ -28,7 +28,7 @@ Each `.link` file contains:
 To create all symlinks in `/usr/local/bin/`:
 
 ```bash
-sudo deploy
+sudo ds01-apply
 ```
 
 This script:
@@ -53,5 +53,5 @@ If user commands are added or changed:
 
 1. Update the command list in `scripts/system/create-symlink-records.sh`
 2. Run: `scripts/system/create-symlink-records.sh`
-3. Run: `sudo deploy`
+3. Run: `sudo ds01-apply`
 4. Commit the new `.link` files to git

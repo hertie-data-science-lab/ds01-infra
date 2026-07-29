@@ -44,7 +44,7 @@ docker info  # Should work without sudo
 - If docker group doesn't exist: `sudo groupadd docker`
 - If docker daemon not running: `sudo systemctl start docker`
 
-### deploy.sh (alias: `deploy`)
+### deploy.sh (alias: `ds01-apply`)
 
 Deploy all DS01 commands to `/usr/local/bin/` and reapply system side-effects
 (permissions, systemd units, sudoers, cron, code-caching daemon restarts).
@@ -54,7 +54,7 @@ Deploy all DS01 commands to `/usr/local/bin/` and reapply system side-effects
 
 **Usage:**
 ```bash
-sudo deploy
+sudo ds01-apply
 # or, from the deployed tree
 sudo /opt/ds01-infra/scripts/system/deploy.sh
 ```
@@ -70,7 +70,7 @@ sudo /opt/ds01-infra/scripts/system/deploy.sh
 4. Makes commands accessible to all users
 
 `deploy.sh` only reapplies side-effects against the code **already on disk** —
-it does not fetch new code. To update the code first, use `ds01-sync` (see
+it does not fetch new code. To update the code first, use `ds01-deploy` (see
 [maintenance.md](../../docs/admin/maintenance.md)).
 
 Deploys all 50+ commands organized by tier:
@@ -248,7 +248,7 @@ cat /var/lib/ds01/opa/container-owners.json | python3 -m json.tool
 ## Deployment
 
 > **Legacy walkthrough below predates the detached-prod model.** `/opt/ds01-infra` is now
-> a real directory with no `.git`, populated and updated via `ds01-sync` (see "Updating
+> a real directory with no `.git`, populated and updated via `ds01-deploy` (see "Updating
 > Deployment" below, [Versioning & Releases](../../docs/admin/versioning.md), and the root
 > [README](../../README.md#getting-started) for the current bootstrap flow) — do not
 > `git clone`/`git pull` straight into `/opt/ds01-infra`.
@@ -294,7 +294,7 @@ sudo systemctl daemon-reload
 
 **7. Create command symlinks:**
 ```bash
-sudo deploy
+sudo ds01-apply
 ```
 
 **8. Verify installation:**
@@ -309,15 +309,15 @@ systemctl status ds01.slice
 **Update code:**
 
 `/opt/ds01-infra` is a detached release directory (no `.git`) — it is updated via
-`ds01-sync` (staging clone + rsync + health gate), not `git pull`:
+`ds01-deploy` (staging clone + rsync + health gate), not `git pull`:
 
 ```bash
-sudo ds01-sync
+sudo ds01-deploy
 ```
 
 **Update symlinks:**
 ```bash
-sudo deploy
+sudo ds01-apply
 ```
 
 **Update systemd slices (if config changed):**
@@ -547,7 +547,7 @@ ls -la /usr/local/bin/ | grep ds01
 
 **Fix:**
 ```bash
-sudo deploy
+sudo ds01-apply
 ```
 
 ### Systemd Slices Not Created

@@ -638,7 +638,7 @@ exit
 **Solution:**
 ```bash
 # Redeploy commands (admin)
-sudo deploy
+sudo ds01-apply
 ```
 
 ## Advanced Usage
