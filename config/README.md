@@ -70,14 +70,14 @@ python3 -c "import yaml; yaml.safe_load(open('config/runtime/resource-limits.yam
 
 ### 2. Deploy-Time Configuration (deploy/)
 
-**Deployed by:** `sudo deploy` (deploy.sh script)
+**Deployed by:** `sudo ds01-apply` (deploy.sh script)
 **When:** Installation, upgrades, config changes
 **Target:** System directories (/etc/, /usr/local/bin/)
 
 **Deployment:**
 ```bash
 # Deploy all configs
-sudo deploy
+sudo ds01-apply
 
 # Or manually
 sudo cp config/deploy/systemd/ds01-*.service /etc/systemd/system/
@@ -320,10 +320,10 @@ python3 -c "import yaml; yaml.safe_load(open('config/runtime/resource-limits.yam
 
 ```bash
 # After modifying deploy/ files
-sudo deploy
+sudo ds01-apply
 
 # View verbose output
-sudo deploy --verbose
+sudo ds01-apply --verbose
 
 # Check specific deployments
 ls -l /etc/profile.d/ds01-*
@@ -415,7 +415,7 @@ python3 scripts/docker/get_resource_limits.py username
 
 **Deploy configs:** Need deploy.sh run
 ```bash
-sudo deploy
+sudo ds01-apply
 sudo systemctl daemon-reload  # If systemd units changed
 ```
 
@@ -431,7 +431,7 @@ echo $INFRA_ROOT
 grep '\${' config/deploy/profile.d/*.template
 
 # Run deploy with verbose
-sudo deploy --verbose
+sudo ds01-apply --verbose
 ```
 
 ## Related Documentation

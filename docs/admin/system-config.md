@@ -11,10 +11,10 @@ this page is the conceptual overview and doesn't duplicate that table.
 | Directory | What it is | Read/deployed by | Lifecycle |
 |-----------|-----------|-------------------|-----------|
 | `runtime/` | Operational config read live by scripts (`resource-limits.yaml`, per-user/group overrides) | Read directly from `/opt/ds01-infra/config/runtime/` on every operation | Changes apply immediately, no restart |
-| `deploy/` | Source files installed **to** system locations (`/etc/systemd/`, `/etc/sudoers.d/`, `/etc/cron.d/`, `/etc/profile.d/`, …) | Installed by `sudo deploy` (`deploy.sh`), which runs automatically as part of every `ds01-sync` release | Install-time; a change here needs a release + `deploy` run to take effect |
+| `deploy/` | Source files installed **to** system locations (`/etc/systemd/`, `/etc/sudoers.d/`, `/etc/cron.d/`, `/etc/profile.d/`, …) | Installed by `sudo ds01-apply` (`deploy.sh`), which runs automatically as part of every `ds01-deploy` release | Install-time; a change here needs a release + `ds01-apply` run to take effect |
 | `state/` | **Documentation only** — describes the `/var/lib/ds01/` runtime-state layout | N/A (nothing under `config/state/` is deployed) | Reference |
 
-See [Maintenance](./maintenance.md) for how updates and the `deploy`/`ds01-sync` split
+See [Maintenance](./maintenance.md) for how updates and the `ds01-apply`/`ds01-deploy` split
 actually run.
 
 ## `resource-limits.yaml`
@@ -29,7 +29,7 @@ priority: `user_overrides` (in the same file, or in an optional standalone
 - Full directory/priority/override semantics: `config/CLAUDE.md`.
 - Test a specific user's resolved limits: `python3 scripts/docker/get_resource_limits.py <username>`.
 - Validate syntax: `python3 -c "import yaml; yaml.safe_load(open('config/runtime/resource-limits.yaml'))"`
-  (also run automatically by `deploy.sh` before every deploy, and by `ds01-sync`'s
+  (also run automatically by `deploy.sh` before every deploy, and by `ds01-deploy`'s
   pre-release smoke check).
 
 **Don't hand-edit this file in prod** — `config-watchdog.sh --full` compares it

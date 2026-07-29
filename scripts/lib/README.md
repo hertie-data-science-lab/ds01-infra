@@ -235,7 +235,7 @@ SAFE_NAME=$(sanitize_username_for_slice "h.baker@hertie-school.lan")
 1. Create script in `/opt/ds01-infra/scripts/lib/`
 2. Add documentation to this README
 3. Update CLAUDE.md Script Organization section
-4. Deploy with `sudo deploy`
+4. Deploy with `sudo ds01-apply`
 
 ## Core Libraries
 

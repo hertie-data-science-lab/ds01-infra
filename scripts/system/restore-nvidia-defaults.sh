@@ -55,7 +55,7 @@ echo ""
 echo "✓ NVIDIA device permissions restored to defaults"
 echo ""
 echo "Next steps:"
-echo "  1. Run: sudo deploy"
+echo "  1. Run: sudo ds01-apply"
 echo '  2. Users should logout and login to get CUDA_VISIBLE_DEVICES="" in environment'
 echo "  3. Test: python3 -c 'import torch; print(torch.cuda.is_available())' → should be False"
 echo "  4. Test: nvidia-smi -L → should work and list GPUs"

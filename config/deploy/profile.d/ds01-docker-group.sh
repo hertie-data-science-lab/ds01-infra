@@ -3,7 +3,7 @@
 # Automatically adds users to docker group on first login
 # File: /etc/profile.d/ds01-docker-group.sh
 #
-# DEPLOYMENT: installed to /etc/profile.d/ automatically by scripts/system/deploy.sh (sudo deploy).
+# DEPLOYMENT: installed to /etc/profile.d/ automatically by scripts/system/deploy.sh (sudo ds01-apply).
 #
 # REQUIREMENTS:
 #   Add to /etc/sudoers.d/ds01-docker-group:

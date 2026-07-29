@@ -63,7 +63,7 @@ if [ -f "/etc/profile.d/ds01-gpu-awareness.sh" ]; then
     ((PASS++))
 else
     echo "  ✗ /etc/profile.d/ds01-gpu-awareness.sh not found"
-    echo "    Run: sudo deploy"
+    echo "    Run: sudo ds01-apply"
     ((FAIL++))
 fi
 echo ""

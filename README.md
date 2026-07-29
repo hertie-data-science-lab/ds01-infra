@@ -64,7 +64,7 @@ sudo scripts/system/add-user-to-docker.sh alice
 ```
 
 `/opt/ds01-infra` is a detached release directory (no `.git`) — all subsequent updates go
-through `ds01-sync`, not `git pull`. See [Admin → Versioning](https://hertie-data-science-lab.github.io/ds01-infra/admin/versioning) for the release/update model.
+through `ds01-deploy`, not `git pull`. See [Admin → Versioning](https://hertie-data-science-lab.github.io/ds01-infra/admin/versioning) for the release/update model.
 
 ## Requirements
 

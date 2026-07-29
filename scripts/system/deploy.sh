@@ -7,12 +7,12 @@
 # and co-located Python dependencies (gpu_allocator_v2.py, etc.) are found.
 # Requires /opt/ds01-infra/scripts/ to be world-readable (755).
 #
-# Usage: sudo deploy [--verbose|-v]
+# Usage: sudo ds01-apply [--verbose|-v]
 
 # Self-bootstrap: if running as deployed copy, re-exec from source
 INFRA_ROOT="/opt/ds01-infra"
 SELF="$INFRA_ROOT/scripts/system/deploy.sh"
-if [ "$0" = "/usr/local/bin/deploy" ] || { [ "$(basename "$0")" = "deploy" ] && [ "$0" != "$SELF" ]; }; then
+if [ "$0" = "/usr/local/bin/ds01-apply" ] || { [ "$(basename "$0")" = "ds01-apply" ] && [ "$0" != "$SELF" ]; }; then
     exec "$SELF" "$@"
 fi
 DEST_DIR="/usr/local/bin"
@@ -41,7 +41,7 @@ for arg in "$@"; do
         -v | --verbose) VERBOSE=true ;;
         --sync) SYNC=true ;;
         -h | --help)
-            echo "Usage: sudo deploy [OPTIONS]"
+            echo "Usage: sudo ds01-apply [OPTIONS]"
             echo ""
             echo "Deploy DS01 commands to /usr/local/bin"
             echo ""
@@ -59,7 +59,7 @@ done
 # Require root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Error: This command requires sudo${NC}"
-    echo "Run with: sudo deploy"
+    echo "Run with: sudo ds01-apply"
     exit 1
 fi
 
@@ -72,7 +72,7 @@ fi
 # checkout owner (datasciencelab) so SSH auth and file ownership stay correct;
 # running as root would trip git's dubious-ownership guard and lack the SSH key.
 #
-# Superseded at the Phase 2 cutover by `ds01-sync` (prod loses its .git and is
+# Superseded at the Phase 2 cutover by `ds01-deploy` (prod loses its .git and is
 # projected from a staging clone via rsync).
 
 die() {
@@ -97,7 +97,7 @@ if $SYNC; then
     GIT=(runuser -u datasciencelab -- git -C "$INFRA_ROOT")
 
     branch=$("${GIT[@]}" rev-parse --abbrev-ref HEAD 2>/dev/null) ||
-        die "$INFRA_ROOT is not a git checkout (already detached? use ds01-sync)"
+        die "$INFRA_ROOT is not a git checkout (already detached? use ds01-deploy)"
     [ "$branch" = "main" ] ||
         die "refusing to sync: $INFRA_ROOT is on '$branch', not 'main'"
 
@@ -361,8 +361,11 @@ deploy_cmd "$USER_WIZARDS/user-setup" "new-user" "Legacy"
 
 # --- Admin Commands ---
 $VERBOSE && echo -e "${DIM}Admin:${NC}"
-deploy_cmd "$INFRA_ROOT/scripts/system/deploy.sh" "deploy" "Admin"
-deploy_cmd "$INFRA_ROOT/scripts/system/sync.sh" "ds01-sync" "Admin"
+# Command names intentionally differ from file names: ds01-apply = deploy.sh (reapply
+# side-effects), ds01-deploy = sync.sh (full release). Do NOT rename the files to match —
+# the runner sudoers grant keys on the literal sync.sh/deploy.sh paths.
+deploy_cmd "$INFRA_ROOT/scripts/system/deploy.sh" "ds01-apply" "Admin"
+deploy_cmd "$INFRA_ROOT/scripts/system/sync.sh" "ds01-deploy" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/admin/dashboard" "ds01-dashboard" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/gpu-status-dashboard.py" "ds01-gpu" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/container-dashboard.sh" "ds01-containers" "Admin"
@@ -482,6 +485,16 @@ for sudoers_file in "$INFRA_ROOT"/config/deploy/sudoers.d/ds01-*; do
     cp "$sudoers_file" /etc/sudoers.d/"$name"
     chmod 440 /etc/sudoers.d/"$name"
 done
+
+# One-time migration for the ds01-sync->ds01-deploy / deploy->ds01-apply command rename.
+# The install loops above never prune, so the old command symlinks and the renamed
+# sudoers file are orphaned. Remove them so the old names are truly gone (a clean break,
+# not lingering aliases) and the stale passwordless-sudo grant doesn't survive. Safe to
+# delete this block once every prod box is past this release.
+for stale_link in /usr/local/bin/deploy /usr/local/bin/ds01-sync; do
+    [ -L "$stale_link" ] && rm -f "$stale_link"
+done
+rm -f /etc/sudoers.d/ds01-sync-runner
 
 echo -e "  ${GREEN}✓${NC} Sudoers.d files deployed (440, visudo-validated)"
 
