@@ -21,6 +21,7 @@ contributor docs see [Developer](/develop).
 
 - [Maintenance](./maintenance.md) — routine maintenance, cleanup, upgrades.
 - [Monitoring](./monitoring.md) — Prometheus/Grafana, metrics, alerts.
+- [Shared workspaces](./shared-workspaces.md) — collaborative `/home/shared` project directories.
 - [Quick reference](./quick-reference.md) — admin command cheat sheet.
 - [Versioning](./versioning.md) — version scheme, deprecation, upgrade paths.
 - [CI & releases](./ci.md) — pipeline, conventional commits, release process.

@@ -369,6 +369,7 @@ deploy_cmd "$INFRA_ROOT/scripts/monitoring/container-dashboard.sh" "ds01-contain
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/gpu-utilization-monitor.py" "ds01-gpu-util" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/mig-utilization-monitor.py" "ds01-mig-util" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/admin/ds01-users" "ds01-users" "Admin"
+deploy_cmd "$INFRA_ROOT/scripts/admin/shared-workspace" "shared-workspace" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/admin/ds01-logs" "ds01-logs" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/ds01-events" "ds01-events" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/ds01-workloads" "ds01-workloads" "Admin"

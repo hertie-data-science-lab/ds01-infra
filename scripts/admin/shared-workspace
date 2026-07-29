@@ -1,0 +1,182 @@
+#!/bin/bash
+# DS01 Shared Workspace - manage collaborative project directories under /home/shared
+#
+# Shared workspaces live at /home/shared/<name> and let several users collaborate on the
+# same files (on the host and inside their GPU containers). Access is granted per-user via
+# POSIX ACLs, deliberately NOT via a shared Unix group, because:
+#   * Containers run as the host user's real uid:gid with no userns remap, and only the
+#     PRIMARY gid is passed in - supplementary group memberships are dropped, so a
+#     setgid+shared-group directory would be silently unwritable inside containers.
+#     ACL "user:" entries key on the uid, which IS propagated, so they work everywhere.
+#   * The host umask is 077; a directory DEFAULT ACL is the only thing that keeps new
+#     files writable by the other members regardless of umask.
+# See docs/admin/shared-workspaces.md for the full rationale.
+#
+# Usage:
+#   shared-workspace create <name> <user>...       Create a workspace with these members
+#   shared-workspace add-member <name> <user>      Grant a user access
+#   shared-workspace remove-member <name> <user>   Revoke a user's access
+#   shared-workspace list [<name>]                 List workspaces, or members of one
+#
+# Mutating commands (create/add-member/remove-member) require root - re-run with sudo.
+
+set -euo pipefail
+
+DS01_LIB="${DS01_ROOT:-/opt/ds01-infra}/scripts/lib"
+source "$DS01_LIB/logging.sh"          # log_info / log_success / log_warning / log_error
+source "$DS01_LIB/username-utils.sh"   # get_canonical_username
+
+SHARED_ROOT="/home/shared"
+OWNER_USER="datasciencelab"
+OWNER_GROUP="ds-admin"   # matches /home/datasciencelab and /opt/ds01-infra ownership
+
+die() {
+    log_error "$1"
+    exit 1
+}
+
+require_root() {
+    [[ ${EUID:-$(id -u)} -eq 0 ]] || die "'$1' must run as root - re-run with: sudo shared-workspace $1 ..."
+}
+
+validate_name() {
+    local name="$1"
+    [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || \
+        die "invalid workspace name '$name' (use letters, digits, . _ - ; must not start with . or -)"
+}
+
+# Resolve an AD account to its canonical passwd name, or die if it doesn't exist.
+# Canonicalising keeps ACL entries consistent with the rest of the infra (see
+# scripts/system/fix-docker-group-variants.sh).
+resolve_user() {
+    local canon
+    canon="$(get_canonical_username "$1")" || true
+    [[ -n "$canon" ]] || die "unknown user account: '$1'"
+    echo "$canon"
+}
+
+# Ensure the shared root exists with the right ownership/mode (idempotent; the
+# permissions-manifest also asserts this every 15 min, but the helper must not depend
+# on a deploy having happened first).
+ensure_root_dir() {
+    mkdir -p "$SHARED_ROOT"
+    chown "root:$OWNER_GROUP" "$SHARED_ROOT"
+    chmod 0755 "$SHARED_ROOT"
+}
+
+# Grant a member: access ACL (existing files) + default ACL (new files inherit), in a
+# single recursive pass. rwX = x on dirs and already-executable files only.
+grant_member() {
+    setfacl -R -m "u:${2}:rwX,d:u:${2}:rwX" "$1"
+}
+
+members_of() {
+    # Member usernames (named user ACL entries; excludes owner "user::" and "default:").
+    getfacl -p "$1" 2>/dev/null | awk -F: '/^user:[^:]/ {print $2}'
+}
+
+cmd_create() {
+    require_root create
+    local name="${1:-}"
+    [[ -n "$name" ]] || die "usage: shared-workspace create <name> <user>..."
+    shift
+    validate_name "$name"
+    [[ $# -ge 1 ]] || die "create needs at least one member: shared-workspace create $name <user>..."
+
+    # Resolve + validate every member up front, so a typo can't half-create the workspace.
+    local -a members=()
+    local u
+    for u in "$@"; do members+=("$(resolve_user "$u")"); done
+
+    local dir="$SHARED_ROOT/$name"
+    [[ -e "$dir" ]] && die "already exists: $dir (use add-member to add people)"
+
+    ensure_root_dir
+    mkdir "$dir"
+    chown "$OWNER_USER:$OWNER_GROUP" "$dir"
+    chmod 2770 "$dir"   # setgid (consistent group ownership) + owner/group rwx, no 'other'
+    for u in "${members[@]}"; do grant_member "$dir" "$u"; done
+
+    log_success "created shared workspace: $dir"
+    log_info "members: ${members[*]}"
+    log_info "mount into a container with: container-deploy <project> --workspace $dir"
+}
+
+cmd_add_member() {
+    require_root add-member
+    local name="${1:-}" user="${2:-}"
+    [[ -n "$name" && -n "$user" ]] || die "usage: shared-workspace add-member <name> <user>"
+    validate_name "$name"
+    local canon; canon="$(resolve_user "$user")"
+    local dir="$SHARED_ROOT/$name"
+    [[ -d "$dir" ]] || die "no such workspace: $name"
+    grant_member "$dir" "$canon"
+    log_success "granted $canon access to $name"
+}
+
+cmd_remove_member() {
+    require_root remove-member
+    local name="${1:-}" user="${2:-}"
+    [[ -n "$name" && -n "$user" ]] || die "usage: shared-workspace remove-member <name> <user>"
+    validate_name "$name"
+    local dir="$SHARED_ROOT/$name"
+    [[ -d "$dir" ]] || die "no such workspace: $name"
+    # Prefer the canonical name (what grant stored); fall back to the raw input so a stale
+    # entry can still be cleared if the account has since been removed from AD.
+    local canon; canon="$(get_canonical_username "$user" 2>/dev/null || true)"
+    [[ -n "$canon" ]] || canon="$user"
+    setfacl -R -x "u:${canon},d:u:${canon}" "$dir"
+    log_success "revoked ${canon}'s access to $name"
+    log_warning "files $canon already created keep their owner; this only removes ACL grants"
+}
+
+cmd_list() {
+    local name="${1:-}"
+    if [[ -n "$name" ]]; then
+        local dir="$SHARED_ROOT/$name"
+        [[ -d "$dir" ]] || die "no such workspace: $name"
+        echo "Members of $name:"
+        members_of "$dir" | sed 's/^/  - /'
+        return
+    fi
+    [[ -d "$SHARED_ROOT" ]] || { log_info "no shared workspaces yet ($SHARED_ROOT does not exist)"; return; }
+    local d n count found=0
+    for d in "$SHARED_ROOT"/*/; do
+        [[ -d "$d" ]] || continue
+        found=1
+        n="${d%/}"; n="${n##*/}"
+        count="$(members_of "$d" | grep -c . || true)"
+        printf '  %-30s %s member(s)\n' "$n" "$count"
+    done
+    [[ $found -eq 1 ]] || log_info "no shared workspaces yet under $SHARED_ROOT"
+}
+
+usage() {
+    cat <<'EOF'
+shared-workspace - manage collaborative project directories under /home/shared
+
+Usage:
+  shared-workspace create <name> <user>...       Create a workspace with these members
+  shared-workspace add-member <name> <user>      Grant a user access
+  shared-workspace remove-member <name> <user>   Revoke a user's access
+  shared-workspace list [<name>]                 List workspaces, or members of one
+
+Members are AD accounts (e.g. h.baker@hertie-school.lan). Mutating commands require root.
+See docs/admin/shared-workspaces.md for the ACL model and rationale.
+EOF
+}
+
+main() {
+    local sub="${1:-}"
+    shift || true
+    case "$sub" in
+        create)        cmd_create "$@" ;;
+        add-member)    cmd_add_member "$@" ;;
+        remove-member) cmd_remove_member "$@" ;;
+        list)          cmd_list "$@" ;;
+        -h | --help | help | "") usage ;;
+        *) die "unknown command: '$sub' (try: shared-workspace --help)" ;;
+    esac
+}
+
+main "$@"

@@ -127,6 +127,16 @@ else
 fi
 
 # =============================================================================
+# Shared Collaborative Workspaces (/home/shared/)
+# =============================================================================
+
+# Root only. Individual projects at /home/shared/<name> carry dynamic per-user ACLs
+# managed by scripts/admin/shared-workspace and must NOT be touched/recursed here.
+mkdir -p /home/shared
+chown root:ds-admin /home/shared
+chmod 0755 /home/shared
+
+# =============================================================================
 # Cleanup
 # =============================================================================
 

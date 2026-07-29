@@ -64,8 +64,12 @@ fi
 for dir in /home/*; do
     [[ -d $dir ]] || continue
 
-    # Skip special directories
-    [[ "$(basename "$dir")" == "lost+found" ]] && continue
+    # Skip special / intentionally-shared directories.
+    # /home/shared is a collaborative root (see scripts/admin/shared-workspace); it must
+    # stay traversable and must never be forced to 0700 like a private home.
+    case "$(basename "$dir")" in
+        lost+found | shared) continue ;;
+    esac
 
     PERMS=$(stat -c "%a" "$dir")
     if [[ $PERMS != "700" ]]; then
