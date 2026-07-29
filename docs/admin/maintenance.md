@@ -109,7 +109,7 @@ runtime state (`config/runtime/*.members`, `user-overrides.yaml`,
 configured on the staging clone. It drives git via the staging repo's `.git` against
 prod's work-tree (prod itself has no `.git`), and is a no-op if the staging clone
 has no `downstream` remote configured (see [Installation → Cutover](./installation.md#one-time-cutover-to-detached-prod)).
-Logs to `/tmp/ds01-deploy-downstream.log`.
+Logs to `/tmp/ds01-sync-downstream.log`.
 
 ## Log locations
 
@@ -119,7 +119,7 @@ Logs to `/tmp/ds01-deploy-downstream.log`.
 | `/var/log/ds01/events.jsonl` | Centralised structured event log |
 | `/var/log/ds01/gpu-allocations.log` | GPU allocation history |
 | `/var/log/ds01/config-watchdog.log` | Config-watchdog full-check output |
-| `/tmp/ds01-deploy-downstream.log` | Downstream backup output |
+| `/tmp/ds01-sync-downstream.log` | Downstream backup output |
 | `/var/lib/ds01/deploy/current-sha`, `history.log` | Deployed SHA + full release history (`sudo ds01-deploy --list`) |
 
 Log rotation is configured in `config/deploy/logrotate.d/ds01` (daily, 30-day

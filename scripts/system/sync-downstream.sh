@@ -28,7 +28,7 @@ REPO_DIR="/opt/ds01-infra"               # work-tree (live prod)
 STAGING_GIT_DIR="/opt/ds01-staging/.git" # repo (staging clone)
 REMOTE="downstream"
 BRANCH="main"
-LOG_FILE="/tmp/ds01-deploy-downstream.log"
+LOG_FILE="/tmp/ds01-sync-downstream.log"
 
 # Redirect all output to log (silent when run from cron/timer)
 exec >>"$LOG_FILE" 2>&1

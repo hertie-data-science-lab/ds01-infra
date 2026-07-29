@@ -7,7 +7,7 @@ System administration, deployment, and user management.
 | File | Purpose |
 |------|---------|
 | `sync.sh` | `ds01-deploy` — detached-prod release orchestrator: builds + smoke-tests in `/opt/ds01-staging`, rsyncs to `/opt/ds01-infra`, runs `deploy.sh`, health-gates, auto-rolls-back |
-| `deploy.sh` | Side-effects stage (symlinks to /usr/local/bin, manifest/permissions, systemd units, sudoers, code-caching daemon restarts) — invoked by `ds01-deploy`, or standalone to reapply side-effects against whatever is already on disk |
+| `deploy.sh` | `ds01-apply` — side-effects stage (symlinks to /usr/local/bin, manifest/permissions, systemd units, sudoers, code-caching daemon restarts); invoked by `ds01-deploy`, or run standalone to reapply side-effects against whatever is already on disk |
 | `install-prod-git-guards.sh` | Installs repo-owned git hooks (`.githooks/`) that refuse commits/rebases in the prod checkout — interim belt-and-suspenders, inert once prod has no `.git` |
 | `add-user-to-docker.sh` | Add user to docker group with proper setup |
 | `setup-resource-slices.sh` | Create systemd cgroup slices |

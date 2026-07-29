@@ -361,6 +361,9 @@ deploy_cmd "$USER_WIZARDS/user-setup" "new-user" "Legacy"
 
 # --- Admin Commands ---
 $VERBOSE && echo -e "${DIM}Admin:${NC}"
+# Command names intentionally differ from file names: ds01-apply = deploy.sh (reapply
+# side-effects), ds01-deploy = sync.sh (full release). Do NOT rename the files to match —
+# the runner sudoers grant keys on the literal sync.sh/deploy.sh paths.
 deploy_cmd "$INFRA_ROOT/scripts/system/deploy.sh" "ds01-apply" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/system/sync.sh" "ds01-deploy" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/admin/dashboard" "ds01-dashboard" "Admin"
@@ -483,8 +486,14 @@ for sudoers_file in "$INFRA_ROOT"/config/deploy/sudoers.d/ds01-*; do
     chmod 440 /etc/sudoers.d/"$name"
 done
 
-# Migration: the runner sudoers file was renamed ds01-sync-runner -> ds01-deploy-runner.
-# Drop the stale copy so the old (now dead) grant doesn't linger in /etc/sudoers.d/.
+# One-time migration for the ds01-sync->ds01-deploy / deploy->ds01-apply command rename.
+# The install loops above never prune, so the old command symlinks and the renamed
+# sudoers file are orphaned. Remove them so the old names are truly gone (a clean break,
+# not lingering aliases) and the stale passwordless-sudo grant doesn't survive. Safe to
+# delete this block once every prod box is past this release.
+for stale_link in /usr/local/bin/deploy /usr/local/bin/ds01-sync; do
+    [ -L "$stale_link" ] && rm -f "$stale_link"
+done
 rm -f /etc/sudoers.d/ds01-sync-runner
 
 echo -e "  ${GREEN}✓${NC} Sudoers.d files deployed (440, visudo-validated)"
