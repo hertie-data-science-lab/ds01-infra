@@ -42,6 +42,13 @@ sudo shared-workspace create pragmata-workspace \
     h.baker@hertie-school.lan d.dimmery@hertie-school.lan l.ruiz@hertie-school.lan
 ```
 
+**Finding one** - any member can list shared projects without sudo:
+
+```bash
+shared-workspace list                        # every shared project + member counts
+shared-workspace list pragmata-workspace     # who's a member of one
+```
+
 **Working in it** (any member):
 
 ```bash
