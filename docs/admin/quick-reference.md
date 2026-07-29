@@ -4,7 +4,7 @@
 
 **GPU-slot allocation + cgroups + priority allocation**
 
-> **Current state:** MIG is disabled. The server runs 4 full A100-40GB GPUs; one **GPU-slot** = one full GPU. Quotas are expressed in **GPU-equivalents (gpueq)** — a float where a full GPU = `1.0`. The model is MIG-ready; with MIG off, gpueq counts equal whole-GPU counts.
+> **Current state:** MIG is disabled. The server runs 4 full A100-40GB GPUs; one **GPU-slot** = one full GPU. Quotas are expressed in **GPU-equivalents (gpueq)** - a float where a full GPU = `1.0`. The model is MIG-ready; with MIG off, gpueq counts equal whole-GPU counts.
 
 - GPU allocation is **dynamic** with **priority** awareness
 - Today 4 users can run a full GPU each; with MIG enabled, slots subdivide for higher density
@@ -152,7 +152,7 @@ user_overrides:
 
 ## Optional: Enable MIG
 
-MIG is disabled today — no setup needed. To partition GPUs for higher density:
+MIG is disabled today - no setup needed. To partition GPUs for higher density:
 
 ```bash
 sudo nvidia-smi -i 0,1,2,3 -mig 1
@@ -283,17 +283,17 @@ tail /var/log/ds01/gpu-allocations.log | grep priority
 |--------|-----|-----|
 | Allocation | Manual | Dynamic + priority |
 | Quota unit | Whole GPUs | GPU-equivalents (gpueq, float) |
-| Per-container cap | — | `max_gpu_slots_per_container` |
+| Per-container cap | - | `max_gpu_slots_per_container` |
 | MIG-ready | No | Yes (slots weight by compute fraction) |
 
 ---
 
 ## Files Reference
 
-- `scripts/docker/gpu_allocator.py` — slot + priority aware allocator
-- `scripts/monitoring/gpu-status-dashboard.py` — status dashboard
-- `scripts/system/setup-var-directories.sh` — state/log directories
-- `config/runtime/resource-limits.yaml` — priorities, reservations, gpueq quotas
-- `scripts/docker/get_resource_limits.py` — per-user limit lookup
+- `scripts/docker/gpu_allocator.py` - slot + priority aware allocator
+- `scripts/monitoring/gpu-status-dashboard.py` - status dashboard
+- `scripts/system/setup-var-directories.sh` - state/log directories
+- `config/runtime/resource-limits.yaml` - priorities, reservations, gpueq quotas
+- `scripts/docker/get_resource_limits.py` - per-user limit lookup
 
 **Full docs:** `/opt/ds01-infra/docs/admin/`

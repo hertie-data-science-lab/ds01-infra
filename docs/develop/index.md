@@ -6,21 +6,21 @@ slug: /
 
 # Developer Documentation
 
-Documentation for **contributing to and developing DS01** — the multi-user GPU
+Documentation for **contributing to and developing DS01** - the multi-user GPU
 container platform.
 
 ## Start here
 
-- **[Contributing](./contributing.md)** — development setup, local CI, commit
+- **[Contributing](./contributing.md)** - development setup, local CI, commit
   conventions, the pull-request flow, and code style.
-- **[Subsystem references](./subsystem-references.md)** — pointers into the
+- **[Subsystem references](./subsystem-references.md)** - pointers into the
   in-repo READMEs that document each script layer and subsystem in depth.
 
 ## Related
 
-- **[Admin & Ops docs](/admin)** — architecture, installation, system
+- **[Admin & Ops docs](/admin)** - architecture, installation, system
   configuration, monitoring, and maintenance.
-- **[User Guide](/guide)** — the end-user documentation.
+- **[User Guide](/guide)** - the end-user documentation.
 - **[Source on GitHub](https://github.com/hertie-data-science-lab/ds01-infra)**
 
 :::note

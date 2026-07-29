@@ -67,8 +67,8 @@ sudo ./run-tests.sh system   # Real system (~15 min, needs root + GPU)
 | **integration** | 150 | Medium | Docker (optional) | Real scripts via subprocess |
 | **system** | 50 | Slow (~15 min) | Docker + GPU + sudo | Full system with real containers |
 
-Of the 50 system tests, 37 don't need a GPU (`system and not requires_gpu`) — that's the
-subset CI runs nightly Mon–Sat; the full 50 (including the 13 GPU-allocation tests) run
+Of the 50 system tests, 37 don't need a GPU (`system and not requires_gpu`) - that's the
+subset CI runs nightly Mon-Sat; the full 50 (including the 13 GPU-allocation tests) run
 Sunday and on manual/`workflow_call` dispatch. See
 [docs/admin/ci.md](../docs/admin/ci.md) for the CI scheduling.
 

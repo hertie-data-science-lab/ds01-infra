@@ -63,10 +63,10 @@ sudo ds01-deploy --ref vX.Y.Z
 ```
 
 `ds01-deploy` builds and smoke-tests the tag in the `/opt/ds01-staging` clone, rsyncs it to
-the detached prod directory `/opt/ds01-infra` (no `.git` there — never `git pull`/`checkout`
+the detached prod directory `/opt/ds01-infra` (no `.git` there - never `git pull`/`checkout`
 in prod), runs `deploy.sh`'s side-effects, and health-gates the live system, auto-rolling
 back to the last good SHA on failure. `current-sha` and release history live outside the
-tree in `/var/lib/ds01/deploy/` (`current-sha`, `history.log`) — not in-tree `.git`.
+tree in `/var/lib/ds01/deploy/` (`current-sha`, `history.log`) - not in-tree `.git`.
 
 Manual operations (admin, on the box):
 
@@ -78,7 +78,7 @@ sudo ds01-deploy --list          # show release history + current SHA
 ```
 
 `sudo ds01-apply` (`deploy.sh`) on its own only reapplies side-effects (symlinks, systemd
-units, sudoers, permissions) against whatever code is already on disk in prod — it does
+units, sudoers, permissions) against whatever code is already on disk in prod - it does
 not fetch or change code. Use `version` to check what's actually deployed; it reads
 `/var/lib/ds01/deploy/current-sha` and reports `main (detached prod)@<sha>`.
 

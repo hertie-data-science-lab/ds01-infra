@@ -15,12 +15,12 @@ Hybrid resource management system built on **GPU-slot allocation**:
 
 ## Concepts: slots vs GPU-equivalents
 
-- **GPU-slot** — an allocatable GPU unit. Today (MIG off) one slot = one full A100. If MIG were enabled, a slot could be a single MIG instance.
-- **GPU-equivalent (gpueq)** — the fair-share *quota* unit, a floating-point compute fraction. A full GPU is `1.0`; a MIG instance is its compute fraction (`compute_slices / 7`). Weights are computed live per allocation, so the model is correct under heterogeneous or partial MIG. With MIG off, all weights are `1.0` and gpueq == slot count.
+- **GPU-slot** - an allocatable GPU unit. Today (MIG off) one slot = one full A100. If MIG were enabled, a slot could be a single MIG instance.
+- **GPU-equivalent (gpueq)** - the fair-share *quota* unit, a floating-point compute fraction. A full GPU is `1.0`; a MIG instance is its compute fraction (`compute_slices / 7`). Weights are computed live per allocation, so the model is correct under heterogeneous or partial MIG. With MIG off, all weights are `1.0` and gpueq == slot count.
 
 Two distinct caps per user (see `config/runtime/resource-limits.yaml`):
-- `max_gpu_equivalents` — float, total fair-share quota **across all** the user's containers.
-- `max_gpu_slots_per_container` — integer, max distinct GPU/MIG units in **a single** container.
+- `max_gpu_equivalents` - float, total fair-share quota **across all** the user's containers.
+- `max_gpu_slots_per_container` - integer, max distinct GPU/MIG units in **a single** container.
 
 ---
 
@@ -41,16 +41,16 @@ Optional (MIG enabled): each A100 can be partitioned into MIG instances
   → each instance is one slot, weighted by its compute fraction (slices/7)
 ```
 
-The allocator auto-detects whether MIG is enabled and allocates accordingly — no code
+The allocator auto-detects whether MIG is enabled and allocates accordingly - no code
 change is needed to move between full-GPU and MIG modes.
 
 ### 2. **Dynamic Allocation with Priority**
 
 **Priority order (highest first):**
-1. **Specific overrides** — reserved resources
-2. **Admins** — no limits
-3. **Faculty** / **Researchers** — higher quotas (see config for exact gpueq values)
-4. **Students** — base quotas
+1. **Specific overrides** - reserved resources
+2. **Admins** - no limits
+3. **Faculty** / **Researchers** - higher quotas (see config for exact gpueq values)
+4. **Students** - base quotas
 
 Exact numeric priorities live in `config/runtime/resource-limits.yaml`.
 
@@ -83,7 +83,7 @@ Exact numeric priorities live in `config/runtime/resource-limits.yaml`.
 
 ### Scenario 1: Student at Limit
 
-**Alice (student — `max_gpu_equivalents: 2.0`, `max_gpu_slots_per_container: 2`, 32 CPUs per container):**
+**Alice (student - `max_gpu_equivalents: 2.0`, `max_gpu_slots_per_container: 2`, 32 CPUs per container):**
 
 ```bash
 # 1. Launch first container with a GPU
@@ -156,7 +156,7 @@ user_overrides:
 
 ### **Step 1 (optional): Enable MIG**
 
-MIG is **disabled** today and the system runs 4 full GPUs — no MIG setup is required. Enable
+MIG is **disabled** today and the system runs 4 full GPUs - no MIG setup is required. Enable
 MIG only if you want to partition GPUs for higher user density:
 
 ```bash
@@ -178,7 +178,7 @@ fraction. With MIG off, this step is skipped entirely.
 
 ### **Step 2: Set up /var directories**
 
-Prod (`/opt/ds01-infra`) is a detached directory with no `.git` — it is kept current via
+Prod (`/opt/ds01-infra`) is a detached directory with no `.git` - it is kept current via
 `ds01-deploy`, not `git pull` (see [Versioning & Releases](./versioning.md)). Run the setup
 script directly against the already-deployed code:
 
@@ -311,7 +311,7 @@ ds01-gpu-status
 # Util: 85% | Mem: 36000/40960 MB
 # - alice-training (alice, priority=low, 2h 15m)
 #
-# Slot 1: 0 containers — AVAILABLE
+# Slot 1: 0 containers - AVAILABLE
 # ...
 
 # NVIDIA status (mig list only returns instances if MIG is enabled)
@@ -420,8 +420,8 @@ python3 /opt/ds01-infra/tests/functional/test_gpu_allocator_functional.py
 1. ✓ Set up /var directories
 2. ✓ Create systemd slices
 3. ✓ Initialize the GPU allocator
-4. ✓ Test thoroughly — **complete (Nov 2025)**
-5. ✓ Full-GPU / MIG compatibility — **complete (Nov 2025)**
+4. ✓ Test thoroughly - **complete (Nov 2025)**
+5. ✓ Full-GPU / MIG compatibility - **complete (Nov 2025)**
 6. Integrate the allocator into `mlc-create-wrapper.sh`
 7. Set up storage quotas
 8. Implement idle detection

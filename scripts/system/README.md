@@ -62,14 +62,14 @@ sudo /opt/ds01-infra/scripts/system/deploy.sh
 **What it does:**
 1. Validates `config/runtime/resource-limits.yaml` and enforces the permissions
    manifest (`config/permissions-manifest.sh`)
-2. Symlinks all commands into `/usr/local/bin/` (atomic swap, not copies — see
+2. Symlinks all commands into `/usr/local/bin/` (atomic swap, not copies - see
    [system-config.md](../../docs/admin/system-config.md))
 3. Deploys profile.d/sudoers.d/cron.d files, systemd units, and restarts the
    code-caching daemons (`ds01-exporter`, `ds01-container-owner-tracker`,
    `ds01-container-sync`) so they pick up new code
 4. Makes commands accessible to all users
 
-`deploy.sh` only reapplies side-effects against the code **already on disk** —
+`deploy.sh` only reapplies side-effects against the code **already on disk** -
 it does not fetch new code. To update the code first, use `ds01-deploy` (see
 [maintenance.md](../../docs/admin/maintenance.md)).
 
@@ -250,7 +250,7 @@ cat /var/lib/ds01/opa/container-owners.json | python3 -m json.tool
 > **Legacy walkthrough below predates the detached-prod model.** `/opt/ds01-infra` is now
 > a real directory with no `.git`, populated and updated via `ds01-deploy` (see "Updating
 > Deployment" below, [Versioning & Releases](../../docs/admin/versioning.md), and the root
-> [README](../../README.md#getting-started) for the current bootstrap flow) — do not
+> [README](../../README.md#getting-started) for the current bootstrap flow) - do not
 > `git clone`/`git pull` straight into `/opt/ds01-infra`.
 
 ### Initial Deployment
@@ -308,7 +308,7 @@ systemctl status ds01.slice
 
 **Update code:**
 
-`/opt/ds01-infra` is a detached release directory (no `.git`) — it is updated via
+`/opt/ds01-infra` is a detached release directory (no `.git`) - it is updated via
 `ds01-deploy` (staging clone + rsync + health gate), not `git pull`:
 
 ```bash

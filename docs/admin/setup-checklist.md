@@ -1,6 +1,6 @@
 # Setup Checklist
 
-Condensed from [Installation](./installation.md) — full detail and grounding for each
+Condensed from [Installation](./installation.md) - full detail and grounding for each
 step lives there. Use this as a fresh-box, top-to-bottom checklist.
 
 ## Prerequisites
@@ -33,14 +33,14 @@ step lives there. Use this as a fresh-box, top-to-bottom checklist.
 - [ ] `which user-setup container-create ds01-apply ds01-deploy`
 - [ ] `sudo ds01-deploy --list` shows a current-sha
 - [ ] `version` reports the expected DS01 version and deployed SHA
-- [ ] `sudo ds01-health` — no CRITICAL findings
-- [ ] `systemctl status ds01.slice` — active
-- [ ] `sudo docker run --rm alpine echo ok` — a container actually runs
+- [ ] `sudo ds01-health` - no CRITICAL findings
+- [ ] `systemctl status ds01.slice` - active
+- [ ] `sudo docker run --rm alpine echo ok` - a container actually runs
 
 ## Optional
 
-- [ ] `setup-opa-authz.sh` — only if moving off the parked OPA-plugin path
-- [ ] `deploy-pam-bashrc.sh` / `deploy-automated-path.sh` — only if `/usr/local/bin` isn't
+- [ ] `setup-opa-authz.sh` - only if moving off the parked OPA-plugin path
+- [ ] `deploy-pam-bashrc.sh` / `deploy-automated-path.sh` - only if `/usr/local/bin` isn't
       showing up in `PATH` for some login path despite `config/deploy/profile.d/ds01-path.sh`
 
 ## If migrating an existing Phase-1 (live-git-checkout) prod

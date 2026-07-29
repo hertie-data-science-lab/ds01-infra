@@ -38,9 +38,9 @@ Real-time operational view. Use this for day-to-day monitoring.
 | System Health | CPU load average, memory available %, disk usage, scrape target status table | Infrastructure health |
 
 Key indicators:
-- **Unmanaged GPU Containers > 0** — containers bypassing DS01 wrapper (red alert)
-- **Unrestricted GPU Access > 0** — `--gpus all` usage (dark-red alert)
-- **Scrape Targets table** — any DOWN rows need investigation
+- **Unmanaged GPU Containers > 0** - containers bypassing DS01 wrapper (red alert)
+- **Unrestricted GPU Access > 0** - `--gpus all` usage (dark-red alert)
+- **Scrape Targets table** - any DOWN rows need investigation
 
 ### DS01 User Detail (`ds01-user`)
 
@@ -62,7 +62,7 @@ Long-term trend analysis. Default range: last 7 days.
 ### NVIDIA DCGM GPU Metrics (`nvidia-dcgm`)
 
 Raw NVIDIA DCGM metrics: temperature, power, utilisation, memory, SM clocks, tensor core utilisation.
-Use for GPU hardware debugging. Keep as-is — managed upstream by NVIDIA.
+Use for GPU hardware debugging. Keep as-is - managed upstream by NVIDIA.
 
 ---
 
@@ -79,8 +79,8 @@ Use for GPU hardware debugging. Keep as-is — managed upstream by NVIDIA.
 Alerts route to Microsoft Teams via Power Automate webhook (configured in `monitoring/alertmanager/alertmanager.yml`).
 
 Two receivers:
-- `ds01-teams` — warning/info alerts (group_wait: 5m, repeat: 4h)
-- `ds01-teams-critical` — critical alerts (group_wait: 30s, repeat: 1h)
+- `ds01-teams` - warning/info alerts (group_wait: 5m, repeat: 4h)
+- `ds01-teams-critical` - critical alerts (group_wait: 30s, repeat: 1h)
 
 ### Silencing Alerts
 
@@ -175,7 +175,7 @@ Use after editing `prometheus.yml`, `ds01_alerts.yml`, `ds01_recording.yml`, or 
 > in the `/opt/ds01-staging` clone, whose git checkout inherits a restrictive umask
 > (`0077`) and writes updated config files mode `600`; `ds01-deploy` then rsyncs those
 > modes straight through to prod, where the Prometheus/Grafana container users can't
-> read them — a raw `curl -X POST .../-/reload` then fails with HTTP 500 and silently
+> read them - a raw `curl -X POST .../-/reload` then fails with HTTP 500 and silently
 > keeps the old rules. `monitoring-manage reload` re-asserts world-read on the config
 > trees first (`sudo ds01-apply` also does, via `permissions-manifest.sh`).
 
@@ -193,7 +193,7 @@ docker compose down       # Stop all (data preserved in named volumes)
 
 ### Container crash-looping
 
-Check permissions — config files must be readable (644):
+Check permissions - config files must be readable (644):
 ```bash
 ls -la /opt/ds01-infra/monitoring/prometheus/
 ls -la /opt/ds01-infra/monitoring/alertmanager/
@@ -210,8 +210,8 @@ docker logs ds01-grafana --tail 100
 
 1. Check the metric exists in Prometheus: `http://localhost:9090/graph`
 2. Enter the metric name (e.g., `ds01_gpu_allocated`) and execute
-3. If empty — check the relevant scrape target is UP (`/targets`)
-4. If DCGM panels are empty — verify `ds01-dcgm-exporter` container is running:
+3. If empty - check the relevant scrape target is UP (`/targets`)
+4. If DCGM panels are empty - verify `ds01-dcgm-exporter` container is running:
    ```bash
    docker ps | grep dcgm
    docker logs --tail 50 ds01-dcgm-exporter
@@ -226,7 +226,7 @@ docker logs ds01-grafana --tail 100
    grep PLACEHOLDER /opt/ds01-infra/monitoring/alertmanager/alertmanager.yml
    # Should return nothing if webhook is configured
    ```
-4. Check inhibition rules — a critical alert may be suppressing related warnings
+4. Check inhibition rules - a critical alert may be suppressing related warnings
 
 ### Alerts firing but no Teams message
 
@@ -268,7 +268,7 @@ All monitoring config lives in `/opt/ds01-infra/monitoring/`.
 | `docker-compose.yaml` | Service definitions, image versions, resource limits, volume mounts |
 | `prometheus/prometheus.yml` | Scrape targets, intervals, alertmanager endpoint |
 | `prometheus/rules/ds01_alerts.yml` | Alert rules (24 rules across 5 groups) |
-| `prometheus/rules/ds01_recording.yml` | Recording rules — pre-computed aggregates (10 groups, ~45 rules) |
+| `prometheus/rules/ds01_recording.yml` | Recording rules - pre-computed aggregates (10 groups, ~45 rules) |
 | `alertmanager/alertmanager.yml` | Alert routing, inhibition rules, Teams webhook receivers |
 | `grafana/provisioning/datasources/` | Prometheus datasource auto-provisioning |
 | `grafana/provisioning/dashboards/` | Dashboard auto-provisioning config |
@@ -285,10 +285,10 @@ After editing any config file, reload the relevant service (see section 4). For 
 | `ds01_gpu_allocated` | ds01-exporter | Per-slot GPU allocation (labels: gpu_slot, user, container) |
 | `ds01_ssh_sessions_active` | ds01-exporter | SSH sessions per user (from `who`) |
 | `ds01_lifecycle_events_total` | ds01-exporter | Enforcement events last 24h (label: action) |
-| `ds01:system_gpu_utilization_avg` | recording rule | System-wide GPU utilisation avg (0–100 scale) |
+| `ds01:system_gpu_utilization_avg` | recording rule | System-wide GPU utilisation avg (0-100 scale) |
 | `ds01:user_gpu_seconds` | recording rule | Gauge proxy for GPU-hours attribution (GPU-seconds; integrate via `sum_over_time`) |
 | `DCGM_FI_DEV_GPU_TEMP` | dcgm-exporter | Per-GPU temperature (°C) |
-| `DCGM_FI_PROF_GR_ENGINE_ACTIVE` | dcgm-exporter | GPU compute engine active ratio (0–1 scale) |
+| `DCGM_FI_PROF_GR_ENGINE_ACTIVE` | dcgm-exporter | GPU compute engine active ratio (0-1 scale) |
 | `container_cpu_usage_seconds_total` | cAdvisor | Per-container CPU usage |
 | `container_memory_usage_bytes` | cAdvisor | Per-container memory usage |
 | `node_load15` | node-exporter | System 15-minute load average |
