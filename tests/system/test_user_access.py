@@ -54,7 +54,7 @@ def test_runtime_dir_is_world_traversable(d):
     assert mode & stat.S_IXOTH, (
         f"{d} is {oct(mode)} — not world-traversable (o+x); non-owner users cannot "
         f"reach the command surface. Enforced by permissions-manifest.sh (runtime dirs) "
-        f"and ds01-deploy's rsync --chmod=D755."
+        f"and ds01-sync's rsync --chmod=D755."
     )
 
 
