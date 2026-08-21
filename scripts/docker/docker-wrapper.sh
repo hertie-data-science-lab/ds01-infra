@@ -252,12 +252,13 @@ detect_container_type() {
 
 # Extract the GPU request value (e.g., "all", "1", "device=GPU-xxx")
 get_gpu_request_value() {
-    local prev_arg=""
+    local prev_arg="" value="" found=false
     for arg in "$@"; do
         case "$arg" in
             --gpus=*)
-                echo "${arg#--gpus=}"
-                return 0
+                value="${arg#--gpus=}"
+                found=true
+                break
                 ;;
             --gpus)
                 # Next arg is the value
@@ -266,13 +267,20 @@ get_gpu_request_value() {
                 ;;
         esac
         if [[ $prev_arg == "--gpus" ]]; then
-            echo "$arg"
-            return 0
+            value="$arg"
+            found=true
+            break
         fi
         prev_arg="$arg"
     done
-    echo ""
-    return 1
+    if ! $found; then
+        echo ""
+        return 1
+    fi
+    # Strip docker's literal-quote wrapper ('"device=UUID1,UUID2"') so
+    # downstream pattern matches see a canonical value.
+    value="${value#\"}"
+    echo "${value%\"}"
 }
 
 # ============================================================================
@@ -427,39 +435,6 @@ allocate_gpu_for_container() {
         # Wait before retry
         sleep $GPU_ALLOCATION_RETRY_INTERVAL
     done
-}
-
-# Rewrite docker args to replace --gpus with allocated device
-rewrite_gpu_args() {
-    local gpu_uuid="$1"
-    shift
-
-    local args=()
-    local skip_next=false
-
-    for arg in "$@"; do
-        if $skip_next; then
-            skip_next=false
-            continue
-        fi
-
-        case "$arg" in
-            --gpus=*)
-                # Replace with specific device
-                args+=("--gpus" "\"device=$gpu_uuid\"")
-                ;;
-            --gpus)
-                # Skip this and the next arg (the value)
-                skip_next=true
-                args+=("--gpus" "\"device=$gpu_uuid\"")
-                ;;
-            *)
-                args+=("$arg")
-                ;;
-        esac
-    done
-
-    echo "${args[@]}"
 }
 
 # Get idle timeout for container type
@@ -1281,14 +1256,14 @@ main() {
                 fi
 
                 case "$arg" in
-                    --gpus=*)
-                        # Replace with specific device
-                        FINAL_ARGS+=("--gpus" "device=$GPU_UUID")
-                        ;;
-                    --gpus)
-                        # Skip this and the next arg (the value), replace with our allocation
-                        skip_next=true
-                        FINAL_ARGS+=("--gpus" "device=$GPU_UUID")
+                    --gpus | --gpus=*)
+                        # Replace with our allocation. Literal inner quotes required:
+                        # docker splits unquoted --gpus values on commas, rejecting
+                        # multi-GPU "device=UUID1,UUID2".
+                        if [ "$arg" = "--gpus" ]; then
+                            skip_next=true # value is the next arg
+                        fi
+                        FINAL_ARGS+=("--gpus" "\"device=$GPU_UUID\"")
                         ;;
                     *)
                         FINAL_ARGS+=("$arg")
