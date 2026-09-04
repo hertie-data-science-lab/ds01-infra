@@ -15,6 +15,8 @@ Admin tools, dashboards, and system management utilities.
 | `user-activity-report` | Generate user activity reports |
 | `help` | System help |
 | `version` | Show DS01 version - reads `/var/lib/ds01/deploy/current-sha`, reports `main (detached prod)@<sha>` |
+| `dsl-scheduled-release.sh` | Not a CLI - run by `dsl-scheduled-release.timer` (`:00/:15/:30/:45`); dispatches + observes the teaching toolkit's `Scheduled release` workflow in every course org. Runbook: `docs/admin/maintenance.md` |
+| `dsl-alert.sh` | Not a CLI - `OnFailure=` target (`dsl-alert@.service`); posts a failed unit's last 20 journal lines to the Teams webhook `config-watchdog.sh` uses |
 
 ## Common Operations
 

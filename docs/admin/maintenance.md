@@ -100,6 +100,77 @@ any file under `config/runtime/`) directly in prod - it will be reverted at the 
 PR into `main`. Make config changes in a dev clone, land them via PR, then release
 with `ds01-deploy`.
 
+## DSL scheduled-release driver
+
+`dsl-scheduled-release.timer` fires at `:00/:15/:30/:45` and runs
+`scripts/admin/dsl-scheduled-release.sh`, which sends a `scheduled-release`
+`repository_dispatch` to every DSL course org's `.github` repo (found by the
+`dsl-course-hub` topic) and then reads that org's recent runs back.
+
+Why ds01 drives it: the teaching toolkit's own GitHub Actions cron for that
+workflow - which carries every deadline-sensitive action in every course org -
+is delivered best-effort, with observed gaps of hours. The two schedules
+interleave (ours `:00/:15/:30/:45`, GitHub's `:07/:22/:37/:52`), so a fire lost
+on either side costs at most ~8 minutes. Why ds01 also *observes*: on GitHub
+every step of that workflow, including the step that opens the "workflow is
+failing" issue, uses the same bot token as the work, so a revoked token is a
+silent total outage. This read-back is the only signal from outside GitHub.
+
+Installed and enabled by `deploy.sh`, so every `ds01-apply` / `ds01-deploy`
+picks it up. Journal-only - no file under `/var/log/ds01/`:
+
+```bash
+journalctl -u dsl-scheduled-release -n 50     # recent ticks
+systemctl list-timers dsl-scheduled-release   # next fire
+```
+
+### Provisioning `/etc/dsl-scheduled-release.env`
+
+The one artefact **not** in the repo, so a release neither overwrites nor leaks
+it. Create it once, as root:
+
+```bash
+# Device flow - approve in a browser signed in as the DSL bot account, NOT as yourself
+gh auth login --hostname github.com --scopes public_repo
+gh auth token          # copy the gho_... value
+
+install -m 0600 -o root -g root /dev/null /etc/dsl-scheduled-release.env
+printf 'GH_TOKEN=%s\n' 'gho_...' >/etc/dsl-scheduled-release.env
+```
+
+`public_repo` is the entire scope needed: the `.github` hub repos are public and
+`POST /dispatches` only needs write on them. Device-flow OAuth tokens do not
+expire. `GH_TOKEN` from this file also overrides root's own `gh` login, so the
+driver can never fall back to an admin credential.
+
+### Testing one tick
+
+```bash
+sudo systemctl start dsl-scheduled-release.service
+journalctl -u dsl-scheduled-release -n 30
+```
+
+A healthy tick logs only the summary line, e.g.
+`dispatched=26 ok=26 pruned=0 failing=0 silent=0`.
+
+### Reading the log
+
+| Word | Meaning | Action |
+|------|---------|--------|
+| `prune <org>` | Dispatch returned 404 - the org is gone, GitHub's search index still lists it | None; clears itself |
+| `token-dead <org>` | Dispatch returned 401/403 - the token in the env file is revoked or lost its scope | Reissue the token and rewrite the env file |
+| `failing <org>` | That org's last three *completed* runs all failed | Check the org's Actions tab - usually its own `DSL_BOT_TOKEN` or a broken toolkit release |
+| `silent <org>` | No run started there in the last 60 min | Both drivers are missing that org - check the workflow exists and is `active` |
+
+Anything above except `prune` (plus a dispatch/observe error, or a truncated org
+search) makes the tick exit non-zero, which starts
+`dsl-alert@dsl-scheduled-release.service`: `scripts/admin/dsl-alert.sh` posts the
+unit's last 20 journal lines to the same Teams webhook `config-watchdog.sh` uses
+(`DS01_TEAMS_WEBHOOK_URL`, else `config/runtime/teams-webhook-url.txt`). With no
+webhook configured the alert is a journal-only no-op. The driver prints org names
+and HTTP status codes only - never an API response body, which can carry student
+names.
+
 ## Downstream backup
 
 `scripts/system/sync-downstream.sh` (daily at 05:00, as the `datasciencelab`
@@ -120,6 +191,7 @@ Logs to `/tmp/ds01-sync-downstream.log`.
 | `/var/log/ds01/gpu-allocations.log` | GPU allocation history |
 | `/var/log/ds01/config-watchdog.log` | Config-watchdog full-check output |
 | `/tmp/ds01-sync-downstream.log` | Downstream backup output |
+| `journalctl -u dsl-scheduled-release` | DSL scheduled-release driver ticks (journal only, by design) |
 | `/var/lib/ds01/deploy/current-sha`, `history.log` | Deployed SHA + full release history (`sudo ds01-deploy --list`) |
 
 Log rotation is configured in `config/deploy/logrotate.d/ds01` (daily, 30-day
