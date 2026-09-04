@@ -599,6 +599,34 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# DSL scheduled-release driver
+# ---------------------------------------------------------------------------
+# Drives the teaching toolkit's `Scheduled release` workflow in every course org
+# on a punctual timer, because GitHub delivers its cron best-effort. The alert
+# template is installed but never enabled: only the driver's OnFailure= starts it.
+# /etc/dsl-scheduled-release.env is provisioned by hand and is NOT in the repo
+# (docs/admin/maintenance.md), so a missing one is a warning, not a failure.
+
+if [ -f "$INFRA_ROOT/config/deploy/systemd/dsl-scheduled-release.timer" ]; then
+    echo -e "${DIM}Deploying DSL scheduled-release driver...${NC}"
+    for unit in dsl-scheduled-release.timer dsl-scheduled-release.service "dsl-alert@.service"; do
+        cp "$INFRA_ROOT/config/deploy/systemd/$unit" /etc/systemd/system/
+    done
+    systemctl daemon-reload
+    systemctl enable dsl-scheduled-release.timer >/dev/null 2>&1
+    systemctl start dsl-scheduled-release.timer >/dev/null 2>&1
+
+    if [ ! -f /etc/dsl-scheduled-release.env ]; then
+        echo -e "  ${YELLOW}!${NC} /etc/dsl-scheduled-release.env missing — driver will fail until provisioned"
+        echo -e "  ${DIM}  See docs/admin/maintenance.md → DSL scheduled-release driver${NC}"
+    elif systemctl is-active --quiet dsl-scheduled-release.timer; then
+        echo -e "  ${GREEN}✓${NC} DSL scheduled-release timer enabled and started"
+    else
+        echo -e "  ${YELLOW}!${NC} DSL scheduled-release timer not running (check: systemctl status dsl-scheduled-release.timer)"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Code-caching daemons: exporter, container-owner-tracker, container-sync
 # ---------------------------------------------------------------------------
 # These three long-running services import their Python once at start and only

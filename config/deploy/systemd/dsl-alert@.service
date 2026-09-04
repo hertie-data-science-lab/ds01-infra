@@ -1,0 +1,14 @@
+[Unit]
+Description=Teams Alert for Failed Unit %i
+Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
+# Started only by another unit's OnFailure=; never enabled, so no [Install].
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/ds01-infra/scripts/maintenance/dsl-alert.sh %i
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dsl-alert
