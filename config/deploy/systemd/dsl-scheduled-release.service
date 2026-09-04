@@ -1,0 +1,29 @@
+[Unit]
+Description=DSL Scheduled-Release Driver
+Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
+After=network-online.target
+Wants=network-online.target
+# Every tick that alerts must reach a human outside GitHub - see dsl-alert@.service.
+OnFailure=dsl-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+
+# The one artefact deliberately NOT in this repo, so a release never overwrites
+# or leaks it: root:root 0600, created on the box by an admin (steps in
+# docs/admin/maintenance.md). Holds GH_TOKEN= only - the DSL bot account's OAuth
+# token with `public_repo` scope and nothing else, from a
+# `gh auth login --scopes public_repo` device flow approved as the bot. Device-flow
+# OAuth tokens do not expire. GH_TOKEN also overrides root's own `gh` login, so
+# the driver can never reach for an admin credential.
+EnvironmentFile=/etc/dsl-scheduled-release.env
+
+ExecStart=/opt/ds01-infra/scripts/admin/dsl-scheduled-release.sh
+# ~26 orgs x (dispatch + observe), each curl capped at 30s.
+TimeoutStartSec=300
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dsl-scheduled-release

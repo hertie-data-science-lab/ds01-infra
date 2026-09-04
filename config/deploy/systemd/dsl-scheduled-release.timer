@@ -1,0 +1,18 @@
+[Unit]
+Description=DSL Scheduled-Release Driver Timer
+Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
+Requires=dsl-scheduled-release.service
+
+[Timer]
+# The teaching toolkit's own `Scheduled release` cron is delivered by GitHub
+# best-effort, so ds01 is the second, punctual driver. :00/:15/:30/:45
+# deliberately interleaves GitHub's :07/:22/:37/:52, so whichever driver loses a
+# fire the gap stays <= 8 min. (GitHub's "avoid contended minutes" guidance is
+# about its own cron scheduler; it does not apply to a REST call we make.)
+OnCalendar=*-*-* *:00,15,30,45:00
+AccuracySec=10s
+# A reboot spanning a tick must not silently skip a release moment.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
