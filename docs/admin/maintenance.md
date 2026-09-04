@@ -103,7 +103,7 @@ with `ds01-deploy`.
 ## DSL scheduled-release driver
 
 `dsl-scheduled-release.timer` fires at `:00/:15/:30/:45` and runs
-`scripts/admin/dsl-scheduled-release.sh`, which sends a `scheduled-release`
+`scripts/maintenance/dsl-scheduled-release.sh`, which sends a `scheduled-release`
 `repository_dispatch` to every DSL course org's `.github` repo (found by the
 `dsl-course-hub` topic) and then reads that org's recent runs back.
 
@@ -164,7 +164,7 @@ A healthy tick logs only the summary line, e.g.
 
 Anything above except `prune` (plus a dispatch/observe error, or a truncated org
 search) makes the tick exit non-zero, which starts
-`dsl-alert@dsl-scheduled-release.service`: `scripts/admin/dsl-alert.sh` posts the
+`dsl-alert@dsl-scheduled-release.service`: `scripts/maintenance/dsl-alert.sh` posts the
 unit's last 20 journal lines to the same Teams webhook `config-watchdog.sh` uses
 (`DS01_TEAMS_WEBHOOK_URL`, else `config/runtime/teams-webhook-url.txt`). With no
 webhook configured the alert is a journal-only no-op. The driver prints org names

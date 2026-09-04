@@ -1,4 +1,4 @@
-"""Unit tests for scripts/admin/dsl-scheduled-release.sh.
+"""Unit tests for scripts/maintenance/dsl-scheduled-release.sh.
 
 The driver reaches GitHub only through `gh` and `curl`, so both are stubbed on
 PATH (plus `date`, to make "how old is the newest run" deterministic). The
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-DRIVER = REPO / "scripts/admin/dsl-scheduled-release.sh"
+DRIVER = REPO / "scripts/maintenance/dsl-scheduled-release.sh"
 
 pytestmark = [
     pytest.mark.unit,

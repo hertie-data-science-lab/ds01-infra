@@ -6,7 +6,7 @@ Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
 [Service]
 Type=oneshot
 User=root
-ExecStart=/opt/ds01-infra/scripts/admin/dsl-alert.sh %i
+ExecStart=/opt/ds01-infra/scripts/maintenance/dsl-alert.sh %i
 
 # Logging
 StandardOutput=journal

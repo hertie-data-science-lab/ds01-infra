@@ -19,7 +19,7 @@ User=root
 # the driver can never reach for an admin credential.
 EnvironmentFile=/etc/dsl-scheduled-release.env
 
-ExecStart=/opt/ds01-infra/scripts/admin/dsl-scheduled-release.sh
+ExecStart=/opt/ds01-infra/scripts/maintenance/dsl-scheduled-release.sh
 # ~26 orgs x (dispatch + observe), each curl capped at 30s.
 TimeoutStartSec=300
 
