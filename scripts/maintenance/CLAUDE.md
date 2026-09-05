@@ -22,7 +22,8 @@ ALL containers with GPU access are subject to lifecycle enforcement regardless o
 | `ensure-admin-sudo.sh` | Ensure admin has sudo access |
 | `config-watchdog.sh` | Detects drift in prod's `resource-limits.yaml` vs. the deployed SHA in the `/opt/ds01-staging` clone; restores it and Teams-alerts (`--full`, daily) |
 | `dsl-scheduled-release.sh` | Dispatches + observes the teaching toolkit's `Scheduled release` workflow in every course org; run by `dsl-scheduled-release.timer`, not cron. Runbook: `docs/admin/maintenance.md` |
-| `dsl-alert.sh` | `OnFailure=` target (`dsl-alert@.service`); posts a failed unit's last 20 journal lines to the same Teams webhook `config-watchdog.sh` resolves |
+| `dsl-alert.sh` | `OnFailure=` target (`dsl-alert@.service`); posts a failed unit's last 20 journal lines to the same Teams webhook `config-watchdog.sh` resolves, and to mail via `dsl-alert-mail.py`. Each channel optional; neither can fail the alerter |
+| `dsl-alert-mail.py` | The mail channel: one message through Microsoft Graph with the lab's Entra certificate credential, configured by `/etc/dsl-alert-mail.env`. Provisioning: `docs/admin/maintenance.md` |
 
 Note: `check-idle-containers.sh` is in `scripts/monitoring/` (see that CLAUDE.md)
 

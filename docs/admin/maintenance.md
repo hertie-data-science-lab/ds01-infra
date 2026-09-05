@@ -172,11 +172,55 @@ A healthy tick logs only the summary line, e.g.
 Anything above except `prune` (plus a `dispatch-failed`, or a truncated org
 search) makes the tick exit non-zero, which starts
 `dsl-alert@dsl-scheduled-release.service`: `scripts/maintenance/dsl-alert.sh` posts the
-unit's last 20 journal lines to the same Teams webhook `config-watchdog.sh` uses
-(`DS01_TEAMS_WEBHOOK_URL`, else `config/runtime/teams-webhook-url.txt`). With no
-webhook configured the alert is a journal-only no-op. The driver prints org names
-and HTTP status codes only - never an API response body, which can carry student
-names.
+unit's last 20 journal lines to two independent channels, either of which may be
+absent. Teams, via the same webhook `config-watchdog.sh` uses
+(`DS01_TEAMS_WEBHOOK_URL`, else `config/runtime/teams-webhook-url.txt`); and mail,
+via `dsl-alert-mail.py`, when `/etc/dsl-alert-mail.env` sets `DSL_ALERT_TO`. A
+channel that fails logs a `WARNING` and never fails the alerter. With neither
+configured the alert is a journal-only no-op. The driver prints org names and HTTP
+status codes only - never an API response body, which can carry student names.
+
+### Provisioning the mail alert
+
+The tenant disables SMTP AUTH, so mail goes through Microsoft Graph with the lab's
+Entra app certificate credential - the same app and the same certificate the
+teaching toolkit mails with. It already holds `Mail.Send`, admin-consented and
+scoped by an Exchange application access policy to the `datasciencelab` mailbox
+alone, so nothing needs granting in Entra.
+
+Two root-only files, neither in the repo. Create both as root:
+
+```bash
+# The credential: certificate then its unencrypted private key, in that order -
+# the same content as the toolkit org secret GRAPH_CLIENT_CERT.
+install -m 0600 -o root -g root /dev/null /etc/dsl-alert-graph.pem
+cat cert.cer key.pem >/etc/dsl-alert-graph.pem
+
+install -m 0600 -o root -g root /dev/null /etc/dsl-alert-mail.env
+cat >/etc/dsl-alert-mail.env <<'EOF'
+GRAPH_TENANT_ID=<tenant uuid>
+GRAPH_CLIENT_ID=<app registration uuid>
+GRAPH_SENDER=datasciencelab@hertie-school.org
+GRAPH_CLIENT_CERT_FILE=/etc/dsl-alert-graph.pem
+DSL_ALERT_TO=h.baker@hertie-school.org
+EOF
+```
+
+`dsl-alert@.service` reads the env file optionally, so a box without it keeps
+working. Set all five or none: a partly-filled file is reported by variable name
+and sends nothing.
+
+### Testing the mail alert
+
+```bash
+sudo systemctl start dsl-alert@dsl-scheduled-release.service
+journalctl -u dsl-alert -n 20
+```
+
+That mails the scheduled-release driver's current journal tail, whether or not the
+driver is failing, and logs one line: `alert mailed to h***@hertie-school.org
+(202)`. The mailer prints status codes and masked recipients only - never the token
+and never a Graph response body, which echoes the message back.
 
 ## Downstream backup
 

@@ -1,11 +1,21 @@
 [Unit]
-Description=Teams Alert for Failed Unit %i
+Description=Teams and Mail Alert for Failed Unit %i
 Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
 # Started only by another unit's OnFailure=; never enabled, so no [Install].
 
 [Service]
 Type=oneshot
 User=root
+
+# Optional (leading `-`): with no file the alert is Teams-only, or a journal-only
+# no-op. Deliberately NOT in this repo, so a release never overwrites or leaks it:
+# root:root 0600, created on the box by an admin (steps in
+# docs/admin/maintenance.md). Holds the mail channel's five variables -
+# GRAPH_TENANT_ID, GRAPH_CLIENT_ID, GRAPH_SENDER, GRAPH_CLIENT_CERT_FILE and
+# DSL_ALERT_TO. The certificate itself is a second 0600 file the fourth points at,
+# never a value here.
+EnvironmentFile=-/etc/dsl-alert-mail.env
+
 ExecStart=/opt/ds01-infra/scripts/maintenance/dsl-alert.sh %i
 
 # Logging
