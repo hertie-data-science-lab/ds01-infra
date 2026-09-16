@@ -61,6 +61,10 @@ jobs:
           PROBES: '3'
           PROBE_GAP: '60'
           # A queued run older than this is waiting on a runner that is not coming.
+          # runner-canary.yml queues one echo an hour precisely so this test has
+          # something to see: without it the only self-hosted work is a nightly suite
+          # and an occasional deploy, so a runner dying at 09:00 would go unreported
+          # until 03:00 the next day.
           STUCK_MINUTES: '60'
         run: |
           set -euo pipefail
