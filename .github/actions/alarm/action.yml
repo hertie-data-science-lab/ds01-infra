@@ -1,0 +1,125 @@
+name: Infra alarm
+description: >-
+  File or close one self-closing failure issue, and mail the maintainer behind a 6h
+  throttle. The issue is the durable record; the mail is the nudge.
+
+# Requires actions/checkout in the calling job (a local action always does) and, on the
+# job, `issues: write`. `actions: read` is optional and buys the failed step's log in the
+# mail.
+#
+# The caller must run this on ubuntu-latest and never on ds01-runner: a dead runner is one
+# of the faults this reports, and an alarm hosted on the thing it watches queues forever
+# beside the job it was meant to report.
+
+inputs:
+  state:
+    description: "'failing' files or comments; 'recovered' closes"
+    required: true
+  title:
+    description: The issue title, and the identity of this alarm
+    required: true
+  note:
+    description: The issue body, and the mail (state=failing)
+    required: false
+    default: ''
+  repo:
+    description: owner/name the issue lives in
+    required: true
+  run-url:
+    description: The run to link
+    required: true
+  github-token:
+    description: Token with issues:write on `repo`
+    required: true
+  graph-tenant-id:
+    required: false
+    default: ''
+    description: Entra tenant; mail is skipped when the Graph inputs are empty
+  graph-client-id:
+    required: false
+    default: ''
+    description: The lab's app registration
+  graph-client-cert:
+    required: false
+    default: ''
+    description: Certificate + private key as one PEM (secrets.GRAPH_CLIENT_CERT)
+  graph-sender:
+    required: false
+    default: ''
+    description: Mailbox to send as
+  alert-to:
+    required: false
+    default: ''
+    description: Recipient list
+  alert-cc:
+    required: false
+    default: ''
+    description: Standing archive Cc
+
+runs:
+  using: composite
+  steps:
+    - name: File or close the alarm issue
+      id: issue
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ALARM_REPO: ${{ inputs.repo }}
+        ALARM_TITLE: ${{ inputs.title }}
+        ALARM_NOTE: ${{ inputs.note }}
+        ALARM_RUN_URL: ${{ inputs.run-url }}
+        ALARM_STATE: ${{ inputs.state }}
+        ACTION_PATH: ${{ github.action_path }}
+      # Values reach the script through the environment, never interpolated into this
+      # shell: a `${{ }}` in a run block is pasted in before bash sees the line.
+      run: |
+        if [ "$ALARM_STATE" = "failing" ]; then mode=report; else mode=close; fi
+        "$ACTION_PATH/alarm.sh" "$mode"
+
+    # Only when the issue step actually reported, so the two channels fire together: a
+    # thread being kept quiet does not mail either.
+    # setup-python and not the runner's system interpreter: an Ubuntu system python is
+    # externally managed, and `pip install` into it is refused on exactly the images this
+    # is most likely to run on. It also makes `python3` below the interpreter that just
+    # got the dependency.
+    - name: Take an interpreter we may install into
+      if: inputs.state == 'failing' && steps.issue.outputs.report == 'true' && inputs.graph-client-cert != ''
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install the mailer's dependency
+      if: inputs.state == 'failing' && steps.issue.outputs.report == 'true' && inputs.graph-client-cert != ''
+      shell: bash
+      # The mailer's one external dependency. Nothing on a hosted runner has it, and
+      # nothing in this repo is pip-installable, so it is named here.
+      run: python3 -m pip install --quiet --disable-pip-version-check cryptography
+
+    - name: Mail the maintainer
+      if: inputs.state == 'failing' && steps.issue.outputs.report == 'true' && inputs.graph-client-cert != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        ALARM_TITLE: ${{ inputs.title }}
+        ALARM_NOTE: ${{ inputs.note }}
+        REPO: ${{ inputs.repo }}
+        GRAPH_TENANT_ID: ${{ inputs.graph-tenant-id }}
+        GRAPH_CLIENT_ID: ${{ inputs.graph-client-id }}
+        GRAPH_CLIENT_CERT: ${{ inputs.graph-client-cert }}
+        GRAPH_SENDER: ${{ inputs.graph-sender }}
+        DSL_ALERT_TO: ${{ inputs.alert-to }}
+        DSL_ALERT_CC: ${{ inputs.alert-cc }}
+      # The failed step's log, when the job was given `actions: read` - it is the first
+      # thing anyone would click through for, and a mail that carries it is a mail that
+      # can be acted on from a phone. `|| true` throughout: the note and the run URL are
+      # the mail, and a missing tail must not cost it. Piped, never argv, so the tail
+      # cannot be reinterpreted by a shell.
+      #
+      # This step never fails the job. The alarm has already said what it had to say, and
+      # a red alarm job on top of a red run tells nobody anything new.
+      run: |
+        {
+          printf '%s\n' "$ALARM_NOTE"
+          echo
+          gh run view "$GITHUB_RUN_ID" --repo "$REPO" --log-failed 2>/dev/null | tail -n 30 || true
+        } | python3 "$GITHUB_WORKSPACE/scripts/maintenance/dsl-alert-mail.py" "[ds01] $ALARM_TITLE" || true

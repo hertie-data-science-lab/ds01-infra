@@ -1,0 +1,226 @@
+name: Infra alarms
+
+# Two dead-man's switches for faults that produce no failing run anywhere, and so alarm
+# nothing on their own:
+#
+#   1. ds01-runner offline. deploy.yml and ci-system.yml both run on it. A run with no
+#      runner to take it does not fail - it QUEUES, indefinitely, green-pending, and a
+#      release simply never happens. Nothing in GitHub ever says so.
+#   2. The scheduled-release dispatcher quiet. ds01's dsl-scheduled-release.timer drives
+#      every course org's `Scheduled release` workflow, which carries every deadline in
+#      every course. If the box, the timer or its token dies, the toolkit's own cadence.py
+#      is the alarm - but cadence.py runs INSIDE that workflow, so a dispatcher that has
+#      stopped takes its own watchdog with it. This is the outside observer.
+#
+# HONESTLY: this workflow rides a GitHub `schedule:`, and GitHub delivers those
+# best-effort - measured at 2-7% of the fires asked for in the course orgs, with observed
+# gaps of hours. So the hour below is a hope, not a guarantee, and a dropped fire delays
+# detection rather than losing it (both checks are stateless and read the current truth).
+# Accepted deliberately: the alternative is a watcher on ds01, and a watcher on the box
+# cannot report the box being down. The threshold is generous for the same reason.
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+# No ambient permissions; each job takes only what it needs. Note there is no
+# pull_request trigger here and there must never be one: the Graph secrets below would
+# then be readable from a branch.
+permissions: {}
+
+concurrency:
+  group: infra-alarms
+  cancel-in-progress: false
+
+jobs:
+  runner:
+    name: ds01-runner is online
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe the runner
+        id: probe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # repos/.../actions/runners needs repo ADMINISTRATION:read, which a workflow's
+          # GITHUB_TOKEN cannot be granted at all - `administration` is not one of the
+          # permissions a workflow may ask for. So the direct probe needs a fine-grained
+          # PAT. Without it this step still runs: the queue check below needs no such
+          # right and catches the same fault at the moment it starts costing something.
+          RUNNER_TOKEN: ${{ secrets.DSL_RUNNER_TOKEN }}
+          REPO: ${{ github.repository }}
+          # A runner restarts in seconds (a deploy restarts it, so do reboots). Three
+          # looks a minute apart is the threshold: long enough that maintenance is not an
+          # alarm, short enough that an hourly check still means something.
+          PROBES: '3'
+          PROBE_GAP: '60'
+          # A queued run older than this is waiting on a runner that is not coming.
+          STUCK_MINUTES: '60'
+        run: |
+          set -euo pipefail
+          state=ok
+          note=""
+
+          if [ -n "$RUNNER_TOKEN" ]; then
+            offline=0
+            for i in $(seq 1 "$PROBES"); do
+              status=$(GH_TOKEN="$RUNNER_TOKEN" gh api "repos/$REPO/actions/runners" \
+                --jq '.runners[] | select(.name == "ds01-runner") | .status' 2>/dev/null || echo "unreadable")
+              echo "probe $i: ${status:-absent}"
+              if [ "$status" = "online" ]; then
+                offline=0
+                break
+              fi
+              offline=$((offline + 1))
+              # `&&` would be the last command of the loop body, and a false test under
+              # `set -e` ends the step.
+              if [ "$i" -lt "$PROBES" ]; then sleep "$PROBE_GAP"; fi
+            done
+            if [ "$offline" -ge "$PROBES" ]; then
+              state=failing
+              note="ds01-runner did not report \`online\` on $PROBES probes a minute apart."
+            fi
+          else
+            echo "::warning::DSL_RUNNER_TOKEN is not set - the direct runner probe is inert (see docs/admin/maintenance.md)"
+          fi
+
+          # Works with the ambient token, and is the fault made concrete: a run that has
+          # been waiting an hour for a runner is a release or a nightly suite that is not
+          # going to happen.
+          cutoff=$(date -u -d "-$STUCK_MINUTES minutes" +%s)
+          # Pipe-delimited: a workflow name has spaces in it.
+          stuck=$(gh api "repos/$REPO/actions/runs?status=queued&per_page=50" \
+            --jq '.workflow_runs[] | "\(.created_at)|\(.name)|\(.html_url)"' 2>/dev/null || true)
+          while IFS='|' read -r created name url; do
+            [ -n "${created:-}" ] || continue
+            [ "$(date -u -d "$created" +%s)" -lt "$cutoff" ] || continue
+            state=failing
+            # $'\n' and not a literal newline: this is a YAML block scalar, and a line at
+            # column 0 would end it.
+            note="$note"$'\n'"Queued since $created with no runner to take it: $name - $url"
+          done <<<"$stuck"
+
+          {
+            echo "state=$state"
+            echo "note<<EOF"
+            echo "${note:-ds01-runner is online.}"
+            echo "EOF"
+          } >>"$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/alarm
+        with:
+          state: ${{ steps.probe.outputs.state == 'failing' && 'failing' || 'recovered' }}
+          repo: ${{ github.repository }}
+          title: ds01-runner is offline
+          note: |
+            ${{ steps.probe.outputs.note }}
+
+            While the runner is down, `Deploy` and `System CI` queue rather than fail, so
+            nothing else will say so. On the box: `systemctl status actions.runner.*`.
+            This issue closes itself once the runner answers again.
+
+            Checked hourly by `Infra alarms`, which rides a GitHub `schedule:` and is
+            therefore delivered best-effort — a quiet hour is not proof of health.
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          graph-tenant-id: ${{ secrets.GRAPH_TENANT_ID }}
+          graph-client-id: ${{ secrets.GRAPH_CLIENT_ID }}
+          graph-client-cert: ${{ secrets.GRAPH_CLIENT_CERT }}
+          graph-sender: ${{ secrets.GRAPH_SENDER }}
+          alert-to: h.baker@hertie-school.org
+          alert-cc: datasciencelab@hertie-school.org
+
+  dispatcher:
+    name: Scheduled-release dispatcher is alive
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Age the newest dispatch-driven run
+        id: probe
+        env:
+          # The hub repos are public, so the ambient token can read their runs; the bot
+          # token is preferred when the org has one, because cross-org reads are the
+          # first thing a tightened default would stop.
+          GH_TOKEN: ${{ secrets.DSL_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+          # ds01 dispatches every 15 minutes. Two hours is eight consecutive misses -
+          # comfortably past a reboot, a deploy or a GitHub incident, and well short of a
+          # teaching day.
+          SILENT_MINUTES: '120'
+          # Same topic dsl-scheduled-release.sh enumerates by, and the same page limit.
+          TOPIC: dsl-course-hub
+        run: |
+          set -euo pipefail
+          orgs=$(gh search repos --topic "$TOPIC" --limit 100 --json name,owner \
+            --jq '.[] | select(.name == ".github") | .owner.login' | sort -u)
+
+          if [ -z "$orgs" ]; then
+            # Not evidence the dispatcher is dead - evidence this check cannot see. Worth
+            # the same alarm: a watchdog that cannot look is a watchdog that is not there.
+            {
+              echo "state=failing"
+              echo "note=No repo carries the \`$TOPIC\` topic, so this check has nothing to watch. Either every course org is gone, or the token cannot search."
+            } >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          newest=0
+          for org in $orgs; do
+            created=$(gh api \
+              "repos/$org/.github/actions/workflows/scheduled-release.yml/runs?event=repository_dispatch&per_page=1" \
+              --jq '.workflow_runs[0].created_at // empty' 2>/dev/null || true)
+            [ -n "$created" ] || continue
+            seconds=$(date -u -d "$created" +%s 2>/dev/null || echo 0)
+            if [ "$seconds" -gt "$newest" ]; then newest=$seconds; fi
+          done
+
+          age=$((($(date -u +%s) - newest) / 60))
+          echo "newest dispatch-driven run: ${age} min ago (across $(echo "$orgs" | wc -w) orgs)"
+          if [ "$newest" -eq 0 ] || [ "$age" -gt "$SILENT_MINUTES" ]; then
+            {
+              echo "state=failing"
+              echo "note=No \`repository_dispatch\` run of \`Scheduled release\` in any course org for ${age} minutes (expected every 15)."
+            } >>"$GITHUB_OUTPUT"
+          else
+            echo "state=ok" >>"$GITHUB_OUTPUT"
+            echo "note=Last dispatch-driven run ${age} min ago." >>"$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/alarm
+        with:
+          state: ${{ steps.probe.outputs.state == 'failing' && 'failing' || 'recovered' }}
+          repo: ${{ github.repository }}
+          title: Scheduled-release dispatcher is quiet
+          note: |
+            ${{ steps.probe.outputs.note }}
+
+            `dsl-scheduled-release.timer` on ds01 drives every course org's `Scheduled
+            release` workflow, which carries every dated action in every course. GitHub's
+            own cron for that workflow delivers a small fraction of its fires, so with the
+            dispatcher down, deadlines ship late or not at all.
+
+            On the box: `systemctl list-timers dsl-scheduled-release` and
+            `journalctl -u dsl-scheduled-release -n 50`. A `token-dead` line means the
+            token in `/etc/dsl-scheduled-release.env` was revoked.
+
+            This is a BACKSTOP to the toolkit's own `cadence.py`, which cannot report a
+            dispatcher that has stopped because it runs inside the workflow the dispatcher
+            fires. It is checked hourly on a GitHub `schedule:`, which is itself delivered
+            best-effort — a quiet hour is not proof of health.
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          graph-tenant-id: ${{ secrets.GRAPH_TENANT_ID }}
+          graph-client-id: ${{ secrets.GRAPH_CLIENT_ID }}
+          graph-client-cert: ${{ secrets.GRAPH_CLIENT_CERT }}
+          graph-sender: ${{ secrets.GRAPH_SENDER }}
+          alert-to: h.baker@hertie-school.org
+          alert-cc: datasciencelab@hertie-school.org

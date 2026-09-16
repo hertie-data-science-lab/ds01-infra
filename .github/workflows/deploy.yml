@@ -49,3 +49,59 @@ jobs:
 
       - name: Release via ds01-deploy
         run: sudo /usr/local/bin/ds01-deploy --ref "${{ steps.tag.outputs.tag }}"
+
+  # The alarm runs on a HOSTED runner, never on ds01-runner. A deploy fails most often
+  # because the box it deploys to is unwell, and an alarm hosted on that box queues
+  # behind the job it was meant to report.
+  #
+  # Tag pushes only: a workflow_dispatch failure has somebody watching it, and a
+  # deliberate manual test going red should not file a ticket. A manual SUCCESS still
+  # closes the issue, because re-running by hand is how a person confirms the fix.
+  alarm:
+    name: Report a failed deploy
+    needs: deploy
+    if: failure() && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      actions: read  # the failed step's log, for the mail
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/alarm
+        with:
+          state: failing
+          repo: ${{ github.repository }}
+          title: Deploy is failing
+          note: |
+            A release to prod failed: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            Nothing retries it. The live runtime is whatever the last successful
+            `ds01-deploy` left behind — check `sudo ds01-deploy --list` on the box before
+            assuming the tag is live. This issue closes itself once a deploy succeeds.
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          graph-tenant-id: ${{ secrets.GRAPH_TENANT_ID }}
+          graph-client-id: ${{ secrets.GRAPH_CLIENT_ID }}
+          graph-client-cert: ${{ secrets.GRAPH_CLIENT_CERT }}
+          graph-sender: ${{ secrets.GRAPH_SENDER }}
+          alert-to: h.baker@hertie-school.org
+          alert-cc: datasciencelab@hertie-school.org
+
+  recovered:
+    name: Close the deploy alarm
+    needs: deploy
+    if: success()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/alarm
+        with:
+          state: recovered
+          repo: ${{ github.repository }}
+          title: Deploy is failing
+          run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
