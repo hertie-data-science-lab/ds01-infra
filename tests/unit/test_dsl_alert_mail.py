@@ -301,6 +301,127 @@ def test_no_subject_is_a_usage_line(mailer, env, posts, capsys):
     assert "usage" in capsys.readouterr().out
 
 
+# ------------------------------------------------------ recipients, Cc and the archive
+
+
+def _addresses(message, line):
+    return [r["emailAddress"]["address"] for r in message.get(line, [])]
+
+
+def test_a_comma_separated_to_reaches_everyone_named(mailer, env, posts, monkeypatch):
+    monkeypatch.setenv("DSL_ALERT_TO", f"{TO}, second@hertie-school.org")
+    assert mailer.main(["subject", BODY]) == 0
+    # One POST, not one per recipient: the text is identical for all of them.
+    assert len(posts.to(SEND_URL)) == 1
+    assert _addresses(_sent(posts)["message"], "toRecipients") == [
+        TO,
+        "second@hertie-school.org",
+    ]
+
+
+def test_the_archive_cc_rides_on_every_alert(mailer, env, posts, monkeypatch):
+    monkeypatch.setenv("DSL_ALERT_CC", SENDER)
+    assert mailer.main(["subject", BODY]) == 0
+    assert _addresses(_sent(posts)["message"], "ccRecipients") == [SENDER]
+
+
+def test_no_cc_line_is_sent_when_nothing_is_copied(mailer, env, posts):
+    assert mailer.main(["subject", BODY]) == 0
+    assert "ccRecipients" not in _sent(posts)["message"]
+
+
+def test_a_cc_flag_adds_to_the_archive_rather_than_replacing_it(mailer, env, posts, monkeypatch):
+    # The whole point of the asymmetry: a ticket notifier names the person who opened the
+    # ticket, and must not be able to drop the mailbox that keeps the record.
+    monkeypatch.setenv("DSL_ALERT_CC", SENDER)
+    assert mailer.main(["--cc", "student@students.hertie-school.org", "subject", BODY]) == 0
+    assert _addresses(_sent(posts)["message"], "ccRecipients") == [
+        SENDER,
+        "student@students.hertie-school.org",
+    ]
+
+
+def test_a_to_flag_replaces_the_environment(mailer, env, posts):
+    assert mailer.main(["--to", "someone@hertie-school.org", "subject", BODY]) == 0
+    assert _addresses(_sent(posts)["message"], "toRecipients") == ["someone@hertie-school.org"]
+
+
+def test_an_address_on_both_lines_gets_one_copy(mailer, env, posts, monkeypatch):
+    monkeypatch.setenv("DSL_ALERT_CC", TO)
+    assert mailer.main(["--cc", TO, "subject", BODY]) == 0
+    message = _sent(posts)["message"]
+    assert _addresses(message, "toRecipients") == [TO]
+    assert "ccRecipients" not in message
+
+
+def test_a_malformed_cc_is_dropped_and_the_alert_still_goes(mailer, env, posts, capsys):
+    # Graph rejects the whole message for one bad recipient, and the Cc can carry whatever
+    # a public web form collected - so one typo must not cost the notification itself.
+    assert mailer.main(["--cc", "not-an-address", "subject", BODY]) == 0
+    assert "ccRecipients" not in _sent(posts)["message"]
+    out = capsys.readouterr().out
+    assert "dropped" in out
+    assert "not-an-address" not in out  # masked, like every other address
+
+
+def test_a_malformed_to_sends_nothing(mailer, env, posts, capsys, monkeypatch):
+    # The To line is ours, from a file we control: a bad address there is a
+    # misconfiguration, and delivering to the rest would quietly send less than was asked.
+    monkeypatch.setenv("DSL_ALERT_TO", f"{TO},nonsense")
+    assert mailer.main(["subject", BODY]) == 1
+    assert posts.to(SEND_URL) == []
+    assert "unusable" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------- the certificate, two ways
+
+
+def test_the_certificate_can_arrive_as_a_value_not_a_file(
+    mailer, env, posts, monkeypatch, credential
+):
+    # How it arrives in GitHub Actions, where a secret is a value and not a file.
+    path, _cert = credential
+    monkeypatch.delenv("GRAPH_CLIENT_CERT_FILE")
+    monkeypatch.setenv("GRAPH_CLIENT_CERT", path.read_text())
+    assert mailer.main(["subject", BODY]) == 0
+    assert _sent(posts)["message"]["subject"] == "subject"
+
+
+def test_both_certificate_variables_set_is_refused(
+    mailer, env, posts, monkeypatch, credential, capsys
+):
+    # Two credentials in one environment is a rotation that went half-finished; picking a
+    # winner would hide it.
+    path, _cert = credential
+    monkeypatch.setenv("GRAPH_CLIENT_CERT", path.read_text())
+    assert mailer.main(["subject", BODY]) == 1
+    assert posts.to(SEND_URL) == []
+    assert "exactly one" in capsys.readouterr().out
+
+
+def test_neither_certificate_variable_set_is_refused(mailer, env, posts, monkeypatch, capsys):
+    monkeypatch.delenv("GRAPH_CLIENT_CERT_FILE")
+    assert mailer.main(["subject", BODY]) == 1
+    assert "exactly one" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------------------ HTML bodies
+
+
+def test_html_is_sent_as_html(mailer, env, posts):
+    # The monthly report's heatmap and bar chart are ASCII; only a <pre> keeps them aligned.
+    assert mailer.main(["--html", "subject", "<pre>chart</pre>"]) == 0
+    assert _sent(posts)["message"]["body"] == {
+        "contentType": "HTML",
+        "content": "<pre>chart</pre>",
+    }
+
+
+def test_the_body_is_plain_text_by_default(mailer, env, posts):
+    assert mailer.main(["subject", BODY]) == 0
+    assert _sent(posts)["message"]["body"]["contentType"] == "Text"
+
+
 # ------------------------------------------------------- the shell alerter's mail path
 
 
