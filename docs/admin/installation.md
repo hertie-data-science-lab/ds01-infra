@@ -22,7 +22,7 @@ writeup this doc builds on.
 | OS | Ubuntu 20.04+ / Debian 11+ |
 | GPU | NVIDIA GPU with MIG support (A100, H100) or any CUDA GPU |
 | Docker | 20.10+ with NVIDIA Container Toolkit |
-| Python | 3.8+ with PyYAML (`sudo pip3 install pyyaml` or `sudo apt install python3-yaml`) |
+| Python | 3.8+ with PyYAML (`sudo pip3 install pyyaml` or `sudo apt install python3-yaml`), and `cryptography` for the Graph mail alerts (`sudo apt install python3-cryptography`) |
 | A `datasciencelab` system account | Owns the staging clone and runs `ds01-deploy`'s git operations; needs SSH (or HTTPS, since the repo is public) access to fetch `origin` |
 
 ## Fresh-box bootstrap

@@ -11,6 +11,7 @@ Two-tier CI with path-based filtering, local development mirror via Makefile, ma
 | Release | `release.yml` | Tag push `v*.*.*`, dispatch | Create GitHub Release |
 | Deploy | `deploy.yml` | Tag push `v*.*.*`, dispatch | Release to prod via `sudo ds01-deploy --ref <tag>` (see [Versioning](./versioning)) |
 | Docs sync | `sync-docs-to-hub.yml` | Push to main (docs changes), dispatch | Sync docs/user/ to ds01-hub |
+| Infra alarms | `infra-alarms.yml` | Hourly, dispatch | Is `ds01-runner` online, and is the scheduled-release dispatcher still firing |
 
 All workflows support `workflow_dispatch` for manual triggering.
 
@@ -39,8 +40,8 @@ Runs on every PR to main. Uses [dorny/paths-filter](https://github.com/dorny/pat
 | Group | Patterns |
 |-------|----------|
 | `python` | `**/*.py`, `pyproject.toml` |
-| `shell` | `scripts/**`, `.shellcheckrc` |
-| `workflows` | `.github/workflows/**` |
+| `shell` | `scripts/**`, `.shellcheckrc`, `.github/actions/**` |
+| `workflows` | `.github/workflows/**`, `.github/actions/**` |
 
 ## Tier 2: System CI (`ci-system.yml`)
 
@@ -64,8 +65,8 @@ Includes role-based guards under the `user_role`/`admin_role` markers (e.g.
 `tests/system/test_user_access.py`) that catch permission regressions such as the
 umask-077 class (runtime dirs not traversable, deploy state not world-readable).
 
-On failure: checks for an existing open issue before creating a new one (labelled with the
-run's scope). If one exists, adds a comment instead.
+On failure: an alarm job on `ubuntu-latest` files or updates one self-closing issue and
+mails the maintainer - see [Alarms](#alarms) below.
 
 Also supports `workflow_call` for use as a release gate if needed.
 
@@ -88,6 +89,34 @@ Manual tag-triggered releases. No automated semantic-release.
 5. Creates GitHub Release with auto-generated notes
 
 Can also be triggered via dispatch (enter tag manually).
+
+## Alarms
+
+GitHub emails a scheduled run's failure to whoever last touched the cron file - nobody
+who reads that mailbox. And when `ds01-runner` is offline, `Deploy` and `System CI` do
+not fail at all: they queue, green and pending, indefinitely.
+
+So four alarms share one composite action, `.github/actions/alarm`:
+
+| Issue title | Raised by |
+|---|---|
+| `Deploy is failing` | `deploy.yml`, on a failed tag release |
+| `System CI is failing` | `ci-system.yml`, on a failed scheduled run |
+| `ds01-runner is offline` | `infra-alarms.yml`, hourly |
+| `Scheduled-release dispatcher is quiet` | `infra-alarms.yml`, hourly |
+
+Each keeps ONE open issue in this repo, comments on it at most once every six hours,
+closes it on the next green run, and mails the maintainer whenever it files or comments.
+Both channels are gated on the same output: a run cannot mail without filing, or file
+without mailing.
+
+Every alarm job runs on `ubuntu-latest`, never on `ds01-runner` - an alarm hosted on the
+thing it watches queues behind the job it was meant to report. A `workflow_dispatch`
+failure is not reported (somebody is watching it), but a manual success still closes the
+issue.
+
+Secrets, thresholds and the honest limits of the hourly checks:
+[Maintenance → GitHub Actions alarms](./maintenance.md#github-actions-alarms).
 
 ## Dependabot (`.github/dependabot.yml`)
 
@@ -140,6 +169,7 @@ Installed with `pre-commit install --hook-type commit-msg`. Runs automatically o
 |------|---------|
 | `.shellcheckrc` | Shellcheck suppressions (SC1090, SC1091, SC2154, SC2034, SC2155) |
 | `.github/actionlint.yaml` | Declares `gpu` as valid self-hosted runner label |
+| `.github/actions/alarm/` | Composite action: the self-closing failure issue + the throttled mail |
 | `pyproject.toml` | Ruff config (line-length 100, py310, isort) |
 
 ### Shellcheck suppressions
