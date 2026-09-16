@@ -18,8 +18,14 @@ metrics endpoint, this one SENDS MAIL AS THE LAB. So a bearer token is mandatory
 bridge refuses to start without one, and there is no unauthenticated mode to fall back to.
 Alertmanager reads the same token from the same file, mounted read-only.
 
-    config/runtime/alertmanager-mail-token.txt   git-ignored, 0640, root:docker
+    config/runtime/alertmanager-mail-token.txt   git-ignored, 0640, root:65534
                                                  `openssl rand -hex 32`
+
+    Group 65534 is `nobody`, which is what the prom/alertmanager container runs as -
+    NOT the `docker` group, which on this box has 21 student accounts in it. That
+    distinction is the whole protection: `deploy.sh` chowns it root:65534 for exactly
+    this reason, and widening it to a group a user can be in would hand the mail
+    channel to everyone in that group.
 
 The token is only an origin check. Anyone who can read the file can make the lab mail
 itself an alert; nobody who cannot read it can make the lab mail anything.
