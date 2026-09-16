@@ -1,12 +1,23 @@
 # DS01 Alertmanager Configuration
-# Teams-only alerting via msteamsv2_configs
+# Two independent channels per receiver: Teams (msteamsv2_configs) and mail
+# (webhook_configs, through the host's dsl-alert-bridge). Either may be unprovisioned;
+# a receiver's integrations are notified independently, so one silent channel never
+# costs the other. The same shape scripts/maintenance/dsl-alert.sh has.
 #
-# SETUP:
+# SETUP — Teams:
 #   The Teams webhook URL is read at runtime from the gitignored secret file
 #   config/runtime/teams-webhook-url.txt (mounted read-only into the container at
 #   /etc/alertmanager/teams-webhook-url.txt). Put the Power Automate (logic.azure.com)
 #   workflow URL in that file — it must never be committed (this repo is public).
 #   The same file is the single source of truth for ds01-monthly-report.
+#
+# SETUP — mail:
+#   dsl-alert-bridge.service listens on the host and mails through Microsoft Graph;
+#   Alertmanager reaches it over host.docker.internal, exactly as Prometheus already
+#   scrapes the host's ds01-exporter. The bridge sends mail AS THE LAB, so the POST
+#   carries a bearer token from the gitignored config/runtime/alertmanager-mail-token.txt
+#   (mounted at /etc/alertmanager/mail-token.txt); the bridge refuses to start without
+#   the same file. Provisioning: docs/admin/maintenance.md.
 #
 # NOTE: Requires Alertmanager v0.28.0+ for msteamsv2_configs + webhook_url_file support.
 #   Current image: prom/alertmanager:v0.28.1
@@ -56,7 +67,7 @@ inhibit_rules:
       alertname: 'DS01.*'
     equal: ['job']
 
-# Receivers - Teams-only delivery via msteamsv2_configs
+# Receivers - each delivers on both channels, Teams and mail
 receivers:
   - name: 'ds01-teams'
     msteamsv2_configs:
@@ -69,6 +80,15 @@ receivers:
           **{{ .Annotations.summary }}**
           {{ .Annotations.description }}
           {{ end }}
+    webhook_configs:
+      - url: 'http://host.docker.internal:9099/alert'
+        send_resolved: true
+        # Alertmanager retries a failed webhook; the bridge answers before it mails, so
+        # a retry here means the bridge is down, not that Graph was slow.
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/alertmanager/mail-token.txt
 
   - name: 'ds01-teams-critical'
     msteamsv2_configs:
@@ -81,3 +101,12 @@ receivers:
           **{{ .Annotations.summary }}**
           {{ .Annotations.description }}
           {{ end }}
+    webhook_configs:
+      - url: 'http://host.docker.internal:9099/alert'
+        send_resolved: true
+        # Alertmanager retries a failed webhook; the bridge answers before it mails, so
+        # a retry here means the bridge is down, not that Graph was slow.
+        http_config:
+          authorization:
+            type: Bearer
+            credentials_file: /etc/alertmanager/mail-token.txt

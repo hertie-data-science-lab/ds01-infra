@@ -221,11 +221,18 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:9093:9093"
+    extra_hosts:
+      # Reach the host's dsl-alert-bridge (a systemd service, not a container) for the
+      # mail receiver — the same route Prometheus uses for ds01-exporter.
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       # Webhook secret (gitignored; same file ds01-monthly-report reads). Read at
       # runtime via webhook_url_file so the URL never lands in the tracked config.
       - ../config/runtime/teams-webhook-url.txt:/etc/alertmanager/teams-webhook-url.txt:ro
+      # Bearer token for the mail bridge (gitignored; the bridge reads the same file).
+      # Read at runtime via credentials_file, so it never lands in the tracked config.
+      - ../config/runtime/alertmanager-mail-token.txt:/etc/alertmanager/mail-token.txt:ro
       - alertmanager-data:/alertmanager
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
@@ -251,7 +258,7 @@ services:
       - "ds01.managed_by=ds01-monitoring-stack"
       - "ds01.container_type=infrastructure"
       - "ds01.protected=true"
-      - "ds01.description=Alert routing and Teams notifications"
+      - "ds01.description=Alert routing and Teams/mail notifications"
     deploy:
       resources:
         limits:

@@ -627,12 +627,38 @@ if [ -f "$INFRA_ROOT/config/deploy/systemd/dsl-scheduled-release.timer" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Code-caching daemons: exporter, container-owner-tracker, container-sync
+# Alertmanager mail bridge: bearer token
 # ---------------------------------------------------------------------------
-# These three long-running services import their Python once at start and only
-# pick up new code on restart. Refresh their units (reloading systemd only if a
-# unit actually changed) then try-restart all three, so a deploy propagates code
-# changes to every one of them — not just the exporter.
+# Alertmanager POSTs alerts to dsl-alert-bridge on the host, which mails them as
+# the lab — so the POST carries a bearer token and the bridge refuses to start
+# without one. Generated here rather than by hand: unlike the Teams webhook URL
+# it is registered with nothing, both ends read this one file, and a manual step
+# that nobody performs is how the Teams channel came to be a placeholder.
+#
+# root:65534 0640 — 65534 is the `nobody` the prom/alertmanager container runs as,
+# which is the whole reason it is not simply root-only: the container has to read
+# it, and every other account on this box must not.
+
+ALERT_TOKEN_FILE="$INFRA_ROOT/config/runtime/alertmanager-mail-token.txt"
+if [ ! -s "$ALERT_TOKEN_FILE" ]; then
+    echo -e "${DIM}Generating Alertmanager mail-bridge token...${NC}"
+    (
+        umask 077
+        openssl rand -hex 32 >"$ALERT_TOKEN_FILE"
+    )
+    echo -e "  ${GREEN}✓${NC} $ALERT_TOKEN_FILE created"
+fi
+chown root:65534 "$ALERT_TOKEN_FILE" 2>/dev/null || true
+chmod 0640 "$ALERT_TOKEN_FILE" 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Code-caching daemons: exporter, container-owner-tracker, container-sync,
+# alert bridge
+# ---------------------------------------------------------------------------
+# These long-running services import their Python once at start and only pick up
+# new code on restart. Refresh their units (reloading systemd only if a unit
+# actually changed) then try-restart all of them, so a deploy propagates code
+# changes to every one — not just the exporter.
 #
 # Replaces the old exporter-only, mtime-gated block: mtime gating was fragile
 # (rsync/checkout can reset mtimes) and never touched the other two daemons, so
@@ -641,7 +667,7 @@ fi
 echo -e "${DIM}Refreshing code-caching daemons...${NC}"
 
 units_changed=false
-for unit in ds01-exporter.service ds01-container-owner-tracker.service ds01-container-sync.service; do
+for unit in ds01-exporter.service ds01-container-owner-tracker.service ds01-container-sync.service dsl-alert-bridge.service; do
     src="$INFRA_ROOT/config/deploy/systemd/$unit"
     dst="/etc/systemd/system/$unit"
     if [ ! -f "$src" ]; then
@@ -660,7 +686,7 @@ done
 # daemon-reload only if a unit file actually changed.
 $units_changed && systemctl daemon-reload
 
-DAEMONS="ds01-exporter ds01-container-owner-tracker ds01-container-sync"
+DAEMONS="ds01-exporter ds01-container-owner-tracker ds01-container-sync dsl-alert-bridge"
 systemctl enable $DAEMONS >/dev/null 2>&1 || true
 # Restart the ones that are running so they load the new code; || true tolerates
 # a fresh box where a unit is not yet installed.
