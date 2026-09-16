@@ -95,6 +95,10 @@ def env(monkeypatch, credential):
         ("GRAPH_SENDER", SENDER),
         ("GRAPH_CLIENT_CERT_FILE", str(path)),
         ("DSL_ALERT_TO", TO),
+        # Point the env-file fallback at nothing: these tests must describe the
+        # environment they set up, not whatever /etc/dsl-alert-mail.env says on the box
+        # they happen to run on.
+        ("DSL_ALERT_ENV_FILE", "/nonexistent/dsl-alert-mail.env"),
     ):
         monkeypatch.setenv(key, value)
 
@@ -420,6 +424,70 @@ def test_html_is_sent_as_html(mailer, env, posts):
 def test_the_body_is_plain_text_by_default(mailer, env, posts):
     assert mailer.main(["subject", BODY]) == 0
     assert _sent(posts)["message"]["body"]["contentType"] == "Text"
+
+
+# ------------------------------------------ the env file, for a caller systemd did not start
+
+
+def _env_file(tmp_path, monkeypatch, text: str):
+    path = tmp_path / "dsl-alert-mail.env"
+    path.write_text(text)
+    monkeypatch.setenv("DSL_ALERT_ENV_FILE", str(path))
+    return path
+
+
+def test_the_env_file_fills_a_variable_systemd_did_not_set(
+    mailer, env, posts, monkeypatch, tmp_path
+):
+    # config-watchdog.sh and ds01-monthly-report run from CRON, which inherits nothing
+    # from dsl-alert@.service's EnvironmentFile. Without this they would be configured
+    # under systemd and unconfigured on a schedule.
+    monkeypatch.delenv("DSL_ALERT_TO")
+    _env_file(tmp_path, monkeypatch, f"# the mail channel\nDSL_ALERT_TO={TO}\n")
+    assert mailer.main(["subject", BODY]) == 0
+    assert _addresses(_sent(posts)["message"], "toRecipients") == [TO]
+
+
+def test_the_environment_wins_over_the_env_file(mailer, env, posts, monkeypatch, tmp_path):
+    # A one-off `DSL_ALERT_TO=... ` in front of the command has to keep meaning what it says.
+    _env_file(tmp_path, monkeypatch, "DSL_ALERT_TO=file@hertie-school.org\n")
+    assert mailer.main(["subject", BODY]) == 0
+    assert _addresses(_sent(posts)["message"], "toRecipients") == [TO]
+
+
+def test_quotes_and_an_export_prefix_are_accepted(mailer, env, posts, monkeypatch, tmp_path):
+    # The subset systemd's own EnvironmentFile accepts, which is what an admin who has
+    # written one before will type.
+    monkeypatch.delenv("DSL_ALERT_TO")
+    monkeypatch.delenv("DSL_ALERT_CC", raising=False)
+    _env_file(
+        tmp_path,
+        monkeypatch,
+        f"export DSL_ALERT_TO='{TO}'\nDSL_ALERT_CC=\"{SENDER}\"\n",
+    )
+    assert mailer.main(["subject", BODY]) == 0
+    message = _sent(posts)["message"]
+    assert _addresses(message, "toRecipients") == [TO]
+    assert _addresses(message, "ccRecipients") == [SENDER]
+
+
+def test_the_env_file_cannot_set_anything_but_the_mail_variables(
+    mailer, env, posts, monkeypatch, tmp_path
+):
+    # The threat is not a hostile line in a root-only file - it is a stray PATH= an admin
+    # left in it, and a mailer that quietly rewrote its own PATH would be very hard to
+    # explain. Which is also why the file is parsed and never sourced.
+    monkeypatch.setenv("PATH", "/usr/bin")
+    _env_file(tmp_path, monkeypatch, "PATH=/tmp/evil\nLD_PRELOAD=/tmp/evil.so\n")
+    assert mailer.main(["subject", BODY]) == 0
+    assert mailer.os.environ["PATH"] == "/usr/bin"
+    assert "LD_PRELOAD" not in mailer.os.environ
+
+
+def test_an_absent_env_file_is_a_silent_no_op(mailer, env, posts, monkeypatch, tmp_path, capsys):
+    monkeypatch.setenv("DSL_ALERT_ENV_FILE", str(tmp_path / "absent.env"))
+    assert mailer.main(["subject", BODY]) == 0
+    assert "absent.env" not in capsys.readouterr().out
 
 
 # ------------------------------------------------------- the shell alerter's mail path

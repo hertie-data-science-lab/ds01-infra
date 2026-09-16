@@ -26,6 +26,12 @@ and exactly one of, holding the certificate then its unencrypted private key:
                            one: two credentials in one environment is a rotation that went
                            half-finished, and picking a winner hides it.
 
+Any of those still unset when the mailer runs is read out of `/etc/dsl-alert-mail.env`
+itself (override with DSL_ALERT_ENV_FILE), because systemd is not the only caller: the
+config watchdog and the monthly report run from cron, which inherits no EnvironmentFile.
+The environment always wins over the file, and the file is parsed, never sourced - see
+`load_env_file`.
+
 `--to` REPLACES the environment for one call. `--cc` ADDS to it, and the asymmetry is the
 point: DSL_ALERT_CC is the archive mailbox, which is copied on everything this lab sends,
 and a caller that names a further recipient - a ticket notifier copying whoever opened the
@@ -88,6 +94,13 @@ TO_ENV = "DSL_ALERT_TO"
 CERT_ENV = ("GRAPH_CLIENT_CERT_FILE", "GRAPH_CLIENT_CERT")
 # Optional: a standing Cc, for a caller that always copies the same archive mailbox.
 CC_ENV = "DSL_ALERT_CC"
+# The box keeps the mail credential in this file, and `dsl-alert@.service` hands it over as
+# an EnvironmentFile. A CRON job inherits nothing from systemd, and two of this mailer's
+# callers - config-watchdog.sh and ds01-monthly-report - run from cron, so without this
+# they would be configured under systemd and unconfigured on a schedule. Read here, once,
+# rather than in each caller: one parser, and a new caller is configured by existing.
+ENV_FILE_ENV = "DSL_ALERT_ENV_FILE"
+DEFAULT_ENV_FILE = "/etc/dsl-alert-mail.env"
 # Every one of these is interpolated into a URL or a header. The address lists are checked
 # per address instead, after the split - a comma-separated list is whitespace-legal.
 _SINGLE_LINE = ("GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_SENDER")
@@ -184,6 +197,48 @@ def _cc_note(cfg: Config) -> str:
     return f" cc {_masked(cfg.cc)}" if cfg.cc else ""
 
 
+def load_env_file() -> None:
+    """Fill in the mail variables from `/etc/dsl-alert-mail.env` for a caller systemd did
+    not start - a cron job, or a hand-run report.
+
+    The environment always WINS: `dsl-alert@.service` already passes this file as an
+    EnvironmentFile, Actions passes secrets, and a one-off `DSL_ALERT_TO=... ` on the front
+    of a command has to keep meaning what it says. So this only fills gaps.
+
+    Only the variables this script knows about are read out of the file. It is a root-only
+    file, so a hostile line is not the threat - a stray `PATH=` or `LD_PRELOAD=` left in it
+    by an admin is, and a mailer that quietly rewrote its own PATH would be very hard to
+    explain. For the same reason the file is PARSED and never sourced.
+
+    Absent or unreadable is a silent no-op: on a box with no mail provisioning, and in
+    Actions, there is no such file and nothing is wrong with that. `config_from_env` still
+    reports what is missing, by name.
+
+    `KEY=value`, one per line, `#` comments, an optional `export ` prefix and one layer of
+    surrounding quotes - the subset systemd's own EnvironmentFile accepts, which is what
+    the provisioning recipe in docs/admin/maintenance.md writes. A multi-line value is not
+    supported, which is why the box uses GRAPH_CLIENT_CERT_FILE and not GRAPH_CLIENT_CERT.
+    """
+    path = Path(os.environ.get(ENV_FILE_ENV) or DEFAULT_ENV_FILE)
+    try:
+        text = path.read_text()
+    except OSError:
+        return
+    wanted = {*MAIL_ENV, *CERT_ENV, TO_ENV, CC_ENV}
+    for raw in text.splitlines():
+        line = raw.strip().removeprefix("export ")
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        key = key.strip()
+        if not sep or key not in wanted or (os.environ.get(key) or "").strip():
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ[key] = value
+
+
 def config_from_env(to: str | None = None, cc: str | None = None) -> Config | None:
     """Build the config from the environment, or None if it is unusable.
 
@@ -194,6 +249,7 @@ def config_from_env(to: str | None = None, cc: str | None = None) -> Config | No
     Names the variables at fault rather than saying "not configured": the values are a
     root-only file nobody can read back from a journal line, so a blanket message is
     undebuggable. A partly-filled env is a misconfiguration, not an absence."""
+    load_env_file()
     found = {k: (os.environ.get(k) or "").strip() for k in MAIL_ENV}
     missing = [k for k, v in found.items() if not v]
     if missing:
