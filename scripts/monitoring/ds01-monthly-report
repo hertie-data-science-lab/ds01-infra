@@ -3,19 +3,23 @@
 DS01 Monthly Report Generator
 
 Queries Prometheus, GitHub Issues, group membership files, and the event log
-to produce a monthly summary report. Optionally posts a summary to Teams.
+to produce a monthly summary report, then delivers it on two independent channels:
+Teams (a summary card plus the full report) and mail (the full report, through
+Microsoft Graph). Either may be unconfigured; neither can stop the other.
 
 Usage:
-    ds01-monthly-report                    # Previous month, save + post
+    ds01-monthly-report                    # Previous month, save + deliver
     ds01-monthly-report --month 2026-03    # Specific month
-    ds01-monthly-report --dry-run          # Print to stdout only
-    ds01-monthly-report --no-teams         # Save but don't post
+    ds01-monthly-report --dry-run          # Print to stdout only, deliver nothing
+    ds01-monthly-report --no-teams         # Save but don't post to Teams
+    ds01-monthly-report --no-mail          # Save but don't mail
 """
 
 import argparse
 import calendar
 import getpass
 import gzip
+import html
 import json
 import math
 import os
@@ -38,22 +42,34 @@ GROUPS_DIR = INFRA_ROOT / "config/runtime/groups"
 EVENTS_FILE = Path("/var/log/ds01/events.jsonl")
 REPORTS_DIR = Path("/var/log/ds01-infra/reports/monthly")
 GITHUB_REPO = "hertie-data-science-lab/ds01-hub"
+# The lab's one mail channel. Invoked as a subprocess rather than reimplemented here:
+# the Graph certificate flow, the recipient vetting and the standing archive Cc all
+# live in one place, and a second copy of them would be a second thing to rotate.
+MAILER = INFRA_ROOT / "scripts/maintenance/dsl-alert-mail.py"
+# Where that mailer reads the credential when nothing else set it. Only consulted here
+# to decide whether mail was ever asked for; the mailer does the reading.
+MAIL_ENV_FILE = Path(os.environ.get("DSL_ALERT_ENV_FILE") or "/etc/dsl-alert-mail.env")
 
 
 def _load_teams_webhook_url() -> str | None:
-    """Load Teams webhook URL from environment or config file."""
-    url = os.environ.get("DS01_TEAMS_WEBHOOK_URL")
-    if url:
-        return url
+    """The Teams webhook URL from the environment or the config file, or None.
 
-    try:
-        text = (INFRA_ROOT / "config/runtime/teams-webhook-url.txt").read_text().strip()
-        if text and not text.startswith("PLACEHOLDER"):
-            return text
-    except OSError:
-        pass
+    Only an `https://` URL counts, exactly as scripts/maintenance/dsl-alert.sh has it. The
+    old test rejected `PLACEHOLDER*`, and the file this repo ships actually says
+    `PASTE_LOGIC_AZURE_URL_HERE` - so an unprovisioned box read the placeholder as a
+    webhook, POSTed the report to a string that is not a URL, and failed into
+    /var/log/ds01/monthly-report.log every month from May 2026 on. That is why no monthly
+    report arrived. An absent webhook has to be a clean no-op, not a monthly failure.
+    """
+    url = (os.environ.get("DS01_TEAMS_WEBHOOK_URL") or "").strip()
+    if not url:
+        try:
+            text = (INFRA_ROOT / "config/runtime/teams-webhook-url.txt").read_text()
+        except OSError:
+            text = ""
+        url = text.strip().splitlines()[0].strip() if text.strip() else ""
 
-    return None
+    return url if url.startswith("https://") else None
 
 
 # ============================================================================
@@ -1310,9 +1326,8 @@ def build_teams_summary(
         {
             "type": "TextBlock",
             "text": (
-                "Full report posted below. "
-                "Grafana dashboard and email delivery coming soon "
-                "\u2014 external access via Cloudflare tunnel planned."
+                "Full report posted below, and mailed to the lab. "
+                "Grafana external access via Cloudflare tunnel planned."
             ),
             "size": "Small",
             "isSubtle": True,
@@ -1370,6 +1385,66 @@ def post_to_teams(summary_card: str, report_md: str | None = None) -> bool:
 
 
 # ============================================================================
+# Mail Delivery
+# ============================================================================
+
+
+def build_mail_body(report_md: str) -> str:
+    """The Markdown report as an HTML mail body: escaped, then wrapped in one `<pre>`.
+
+    `<pre>` because the report is not prose. It carries a weekday x time-of-day heatmap
+    and a daily bar chart drawn in block characters, and both are just rows of text whose
+    meaning IS their alignment - a mail client that reflows them to the window width turns
+    the month's busiest hour into noise. A monospace `<pre>` is the only thing that keeps
+    them, and it costs nothing for the tables around them.
+
+    Escaped first, and escaped rather than stripped: the report interpolates values we do
+    not control - issue titles from ds01-hub, container names, usernames - and an unescaped
+    `<` would silently eat the rest of the line, or worse, ship live markup.
+    """
+    return (
+        "<html><body>"
+        '<pre style="font-family: Consolas, Menlo, monospace; font-size: 12px">'
+        f"{html.escape(report_md)}"
+        "</pre></body></html>"
+    )
+
+
+def mail_report(report_md: str, year: int, month: int) -> bool:
+    """Mail the full report to whoever `dsl-alert-mail.py` is configured to reach.
+
+    The mailer is a subprocess, not an import: its filename has a hyphen, it is the one
+    place the Graph credential is handled, and the report has no business holding a
+    certificate. Body on STDIN, exactly as dsl-alert.sh passes a journal tail - `/proc` on
+    this box is world-readable, so an argv is visible to every logged-in user in `ps`.
+
+    Recipients come from the environment (DSL_ALERT_TO, plus the standing archive Cc), so
+    this passes no `--to`: who the lab mails is a deployment decision, kept in one root-only
+    file, not a constant compiled into a report generator.
+
+    Never raises. This is the last thing a monthly run does, after the report is already on
+    disk, and a mail failure must not lose the run.
+    """
+    if not (os.environ.get("DSL_ALERT_TO") or MAIL_ENV_FILE.is_file()):
+        print("  Mail not configured -- skipping", file=sys.stderr)
+        return False
+
+    subject = f"[ds01] Monthly report - {calendar.month_name[month]} {year}"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(MAILER), "--html", subject],
+            input=build_mail_body(report_md),
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"  Mail delivery failed: {e}", file=sys.stderr)
+        return False
+    return result.returncode == 0
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
@@ -1389,6 +1464,11 @@ def main() -> None:
         "--no-teams",
         action="store_true",
         help="Save report but don't post to Teams.",
+    )
+    parser.add_argument(
+        "--no-mail",
+        action="store_true",
+        help="Save report but don't mail it.",
     )
     args = parser.parse_args()
 
@@ -1449,6 +1529,15 @@ def main() -> None:
             print("Teams notification sent.")
         else:
             print("Teams notification skipped or failed.")
+
+    # Mail the full report. Independent of Teams in both directions: a box with no webhook
+    # still gets its report, and a mailbox that rejects it does not cost the Teams post.
+    if not args.no_mail:
+        print("Mailing report...")
+        if mail_report(report, year, month):
+            print("Report mailed.")
+        else:
+            print("Report mail skipped or failed.")
 
     print("Done.")
 

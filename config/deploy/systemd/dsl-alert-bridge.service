@@ -1,0 +1,40 @@
+[Unit]
+Description=Alertmanager-to-mail bridge for DS01
+Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
+After=network-online.target
+Wants=network-online.target
+# A bridge that has given up restarting has taken the monitoring stack's mail channel
+# with it, and nothing else would say so. dsl-alert.sh does not go through here.
+OnFailure=dsl-alert@%n.service
+
+[Service]
+Type=simple
+User=root
+Restart=always
+RestartSec=5
+
+# The same credential file dsl-alert@.service uses. Optional (leading `-`): without
+# it the bridge still starts and still accepts alerts, and the mailer reports what is
+# missing per alert. The bearer token is NOT here - it is
+# config/runtime/alertmanager-mail-token.txt, which Alertmanager reads too.
+EnvironmentFile=-/etc/dsl-alert-mail.env
+
+ExecStart=/usr/bin/python3 /opt/ds01-infra/scripts/maintenance/dsl-alert-bridge.py
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dsl-alert-bridge
+
+# Hardening. This process reads two secrets and talks to exactly one host, so it gets
+# more than the GPU-facing daemons can afford.
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

@@ -2,7 +2,7 @@
 # dsl-alert.sh <unit> — post a failed unit's last journal lines to Teams and mail.
 #
 # Wired in as `OnFailure=dsl-alert@%n.service`. Exists because the box has no
-# shared alert helper: config-watchdog.sh keeps its own alert_teams() and this
+# shared alert helper: config-watchdog.sh keeps its own alert() and this
 # resolves the same webhook (DS01_TEAMS_WEBHOOK_URL, else the prod-only,
 # git-ignored config/runtime/teams-webhook-url.txt).
 #

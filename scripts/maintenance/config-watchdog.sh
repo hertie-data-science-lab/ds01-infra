@@ -12,15 +12,20 @@
 
 set -e
 
+# The prod paths below default to prod and are overridable from the environment. Not
+# configurability for its own sake: the drift branch restores a live config file and is
+# the only thing that alerts, so tests/unit/test_config_watchdog.py rehearses it against a
+# temporary tree. Nothing on the box sets any of them.
+
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
 INFRA_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 CONFIG_FILE="$INFRA_ROOT/config/runtime/resource-limits.yaml"
 CONFIG_BACKUP="$CONFIG_FILE.bak-runtime-test"
-CRON_FILE="/etc/cron.d/ds01-maintenance"
-CRON_DISABLED="/etc/cron.d/ds01-maintenance.disabled-by-test"
-LOG_FILE="/var/log/ds01/config-watchdog.log"
+CRON_FILE="${CRON_FILE:-/etc/cron.d/ds01-maintenance}"
+CRON_DISABLED="$CRON_FILE.disabled-by-test"
+LOG_FILE="${LOG_FILE:-/var/log/ds01/config-watchdog.log}"
 
 mkdir -p "$(dirname "$LOG_FILE")"
 
@@ -28,22 +33,58 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] config-watchdog: $1" | tee -a "$LOG_FILE"
 }
 
-# alert_teams <summary> [detail] — post a drift alert to Teams if a webhook is
-# configured (env DS01_TEAMS_WEBHOOK_URL or config/runtime/teams-webhook-url.txt).
-# Never fails the watchdog: a missing/placeholder webhook or a failed POST is a
-# no-op warning.
-alert_teams() {
+# alert <summary> [detail] — tell a human that config drifted, on two independent
+# channels, exactly as scripts/maintenance/dsl-alert.sh does it:
+#
+#   Teams  a webhook (env DS01_TEAMS_WEBHOOK_URL, else the prod-only, git-ignored
+#          config/runtime/teams-webhook-url.txt)
+#   mail   dsl-alert-mail.py through Microsoft Graph
+#
+# Either may be absent and neither may fail the watchdog — this alert rides on the
+# restore of a config file, and an alerter must never become the outage.
+#
+# Drift was Teams-only until the mail channel existed, and Teams was never
+# provisioned: the webhook file on prod holds PASTE_LOGIC_AZURE_URL_HERE. Every
+# drift alert since has gone nowhere.
+alert() {
     local summary=$1 detail=${2:-} url="${DS01_TEAMS_WEBHOOK_URL:-}"
     if [ -z "$url" ] && [ -r "$INFRA_ROOT/config/runtime/teams-webhook-url.txt" ]; then
         url=$(head -1 "$INFRA_ROOT/config/runtime/teams-webhook-url.txt" | tr -d '[:space:]')
     fi
-    case "$url" in "" | PLACEHOLDER*) return 0 ;; esac
+    # Accept only a real URL. The old test rejected `PLACEHOLDER*`, which is not what
+    # the shipped placeholder says, so this POSTed to a non-URL and logged a WARNING
+    # on every drift instead of being the intended no-op.
+    case "$url" in
+        https://*) ;;
+        *) url= ;;
+    esac
+
     local text="$summary"
     [ -n "$detail" ] && text="$summary"$'\n\n```\n'"$detail"$'\n```'
-    local payload
-    payload=$(python3 -c 'import json,sys; print(json.dumps({"text": sys.argv[1]}))' "$text" 2>/dev/null) || return 0
-    curl -sS -m 10 -X POST -H "Content-Type: application/json" -d "$payload" "$url" >/dev/null 2>&1 ||
-        log "WARNING: Teams drift alert POST failed"
+
+    if [ -n "$url" ]; then
+        local payload
+        payload=$(python3 -c 'import json,sys; print(json.dumps({"text": sys.argv[1]}))' "$text" 2>/dev/null) || payload=
+        if [ -n "$payload" ]; then
+            curl -sS -m 10 -X POST -H "Content-Type: application/json" -d "$payload" "$url" >/dev/null 2>&1 ||
+                log "WARNING: Teams drift alert POST failed"
+        else
+            log "WARNING: Teams drift alert payload build failed"
+        fi
+    fi
+
+    # The mailer reads /etc/dsl-alert-mail.env itself — this runs from cron, which
+    # inherits nothing from dsl-alert@.service's EnvironmentFile. Ask first, so a box
+    # with no mail provisioning stays silent rather than logging a WARNING about a
+    # channel nobody asked for.
+    if [ -n "${DSL_ALERT_TO:-}" ] || [ -r "${DSL_ALERT_ENV_FILE:-/etc/dsl-alert-mail.env}" ]; then
+        # Body on stdin, not argv: /proc here is world-readable, so a diff on a command
+        # line is a diff in `ps`.
+        printf '%s\n' "$text" |
+            python3 "$INFRA_ROOT/scripts/maintenance/dsl-alert-mail.py" \
+                "[ds01] config drift on $(hostname)" ||
+            log "WARNING: mail drift alert failed"
+    fi
 }
 
 restored=false
@@ -80,9 +121,9 @@ if [ "${1:-}" = "--full" ]; then
     #
     # Emergency path: an on-box hand-edit to resource-limits.yaml is reverted
     # here (01:00 daily) or at the next sync UNLESS a PR lands the change first.
-    CURRENT_SHA_FILE="/var/lib/ds01/deploy/current-sha"
-    STAGING="/opt/ds01-staging"
-    OWNER="datasciencelab"
+    CURRENT_SHA_FILE="${CURRENT_SHA_FILE:-/var/lib/ds01/deploy/current-sha}"
+    STAGING="${STAGING:-/opt/ds01-staging}"
+    OWNER="${OWNER:-datasciencelab}"
 
     sha=$(cat "$CURRENT_SHA_FILE" 2>/dev/null || true)
     if [ -z "$sha" ]; then
@@ -102,7 +143,7 @@ if [ "${1:-}" = "--full" ]; then
         log "WARNING: Config has drifted from deployed source ($sha). Alerting + restoring."
         # Alert (with a diff) in ADDITION to restoring, so silent drift is visible.
         drift_diff=$(diff <(echo "$git_config") "$CONFIG_FILE" 2>/dev/null | head -40 || true)
-        alert_teams "DS01 config drift on $(hostname): config/runtime/resource-limits.yaml differs from deployed $sha and is being restored." "$drift_diff"
+        alert "DS01 config drift on $(hostname): config/runtime/resource-limits.yaml differs from deployed $sha and is being restored." "$drift_diff"
         echo "$git_config" >"$CONFIG_FILE"
         logger -t ds01-watchdog "Config drift detected and restored from deployed SHA $sha"
     fi

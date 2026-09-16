@@ -1,0 +1,58 @@
+name: Runner canary
+
+# One echo an hour on ds01-runner, whose only purpose is to BE a queued run.
+#
+# `infra-alarms.yml` asks "has anything been queued longer than an hour?", which is the
+# fault made concrete - a release or a nightly suite that is not going to happen. But it can
+# only see that fault when real work happens to be waiting, and the only things that use the
+# self-hosted runner are a nightly suite and a deploy nobody does most days. A runner that
+# dies at 09:00 would go unnoticed until 03:00 the next morning.
+#
+# This guarantees there is always something for that check to notice, which takes detection
+# from about a day to about an hour, with no new credential.
+#
+# Why not simply ASK GitHub whether the runner is online: that is
+# `GET /repos/{owner}/{repo}/actions/runners`, which needs `administration: read` - a scope
+# that does not exist in the Actions `permissions:` vocabulary, so a workflow's GITHUB_TOKEN
+# can never hold it. Asking requires a PAT; being queued does not.
+#
+# And why the alarm lives in the OTHER workflow rather than here: a job no runner picks up
+# does not fail. `timeout-minutes` starts counting when a job begins EXECUTING, so a queued
+# canary sits green-pending for 24 hours before GitHub expires it. The canary is the
+# evidence; `infra-alarms.yml` is the observer. A canary that tried to report on itself
+# would be exactly the watcher-on-the-box mistake that workflow is written to avoid.
+
+on:
+  schedule:
+    - cron: '47 * * * *'
+  workflow_dispatch:
+
+# Nothing is read and nothing is written. The run's own existence is the signal.
+permissions: {}
+
+concurrency:
+  # cancel-in-progress is FALSE, and that is the whole point. Cancelling the previous
+  # canary each hour would keep the oldest queued run permanently under an hour old, so the
+  # alarm's "queued longer than STUCK_MINUTES" test could never become true and this
+  # workflow would silently disarm the check it exists to feed.
+  #
+  # So canaries pile up while the runner is down, which is correct: the OLDEST one ages
+  # past the threshold and trips the alarm. They cost nothing - they never execute - and
+  # the alarm upserts a single issue however many it lists.
+  group: runner-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: ds01-runner picks up work
+    # The same labels ci-system.yml and deploy.yml select, so this proves the runner those
+    # two actually need - not merely that some runner exists.
+    runs-on: [self-hosted, Linux, X64, gpu]
+    # Generous, because this is not a performance test. It bounds a canary that starts and
+    # then wedges, which is a different fault from one that is never picked up at all.
+    timeout-minutes: 5
+    steps:
+      - name: Prove the runner can execute a step
+        run: |
+          echo "ds01-runner executed this at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "host: $(hostname)"

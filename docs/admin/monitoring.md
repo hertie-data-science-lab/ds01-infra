@@ -76,7 +76,17 @@ Use for GPU hardware debugging. Keep as-is - managed upstream by NVIDIA.
 
 ### Alert Delivery
 
-Alerts route to Microsoft Teams via Power Automate webhook (configured in `monitoring/alertmanager/alertmanager.yml`).
+Every alert goes out on two independent channels, configured in
+`monitoring/alertmanager/alertmanager.yml`:
+
+- **Teams**, via a Power Automate webhook (`msteamsv2_configs`)
+- **Mail**, via a `webhook_configs` POST to `dsl-alert-bridge` on the host, which
+  mails through Microsoft Graph
+
+Alertmanager notifies a receiver's integrations independently, so an unprovisioned
+Teams webhook never costs the mail and a stopped bridge never costs Teams. Either
+being absent is normal; see
+[Maintenance → Alertmanager mail bridge](./maintenance.md#alertmanager-mail-bridge).
 
 Two receivers:
 - `ds01-teams` - warning/info alerts (group_wait: 5m, repeat: 4h)
@@ -102,7 +112,7 @@ amtool silence expire --alertmanager.url=http://localhost:9093 <silence-id>
 
 ### Testing Alert Delivery
 
-Send a test alert to verify Teams webhook is working:
+Send a test alert to verify delivery (it should reach Teams *and* the mailbox):
 ```bash
 curl -s -X POST http://localhost:9093/api/v2/alerts \
   -H 'Content-Type: application/json' \
@@ -221,18 +231,24 @@ docker logs ds01-grafana --tail 100
 
 1. Check Prometheus alert state: `http://localhost:9090/alerts`
 2. Verify Alertmanager is healthy: `http://localhost:9093/-/healthy`
-3. Confirm Teams webhook URL is configured (not placeholder):
+3. Confirm the channels are actually provisioned. The URL lives in the git-ignored
+   secret file, not in the tracked config:
    ```bash
-   grep PLACEHOLDER /opt/ds01-infra/monitoring/alertmanager/alertmanager.yml
-   # Should return nothing if webhook is configured
+   head -1 /opt/ds01-infra/config/runtime/teams-webhook-url.txt   # must start https://
+   systemctl is-active dsl-alert-bridge                           # must be active
    ```
+   A webhook file still holding `PASTE_LOGIC_AZURE_URL_HERE` counts as unconfigured
+   everywhere and skips the Teams channel silently.
 4. Check inhibition rules - a critical alert may be suppressing related warnings
 
-### Alerts firing but no Teams message
+### Alerts firing but nothing arrives
 
 1. Send a test alert (see section 3)
 2. Check Alertmanager logs: `docker logs ds01-alertmanager --tail 50`
-3. Verify Power Automate webhook URL is still valid (they expire)
+3. Teams: verify the Power Automate webhook URL is still valid (they expire)
+4. Mail: `journalctl -u dsl-alert-bridge -n 20`. A 401 in Alertmanager's log means the
+   two ends are reading different bearer tokens; a `mail alert not configured` line in
+   the bridge's journal means `/etc/dsl-alert-mail.env` is missing or partial.
 
 ### High disk usage from Prometheus
 
@@ -269,7 +285,7 @@ All monitoring config lives in `/opt/ds01-infra/monitoring/`.
 | `prometheus/prometheus.yml` | Scrape targets, intervals, alertmanager endpoint |
 | `prometheus/rules/ds01_alerts.yml` | Alert rules (24 rules across 5 groups) |
 | `prometheus/rules/ds01_recording.yml` | Recording rules - pre-computed aggregates (10 groups, ~45 rules) |
-| `alertmanager/alertmanager.yml` | Alert routing, inhibition rules, Teams webhook receivers |
+| `alertmanager/alertmanager.yml` | Alert routing, inhibition rules, Teams + mail receivers |
 | `grafana/provisioning/datasources/` | Prometheus datasource auto-provisioning |
 | `grafana/provisioning/dashboards/` | Dashboard auto-provisioning config |
 | `grafana/provisioning/dashboards/dashboards/` | Dashboard JSON files (ds01_overview, ds01_historical, ds01_user, nvidia_dcgm) |
