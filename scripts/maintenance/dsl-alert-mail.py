@@ -454,6 +454,12 @@ def graph_token(cfg: Config) -> str | None:
     return token
 
 
+def _sender_domain(sender: str) -> str:
+    """The domain half of the sending address - what a Message-ID has to be issued under."""
+    _, _, domain = sender.rpartition("@")
+    return domain
+
+
 def thread_root_id(key: str, sender: str) -> str:
     """`<ds01-hub-32@hertie-school.org>` - the id every mail in one thread points at.
 
@@ -465,8 +471,7 @@ def thread_root_id(key: str, sender: str) -> str:
     Message-ID costs no storage, survives a repeat, and threads exactly as well - every
     client here groups on a shared References chain, not on the parent being present. It is
     what GitHub's own notification mail does."""
-    _, _, domain = sender.rpartition("@")
-    return f"<{key}@{domain}>"
+    return f"<{key}@{_sender_domain(sender)}>"
 
 
 def thread_index(key: str) -> str:
@@ -507,8 +512,7 @@ def build_mime(cfg: Config, subject: str, body: str, *, html: bool, key: str) ->
     message["Subject"] = subject
     message["Date"] = email.utils.formatdate()
     # Unique per send. Only the References root is shared - see `thread_root_id`.
-    _, _, domain = cfg.sender.rpartition("@")
-    message["Message-ID"] = f"<{key}.{uuid.uuid4().hex}@{domain}>"
+    message["Message-ID"] = f"<{key}.{uuid.uuid4().hex}@{_sender_domain(cfg.sender)}>"
     root = thread_root_id(key, cfg.sender)
     message["In-Reply-To"] = root
     message["References"] = root
