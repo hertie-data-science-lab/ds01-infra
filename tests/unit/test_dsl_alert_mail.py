@@ -14,6 +14,9 @@ the alerter exiting 0.
 
 import base64
 import datetime as dt
+import email
+import email.policy
+import hashlib
 import importlib.util
 import io
 import json
@@ -424,6 +427,170 @@ def test_html_is_sent_as_html(mailer, env, posts):
 def test_the_body_is_plain_text_by_default(mailer, env, posts):
     assert mailer.main(["subject", BODY]) == 0
     assert _sent(posts)["message"]["body"]["contentType"] == "Text"
+
+
+# --------------------------------------------------------------- the threaded send
+
+KEY = "ds01-hub-32"
+ROOT = f"<{KEY}@hertie-school.org>"
+
+
+def _mime(posts, index=0):
+    """The MIME message of a threaded send, parsed back out of the base64 payload."""
+    return email.message_from_bytes(
+        base64.b64decode(posts.to(SEND_URL)[index]["data"]), policy=email.policy.SMTP
+    )
+
+
+def test_a_threaded_send_goes_as_mime_to_the_same_endpoint(mailer, env, posts):
+    assert mailer.main(["--thread", KEY, "subject", BODY]) == 0
+    call = posts.to(SEND_URL)[0]
+    assert call["url"] == SEND_URL
+    assert call["headers"]["Content-Type"] == "text/plain"
+    assert call["headers"]["Authorization"] == f"Bearer {TOKEN}"
+    assert _mime(posts).get_content().strip() == BODY
+
+
+def test_an_unthreaded_send_is_still_the_json_payload(mailer, env, posts):
+    # The regression guard for every caller that is NOT the ticket notifier: the alerter,
+    # the config watchdog and the monthly report must keep the transport they have.
+    assert mailer.main(["subject", BODY]) == 0
+    assert posts.to(SEND_URL)[0]["headers"]["Content-Type"] == "application/json"
+    assert _sent(posts)["saveToSentItems"] is False
+
+
+def test_the_threaded_message_is_addressed_like_the_json_one(mailer, env, posts, monkeypatch):
+    monkeypatch.setenv("DSL_ALERT_CC", "archive@hertie-school.org")
+    assert mailer.main(["--thread", KEY, "subject", BODY]) == 0
+    message = _mime(posts)
+    # From is the sending mailbox and can be nothing else - Graph parses this into a draft
+    # in that mailbox and refuses a message claiming to be from anyone else.
+    assert message["From"] == SENDER
+    assert message["To"] == TO
+    assert message["Cc"] == "archive@hertie-school.org"
+    assert message["Subject"] == "subject"
+
+
+def test_two_mails_under_one_key_share_a_thread_but_not_an_identity(mailer, env, posts):
+    assert mailer.main(["--thread", KEY, "ticket filed", BODY]) == 0
+    assert mailer.main(["--thread", KEY, "new comment", BODY]) == 0
+    first, second = _mime(posts, 0), _mime(posts, 1)
+    # The grouping root, identical - this is what threads Gmail, Apple Mail and Thunderbird.
+    assert first["References"] == second["References"] == ROOT
+    assert first["In-Reply-To"] == second["In-Reply-To"] == ROOT
+    # And the conversation index, identical - this is what threads Outlook and Exchange.
+    assert first["Thread-Index"] == second["Thread-Index"]
+    # But NOT the Message-ID. Two mails under one Message-ID is one mail as far as Gmail is
+    # concerned, and a re-run or a backfill sends the opening mail twice.
+    assert first["Message-ID"] != second["Message-ID"]
+
+
+def test_two_keys_are_two_conversations(mailer, env, posts):
+    assert mailer.main(["--thread", "ds01-hub-32", "subject", BODY]) == 0
+    assert mailer.main(["--thread", "ds01-hub-33", "subject", BODY]) == 0
+    assert _mime(posts, 0)["Thread-Index"] != _mime(posts, 1)["Thread-Index"]
+    assert _mime(posts, 0)["References"] != _mime(posts, 1)["References"]
+
+
+def test_the_conversation_index_has_the_shape_exchange_reads(mailer, env, posts):
+    assert mailer.main(["--thread", KEY, "subject", BODY]) == 0
+    raw = base64.b64decode(_mime(posts)["Thread-Index"])
+    # 22 bytes: a reserved 0x01, five FILETIME bytes, then the 16 that name the
+    # conversation (MS-OXOMSG 2.2.1.3). Anything else and Exchange falls back to the
+    # subject, which is the behaviour this whole flag exists to stop relying on.
+    assert len(raw) == 22
+    assert raw[0] == 1
+    assert raw[6:22] == hashlib.sha256(KEY.encode()).digest()[:16]
+
+
+def test_the_thread_topic_agrees_with_the_subject(mailer, env, posts):
+    # Exchange hashes the topic when there is no usable index; the two must not disagree.
+    assert mailer.main(["--thread", KEY, "[ds01-hub #32] Access - someone", BODY]) == 0
+    message = _mime(posts)
+    assert message["Thread-Topic"] == message["Subject"] == "[ds01-hub #32] Access - someone"
+
+
+def test_a_threaded_html_body_stays_html(mailer, env, posts):
+    assert mailer.main(["--html", "--thread", KEY, "subject", "<p>hello</p>"]) == 0
+    message = _mime(posts)
+    assert message.get_content_type() == "text/html"
+    assert message.get_content().strip() == "<p>hello</p>"
+
+
+def test_a_long_rendered_line_is_encoded_rather_than_sent_illegal(mailer, env, posts):
+    # GitHub's rendered markdown routinely emits one line of several thousand characters.
+    # RFC 5322 caps a line at 998 bytes, and a message that breaks it is mangled in
+    # transit rather than refused - so this is silent if it ever regresses.
+    long_line = "<p>" + ("x" * 4000) + "</p>"
+    assert mailer.main(["--html", "--thread", KEY, "subject", long_line]) == 0
+    raw = base64.b64decode(posts.to(SEND_URL)[0]["data"])
+    assert max(len(line) for line in raw.split(b"\r\n")) <= 998
+    assert _mime(posts).get_content().strip() == long_line
+
+
+def test_a_subject_with_an_umlaut_survives_the_round_trip(mailer, env, posts):
+    subject = "[ds01-hub #32] Zugang außerhalb des Campus - someone"
+    assert mailer.main(["--thread", KEY, subject, BODY]) == 0
+    raw = base64.b64decode(posts.to(SEND_URL)[0]["data"])
+    raw.decode("ascii")  # RFC 2047 encoded, so the headers are still 7-bit
+    assert _mime(posts)["Subject"] == subject
+
+
+# ------------------------------------------------- when threading cannot be done safely
+
+
+def test_a_subject_that_tries_to_be_headers_falls_back_rather_than_injecting(
+    mailer, env, posts, capsys
+):
+    # The subject is a GitHub issue title, which is to say a stranger typed it.
+    assert mailer.main(["--thread", KEY, "subject\nBcc: someone@elsewhere.org", BODY]) == 0
+    assert posts.to(SEND_URL)[0]["headers"]["Content-Type"] == "application/json"
+    assert "sending unthreaded" in capsys.readouterr().out
+
+
+def test_a_thread_key_that_is_not_a_plain_token_is_refused_by_name(mailer, env, posts, capsys):
+    assert mailer.main(["--thread", "ds01-hub #32", "subject", BODY]) == 0
+    assert posts.to(SEND_URL)[0]["headers"]["Content-Type"] == "application/json"
+    assert "thread key" in capsys.readouterr().out
+
+
+def test_a_refused_threaded_send_is_resent_unthreaded(mailer, env, posts, capsys):
+    # The channel the lab hears about tickets on. Threading is a courtesy; arriving is not.
+    posts.replies[SEND_URL] = [(400, {}), (202, {})]
+    assert mailer.main(["--thread", KEY, "subject", BODY]) == 0
+    sends = posts.to(SEND_URL)
+    assert len(sends) == 2
+    assert sends[0]["headers"]["Content-Type"] == "text/plain"
+    assert sends[1]["headers"]["Content-Type"] == "application/json"
+    out = capsys.readouterr().out
+    assert "threaded send failed (400) - resending unthreaded" in out
+    assert "alert mailed" in out
+
+
+def test_a_throttled_threaded_send_is_retried_before_it_gives_up(mailer, env, posts, capsys):
+    posts.replies[SEND_URL] = [(429, {}), (202, {})]
+    assert mailer.main(["--thread", KEY, "subject", BODY]) == 0
+    sends = posts.to(SEND_URL)
+    assert len(sends) == 2
+    # Both attempts are the threaded payload: a 429 is Graph's mood, not a bad message.
+    assert [call["headers"]["Content-Type"] for call in sends] == ["text/plain", "text/plain"]
+    assert "retrying once" in capsys.readouterr().out
+
+
+def test_a_threaded_send_that_never_lands_fails_the_run(mailer, env, posts, capsys):
+    posts.replies[SEND_URL] = [(400, {}), (400, {})]
+    assert mailer.main(["--thread", KEY, "subject", BODY]) == 1
+    assert len(posts.to(SEND_URL)) == 2
+    assert "failed (400)" in capsys.readouterr().out
+
+
+def test_the_threaded_path_keeps_the_journal_free_of_the_message(mailer, env, posts, capsys):
+    assert mailer.main(["--thread", KEY, "subject", BODY]) == 0
+    out = capsys.readouterr().out
+    assert TOKEN not in out
+    assert "SENTINEL-ORG" not in out
+    assert TO not in out
+    assert "h***@hertie-school.org" in out
 
 
 # ------------------------------------------ the env file, for a caller systemd did not start
