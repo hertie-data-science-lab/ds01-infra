@@ -12,10 +12,17 @@
 #   ds01-deploy --ref v1.2.3     release a specific v* tag (must be an ancestor of main)
 #   ds01-deploy --rollback       re-release the previous good SHA
 #   ds01-deploy --list           show release history + current SHA
+#   --allow-downgrade            permit a target older than what is live
 #
 # Safety model: a smoke failure aborts before prod is mutated; a side-effect OR
 # post-deploy-health-gate failure auto-rolls-back to the last good SHA;
 # current-sha only advances after a fully successful, health-gated release.
+#
+# A release NEVER GOES BACKWARDS by accident. `--ref` used to be checked only for
+# shape, existence and ancestry of origin/main - all of which an old tag passes,
+# so re-pushing v1.0.0 would quietly put last January in prod. Going back is a
+# thing you can still do, but you have to say so: `--rollback` (to the last good
+# SHA) or `--allow-downgrade` (to a named older ref). See `refuse_downgrade`.
 
 set -euo pipefail
 
@@ -43,7 +50,7 @@ die() {
     exit 1
 }
 
-usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; }
 
 # git in the staging clone, always as the checkout owner (SSH auth + ownership;
 # root would trip git's dubious-ownership guard and lack the SSH key).
@@ -95,6 +102,35 @@ resolve_target() {
     else
         git_owner rev-parse --verify origin/main
     fi
+}
+
+# <sha>  — non-zero if <sha> is strictly behind what is live, which is a release
+# going backwards. The three checks in `resolve_target` cannot catch this: an old
+# tag is well-formed, present, and an ancestor of origin/main, so it passes all of
+# them and deploys last January over today.
+#
+# "Strictly behind" means an ancestor of current-sha and not equal to it -
+# re-releasing exactly what is live is a no-op worth allowing, and a target that
+# is ahead or on a divergent line is a normal release.
+#
+# Fails OPEN when the comparison cannot be made - an empty current-sha (nothing
+# released yet) or a current-sha whose object staging does not have (history
+# rewritten under us). Refusing there would brick releases over a missing object,
+# which is a worse failure than the one this guards against.
+refuse_downgrade() {
+    local target=$1 cur
+    cur=$(current_sha)
+    [ -n "$cur" ] || return 0
+    [ "$target" != "$cur" ] || return 0
+    git_owner cat-file -e "$cur^{commit}" 2>/dev/null || {
+        warn "current-sha $cur is not in staging - cannot check for a downgrade, continuing"
+        return 0
+    }
+    git_owner merge-base --is-ancestor "$target" "$cur" 2>/dev/null || return 0
+    warn "target $target is BEHIND the live SHA $cur"
+    warn "refusing: this would move prod backwards"
+    warn "if you mean it: --rollback for the last good SHA, or --allow-downgrade for this ref"
+    return 1
 }
 
 # <sha>  — check out and smoke-test in staging. Returns non-zero on failure.
@@ -242,12 +278,16 @@ do_release() {
 }
 
 main() {
-    local mode=deploy ref=""
+    local mode=deploy ref="" allow_downgrade=0
     while [ $# -gt 0 ]; do
         case $1 in
             --ref)
                 ref=${2:-}
                 shift 2
+                ;;
+            --allow-downgrade)
+                allow_downgrade=1
+                shift
                 ;;
             --rollback)
                 mode=rollback
@@ -297,6 +337,11 @@ main() {
                 target=$(resolve_target) || die "could not resolve origin/main"
             fi
             log "target: $target${ref:+ (ref $ref)}"
+            if [ "$allow_downgrade" -eq 1 ]; then
+                log "--allow-downgrade given; not checking whether this goes backwards"
+            else
+                refuse_downgrade "$target" || die "refusing to release $target"
+            fi
             do_release "$target"
             ;;
         rollback)
@@ -308,4 +353,8 @@ main() {
     esac
 }
 
-main "$@"
+# Guarded so the functions above can be sourced by a test without releasing
+# anything. Nothing else sources this file.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    main "$@"
+fi
