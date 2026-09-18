@@ -77,6 +77,21 @@ sudo ds01-deploy --rollback      # re-release the previous good SHA
 sudo ds01-deploy --list          # show release history + current SHA
 ```
 
+**A release never goes backwards by accident.** `--ref` is checked for shape,
+existence and ancestry of `origin/main` - all of which an OLD tag also passes, so
+re-pushing `v1.0.0` would otherwise put that January's code into production. A
+target that is strictly behind the live SHA is refused:
+
+```
+ds01-deploy: target <sha> is BEHIND the live SHA <sha>
+ds01-deploy: refusing: this would move prod backwards
+```
+
+Going back on purpose is still a two-word job - `--rollback` for the last good
+SHA, or `--allow-downgrade` alongside `--ref` for a specific older one. This is
+also what makes it safe to (re)create historical `v*` tags: pushing one fires
+`deploy.yml`, and the deploy now declines it instead of shipping it.
+
 `sudo ds01-apply` (`deploy.sh`) on its own only reapplies side-effects (symlinks, systemd
 units, sudoers, permissions) against whatever code is already on disk in prod - it does
 not fetch or change code. Use `version` to check what's actually deployed; it reads
