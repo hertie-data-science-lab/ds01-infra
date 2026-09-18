@@ -249,6 +249,38 @@ driver is failing, and logs one line: `alert mailed to h***@hertie-school.org
 (202)`. The mailer prints status codes and masked recipients only - never the token
 and never a Graph response body, which echoes the message back.
 
+### Threading several mails into one conversation
+
+`--thread KEY` puts every mail sharing `KEY` into one conversation in the reader's
+mailbox. It exists for the ds01-hub ticket notifier, where a ticket being filed,
+each comment on it and each escalation reminder are episodes of one story rather
+than unrelated alerts. `KEY` is an opaque stable token (`[A-Za-z0-9._-]`, up to 64
+characters) naming that story - the ticket scripts build it from the issue number.
+
+```bash
+python3 scripts/maintenance/dsl-alert-mail.py \
+    --to you@hertie-school.org --thread probe-$(date +%F) \
+    '[probe] threading' 'first'
+python3 scripts/maintenance/dsl-alert-mail.py \
+    --to you@hertie-school.org --thread probe-$(date +%F) \
+    '[probe] threading' 'second'
+```
+
+Both should land in ONE conversation. A threaded send logs `(202, threaded)`.
+
+Two things behave differently on this path, and only on this path:
+
+- It sends as MIME rather than JSON, because the headers a mail client threads on
+  (`Thread-Index` for Outlook and Exchange, `References` for everything else) cannot
+  be set any other way - Graph's JSON `sendMail` takes custom `x-` headers only.
+  MIME `sendMail` has no `saveToSentItems`, so **a threaded mail is kept in the
+  sender mailbox's Sent Items** where an alert is not. A mailbox that is also on the
+  Cc line therefore keeps two copies. Harmless at ticket volume; surprising if you
+  do not know to expect it.
+- A threaded send that Graph refuses, or a subject MIME cannot carry, is **resent
+  unthreaded** and says so (`threaded send failed (400) - resending unthreaded`).
+  Threading is a courtesy; the mail arriving is not.
+
 ## What tells a human something is wrong
 
 Every channel below is optional and independent: Teams needs a webhook, mail needs
