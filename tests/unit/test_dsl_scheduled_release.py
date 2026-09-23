@@ -80,7 +80,7 @@ def _runs(*conclusions, created_at="2026-09-04T12:00:00Z"):
     }
 
 
-def _tick(tmp_path, orgs, *, minutes_since_run=10):
+def _tick(tmp_path, orgs, *, minutes_since_run=10, args=()):
     """Run one tick.
 
     `orgs` maps org -> (dispatch status, runs body). A dispatch status may be a
@@ -108,7 +108,7 @@ def _tick(tmp_path, orgs, *, minutes_since_run=10):
         (tmp_path / f"runs-{org}.json").write_text(body)
 
     return subprocess.run(
-        ["bash", str(DRIVER)],
+        ["bash", str(DRIVER), *args],
         capture_output=True,
         text=True,
         env={
@@ -235,3 +235,52 @@ def test_the_token_never_reaches_a_command_line(tmp_path):
     assert TOKEN not in result.stdout + result.stderr
     # ...and it is genuinely still sent, from a file curl reads itself.
     assert [line for line in argv.splitlines() if line.startswith("@") and line.endswith("/auth")]
+
+
+def _payloads(tmp_path):
+    argv = (tmp_path / "argv.log").read_text().splitlines()
+    return [json.loads(argv[i + 1]) for i, a in enumerate(argv) if a == "-d"]
+
+
+def test_the_release_tick_sends_scheduled_release(tmp_path):
+    _tick(tmp_path, {"orga": (204, _runs("success"))})
+    assert _payloads(tmp_path) == [
+        {"event_type": "scheduled-release", "client_payload": {"driver": "ds01"}}
+    ]
+
+
+def test_the_membership_tick_asks_for_every_cohort(tmp_path):
+    # A sync-membership dispatch naming no cohort reconciles course admins only.
+    result = _tick(tmp_path, {"orga": (204, None)}, args=["--membership"])
+    assert result.returncode == 0
+    assert result.stdout.strip() == "membership dispatched=1 ok=1 pruned=0"
+    assert _payloads(tmp_path) == [
+        {
+            "event_type": "sync-membership",
+            "client_payload": {"driver": "ds01", "all_cohorts": True},
+        }
+    ]
+
+
+def test_the_membership_tick_never_judges_release_runs(tmp_path):
+    # Release health belongs to the release tick alone: failing release runs must
+    # not fail, or even be read by, a membership tick.
+    runs = _runs("failure", "failure", "failure")
+    result = _tick(tmp_path, {"orga": (204, runs)}, args=["--membership"], minutes_since_run=600)
+    assert result.returncode == 0
+    assert "failing" not in result.stdout
+    assert "silent" not in result.stdout
+    assert "/runs" not in (tmp_path / "argv.log").read_text()
+
+
+def test_a_refused_membership_dispatch_still_fails_its_tick(tmp_path):
+    result = _tick(tmp_path, {"orga": (401, None), "orgb": (401, None)}, args=["--membership"])
+    assert result.returncode == 1
+    assert "token-dead (all 2 orgs refused the dispatch)" in result.stdout
+    assert "membership dispatched=2 ok=0 pruned=0" in result.stdout
+
+
+def test_an_unknown_argument_is_refused(tmp_path):
+    result = _tick(tmp_path, {"orga": (204, None)}, args=["--bogus"])
+    assert result.returncode == 2
+    assert not (tmp_path / "argv.log").exists()
