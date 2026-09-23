@@ -159,6 +159,23 @@ journalctl -u dsl-scheduled-release -n 30
 A healthy tick logs only the summary line, e.g.
 `dispatched=26 ok=26 pruned=0 failing=0 silent=0`.
 
+### Sync-membership backstop
+
+`dsl-sync-membership.timer` fires hourly at `:05` and runs the same driver with
+`--membership`: same orgs, same token, but the event is `sync-membership` with
+`all_cohorts: true`, so every live cohort is reconciled. It exists because the
+toolkit's own daily `Sync membership` cron arrives hours late, so a change its
+event-driven run missed would otherwise wait that long.
+
+It only dispatches. Runs are never read back, so `failing` and `silent` stay about
+`Scheduled release` alone. Refusals, `token-dead` and `dispatch-failed` still fail
+the tick and alert through `dsl-alert@dsl-sync-membership.service`.
+
+```bash
+sudo systemctl start dsl-sync-membership.service
+journalctl -u dsl-sync-membership -n 30    # membership dispatched=26 ok=26 pruned=0
+```
+
 ### Reading the log
 
 | Word | Meaning | Action |

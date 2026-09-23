@@ -14,6 +14,13 @@
 # work. A revoked token is therefore a silent total outage. Reading each org's
 # recent runs from here is the only signal that survives it.
 #
+# `--membership` (dsl-sync-membership.timer, hourly) instead dispatches the
+# toolkit's `Sync membership` workflow to the same orgs, with the same token. Its
+# own GitHub cron is daily and was observed arriving 5-6.5 h late, so a
+# membership change its event-driven run missed waited that long. That mode only
+# dispatches: the observer below judges `Scheduled release` alone, so a membership
+# tick can never report an org as failing or silent.
+#
 # PII: the journal of this unit is read by dsl-alert.sh and posted to Teams, so
 # only org names and HTTP status codes are ever printed. API response bodies can
 # carry student names and are parsed but never logged.
@@ -28,6 +35,25 @@ readonly SEARCH_LIMIT=100
 # One tick is 15 min; 60 min means at least three consecutive misses by BOTH
 # drivers before we call an org silent.
 readonly SILENT_AFTER_MIN=60
+
+# The two modes differ only in the event sent and whether runs are read back.
+# `all_cohorts` asks Sync membership to reconcile every live cohort, the scope of
+# its daily cron: a dispatch naming no cohort otherwise reconciles course admins
+# only.
+case "${1:-}" in
+    "")
+        readonly MODE=release
+        readonly PAYLOAD='{"event_type":"scheduled-release","client_payload":{"driver":"ds01"}}'
+        ;;
+    --membership)
+        readonly MODE=membership
+        readonly PAYLOAD='{"event_type":"sync-membership","client_payload":{"driver":"ds01","all_cohorts":true}}'
+        ;;
+    *)
+        echo "usage: $0 [--membership]"
+        exit 2
+        ;;
+esac
 
 : "${GH_TOKEN:?GH_TOKEN unset (expected from /etc/dsl-scheduled-release.env)}"
 
@@ -58,7 +84,7 @@ dispatch() {
         -H @"$tmp/auth" \
         -H "Accept: application/vnd.github+json" \
         "$API/repos/$1/.github/dispatches" \
-        -d '{"event_type":"scheduled-release","client_payload":{"driver":"ds01"}}'
+        -d "$PAYLOAD"
 }
 
 # observe <org> — judge the org's recent runs; marks failure and bumps counters.
@@ -157,7 +183,9 @@ for org in "${orgs[@]}"; do
     case "$code" in
         204)
             ok=$((ok + 1))
-            observe "$org"
+            if [ "$MODE" = release ]; then
+                observe "$org"
+            fi
             ;;
         404)
             # The search index lags org deletion; a gone org is not a fault.
@@ -189,7 +217,11 @@ if [ "$refused" -gt 0 ]; then
     fi
 fi
 
-echo "dispatched=$dispatched ok=$ok pruned=$pruned failing=$failing silent=$silent"
+if [ "$MODE" = release ]; then
+    echo "dispatched=$dispatched ok=$ok pruned=$pruned failing=$failing silent=$silent"
+else
+    echo "membership dispatched=$dispatched ok=$ok pruned=$pruned"
+fi
 
 # Non-zero iff something needs a human, so OnFailure alerts once per bad tick.
 exit "$failure"

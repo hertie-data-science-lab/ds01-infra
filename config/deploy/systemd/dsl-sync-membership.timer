@@ -1,0 +1,15 @@
+[Unit]
+Description=DSL Sync-Membership Backstop Timer
+Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
+Requires=dsl-sync-membership.service
+
+[Timer]
+# The teaching toolkit's own `Sync membership` cron is daily and GitHub has
+# delivered it hours late, so a membership change its event-driven run missed
+# waited that long. Hourly bounds the wait; :05 stays clear of the
+# scheduled-release tick at :00.
+OnCalendar=*-*-* *:05:00
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,24 @@
+[Unit]
+Description=DSL Sync-Membership Backstop
+Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
+After=network-online.target
+Wants=network-online.target
+# Its own unit, so an alert names the membership dispatch and never reads as the
+# scheduled-release driver failing - see dsl-alert@.service.
+OnFailure=dsl-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+
+# Same token file and same driver as dsl-scheduled-release.service; see there.
+EnvironmentFile=/etc/dsl-scheduled-release.env
+
+ExecStart=/opt/ds01-infra/scripts/maintenance/dsl-scheduled-release.sh --membership
+# Dispatch only, no read-back: ~26 orgs x one 15s-capped curl, plus a 5xx retry.
+TimeoutStartSec=900
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dsl-sync-membership
