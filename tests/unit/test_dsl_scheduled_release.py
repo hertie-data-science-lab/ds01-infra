@@ -4,6 +4,10 @@ The driver reaches GitHub only through `gh` and `curl`, so both are stubbed on
 PATH (plus `date`, to make "how old is the newest run" deterministic). The
 assertions are on the journal lines and the exit code, because those are the
 only two things systemd and the OnFailure alert act on.
+
+The orgs come from the GraphQL topic query (curl) with the REST search (gh) as
+fallback; each stub answers one scripted line per attempt, so a route can be
+down, empty, or healthy on a given call.
 """
 
 import json
@@ -21,14 +25,33 @@ pytestmark = [
     pytest.mark.skipif(shutil.which("jq") is None, reason="driver parses JSON with jq"),
 ]
 
+# One scripted answer per call from search: `ok` is the org list, `empty` is a
+# search index replica that has lost the topic, anything else is a failed call.
 GH_STUB = """#!/bin/bash
-cat "$STUB_DIR/search.json"
+echo "$*" >>"$STUB_DIR/gh.log"
+case "$(next_answer "$STUB_DIR/search")" in
+    ok) cat "$STUB_DIR/search.json" ;;
+    empty) echo '[]' ;;
+    *) exit 1 ;;
+esac
+"""
+
+# Pops the first line of a scripted-answers file; the last line repeats.
+NEXT_ANSWER = """#!/bin/bash
+f=$1
+head -1 "$f"
+if [ "$(wc -l <"$f")" -gt 1 ]; then
+    tail -n +2 "$f" >"$f.rest"
+    mv "$f.rest" "$f"
+fi
 """
 
 # Echoes the status code for a dispatch, or writes the runs body and echoes 200.
 # Every argv it is handed is appended to argv.log, so a test can prove the token
 # is never passed on a command line. A dispatch file holding several codes is
-# consumed one line per call, which is how the 5xx retry is exercised.
+# consumed one line per call, which is how the 5xx retry is exercised. The
+# GraphQL route answers `ok` (the org list), `empty` (a topic with no repos) or
+# an HTTP status with no body, one scripted line per call.
 CURL_STUB = """#!/bin/bash
 printf '%s\\n' "$@" >>"$STUB_DIR/argv.log"
 out=/dev/null
@@ -43,6 +66,20 @@ done
 org=${url#https://api.github.com/repos/}
 org=${org%%/*}
 case "$url" in
+    */graphql)
+        answer=$(next_answer "$STUB_DIR/graphql")
+        case "$answer" in
+            ok)
+                cp "$STUB_DIR/topic.json" "$out"
+                printf '200'
+                ;;
+            empty)
+                echo '{"data":{"topic":{"repositories":{"totalCount":0,"nodes":[]}}}}' >"$out"
+                printf '200'
+                ;;
+            *) printf '%s' "$answer" ;;
+        esac
+        ;;
     */dispatches)
         f="$STUB_DIR/dispatch-$org"
         code=$(head -1 "$f")
@@ -80,12 +117,13 @@ def _runs(*conclusions, created_at="2026-09-04T12:00:00Z"):
     }
 
 
-def _tick(tmp_path, orgs, *, minutes_since_run=10, args=()):
+def _tick(tmp_path, orgs, *, minutes_since_run=10, args=(), graphql=("ok",), search=("ok",)):
     """Run one tick.
 
     `orgs` maps org -> (dispatch status, runs body). A dispatch status may be a
     list, one status per attempt. A runs body may be a raw string, to hand the
-    driver something that is not JSON.
+    driver something that is not JSON. `graphql` and `search` script the two
+    enumeration routes, one answer per attempt (see the stubs).
     """
     stub = tmp_path / "bin"
     stub.mkdir()
@@ -94,13 +132,18 @@ def _tick(tmp_path, orgs, *, minutes_since_run=10, args=()):
         ("curl", CURL_STUB),
         ("date", DATE_STUB),
         ("sleep", SLEEP_STUB),
+        ("next_answer", NEXT_ANSWER),
     ):
         path = stub / name
         path.write_text(body)
         path.chmod(0o755)
 
-    search = [{"name": ".github", "owner": {"login": org}} for org in orgs]
-    (tmp_path / "search.json").write_text(json.dumps(search))
+    nodes = [{"name": ".github", "owner": {"login": org}} for org in orgs]
+    (tmp_path / "search.json").write_text(json.dumps(nodes))
+    topic = {"data": {"topic": {"repositories": {"totalCount": len(nodes), "nodes": nodes}}}}
+    (tmp_path / "topic.json").write_text(json.dumps(topic))
+    (tmp_path / "graphql").write_text("\n".join(str(a) for a in graphql) + "\n")
+    (tmp_path / "search").write_text("\n".join(search) + "\n")
     for org, (code, runs) in orgs.items():
         codes = code if isinstance(code, list) else [code]
         (tmp_path / f"dispatch-{org}").write_text("\n".join(str(c) for c in codes) + "\n")
@@ -112,7 +155,7 @@ def _tick(tmp_path, orgs, *, minutes_since_run=10, args=()):
         capture_output=True,
         text=True,
         env={
-            "PATH": f"{stub}:/usr/bin:/bin",
+            "PATH": f"{stub}:{Path(shutil.which('jq')).parent}:/usr/bin:/bin",
             "GH_TOKEN": TOKEN,
             "STUB_DIR": str(tmp_path),
             "STUB_NOW_EPOCH": str(NOW),
@@ -125,6 +168,48 @@ def test_healthy_tick_logs_only_the_summary(tmp_path):
     result = _tick(tmp_path, {"orga": (204, _runs("success", "success"))})
     assert result.returncode == 0
     assert result.stdout.strip() == "dispatched=1 ok=1 pruned=0 failing=0 silent=0"
+    # The orgs came from the GraphQL topic; the search was never needed.
+    assert not (tmp_path / "gh.log").exists()
+
+
+def test_an_unreachable_graphql_falls_back_to_the_search(tmp_path):
+    result = _tick(tmp_path, {"orga": (204, _runs("success"))}, graphql=(503,))
+    assert result.returncode == 0
+    assert "GraphQL answered 503" in result.stdout
+    assert "dispatched=1 ok=1" in result.stdout
+
+
+def test_an_empty_graphql_answer_falls_back_to_the_search(tmp_path):
+    result = _tick(tmp_path, {"orga": (204, _runs("success"))}, graphql=("empty",))
+    assert result.returncode == 0
+    assert "trying the search" in result.stdout
+    assert "dispatched=1 ok=1" in result.stdout
+
+
+def test_an_empty_answer_from_both_routes_is_retried_once(tmp_path):
+    # 2026-10-22: a search index replica answered the topic with an empty page
+    # for whole ticks. One hiccup must not mail anyone.
+    result = _tick(
+        tmp_path,
+        {"orga": (204, _runs("success"))},
+        graphql=("empty", "ok"),
+        search=("empty", "ok"),
+    )
+    assert result.returncode == 0
+    assert "retrying" in result.stdout
+    assert "dispatched=1 ok=1" in result.stdout
+
+
+def test_no_orgs_on_either_route_twice_fails_the_tick(tmp_path):
+    result = _tick(
+        tmp_path,
+        {"orga": (204, _runs("success"))},
+        graphql=("empty", "empty"),
+        search=("fail", "fail"),
+    )
+    assert result.returncode == 1
+    assert "no .github hub repos found for topic dsl-course-hub" in result.stdout
+    assert "dispatched=" not in result.stdout
 
 
 def test_a_deleted_org_is_pruned_not_alerted(tmp_path):
@@ -198,12 +283,22 @@ def test_an_org_that_never_ran_is_silent(tmp_path):
     assert "silent orga (no runs)" in result.stdout
 
 
-def test_a_truncated_org_search_drives_nothing(tmp_path):
+def test_a_truncated_topic_drives_nothing(tmp_path):
     # Driving an unknowable subset of orgs is worse than not driving at all.
-    orgs = {f"o{i}": (204, _runs("success")) for i in range(100)}
+    # GraphQL reports the true total, so one page of 100 is exact and 101 is not.
+    orgs = {f"o{i}": (204, _runs("success")) for i in range(101)}
     result = _tick(tmp_path, orgs)
     assert result.returncode == 1
-    assert "search limit" in result.stdout
+    assert "truncated" in result.stdout
+    assert "dispatched=" not in result.stdout
+
+
+def test_a_truncated_org_search_drives_nothing(tmp_path):
+    # The search cannot say what lies past its page, so a full page is suspect.
+    orgs = {f"o{i}": (204, _runs("success")) for i in range(100)}
+    result = _tick(tmp_path, orgs, graphql=(503,))
+    assert result.returncode == 1
+    assert "truncated" in result.stdout
     assert "dispatched=" not in result.stdout
 
 
@@ -238,8 +333,10 @@ def test_the_token_never_reaches_a_command_line(tmp_path):
 
 
 def _payloads(tmp_path):
+    """The dispatch bodies sent, in order (the GraphQL query is not one)."""
     argv = (tmp_path / "argv.log").read_text().splitlines()
-    return [json.loads(argv[i + 1]) for i, a in enumerate(argv) if a == "-d"]
+    bodies = [json.loads(argv[i + 1]) for i, a in enumerate(argv) if a == "-d"]
+    return [b for b in bodies if "event_type" in b]
 
 
 def test_the_release_tick_sends_scheduled_release(tmp_path):
