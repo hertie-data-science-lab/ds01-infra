@@ -108,6 +108,12 @@ with `ds01-deploy`.
 `repository_dispatch` to every DSL course org's `.github` repo (found by the
 `dsl-course-hub` topic) and then reads that org's recent runs back.
 
+The orgs are read from the GraphQL `topic` field, with the REST repo search as
+fallback and one retry when both answer empty. The search is an index copy of
+the topic relation, and one replica of it was seen answering this topic with an
+empty page for whole ticks (2026-10-22), which used to fail the tick and mail an
+alert for nothing.
+
 Why ds01 drives it: the teaching toolkit's own GitHub Actions cron for that
 workflow - which carries every deadline-sensitive action in every course org -
 is delivered best-effort, with observed gaps of hours. The two schedules

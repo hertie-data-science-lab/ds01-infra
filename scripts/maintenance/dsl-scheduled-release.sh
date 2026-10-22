@@ -29,7 +29,7 @@ set -euo pipefail
 
 readonly API="https://api.github.com"
 # Mirrors the toolkit's own org enumeration (dsl_course/list_orgs.py): hub repos
-# are marked with this topic, and 100 is GitHub's practical search page.
+# are marked with this topic, and 100 is one page on both routes that read it.
 readonly TOPIC="dsl-course-hub"
 readonly SEARCH_LIMIT=100
 # One tick is 15 min; 60 min means at least three consecutive misses by BOTH
@@ -148,20 +148,58 @@ observe() {
 }
 
 # ── Enumerate the course orgs ────────────────────────────────────────────────
-# `gh` honours GH_TOKEN, so the search runs as the bot like everything else.
-gh search repos --topic "$TOPIC" --limit "$SEARCH_LIMIT" --json name,owner >"$tmp/search.json"
-
-# Truncation guard: at the page limit we cannot know which orgs were cut, and
+# Two routes read the same topic. The GraphQL `topic` field is a direct read of
+# the repo-topic relation; the REST search is an index copy of it, and on
+# 2026-10-22 one replica of that index answered this topic with an empty page
+# for whole ticks while its siblings answered correctly (2 of 5 queries empty).
+# GraphQL first, the search as fallback, and an empty answer from both is
+# retried once: an empty list is far more likely a hiccup than a world with no
+# course orgs, and exit 1 here mails a human.
+#
+# Both routes cap at one page: past it we cannot know which orgs were cut, and
 # driving a subset silently is worse than not driving at all.
-if [ "$(jq 'length' "$tmp/search.json")" -ge "$SEARCH_LIMIT" ]; then
-    echo "topic $TOPIC returned the $SEARCH_LIMIT-result search limit; results may be truncated"
+truncated() {
+    echo "topic $TOPIC has more than $SEARCH_LIMIT repos; results would be truncated"
     exit 1
+}
+
+# enumerate — write the hub org logins, one per line, to $tmp/orgs (possibly empty).
+enumerate() {
+    local body="$tmp/topic.json" code total
+    : >"$tmp/orgs"
+
+    code=$(curl -sS -m 15 -o "$body" -w '%{http_code}' \
+        -H @"$tmp/auth" \
+        -H "Accept: application/vnd.github+json" \
+        "$API/graphql" \
+        -d "$(jq -cn --arg q "{ topic(name: \"$TOPIC\") { repositories(first: $SEARCH_LIMIT) { totalCount nodes { name owner { login } } } } }" '{query: $q}')" || true)
+    if [ "$code" = 200 ] && total=$(jq -e '.data.topic.repositories.totalCount' "$body" 2>/dev/null); then
+        [ "$total" -gt "$SEARCH_LIMIT" ] && truncated
+        jq -r '.data.topic.repositories.nodes[] | select(.name == ".github") | .owner.login' "$body" 2>/dev/null | sort -u >"$tmp/orgs"
+        [ -s "$tmp/orgs" ] && return
+    fi
+
+    # `gh` honours GH_TOKEN, so the search runs as the bot like everything else.
+    echo "enumerate: GraphQL answered $code with no hub repos; trying the search"
+    if ! gh search repos --topic "$TOPIC" --limit "$SEARCH_LIMIT" --json name,owner >"$tmp/search.json" 2>/dev/null; then
+        return
+    fi
+    total=$(jq -e 'length' "$tmp/search.json" 2>/dev/null) || return 0
+    [ "$total" -ge "$SEARCH_LIMIT" ] && truncated
+    jq -r '.[] | select(.name == ".github") | .owner.login' "$tmp/search.json" 2>/dev/null | sort -u >"$tmp/orgs"
+}
+
+enumerate
+if [ ! -s "$tmp/orgs" ]; then
+    echo "enumerate: no .github hub repos found for topic $TOPIC; retrying"
+    sleep 10
+    enumerate
 fi
 
 orgs=()
 while IFS= read -r org; do
     orgs+=("$org")
-done < <(jq -r '.[] | select(.name == ".github") | .owner.login' "$tmp/search.json" | sort -u)
+done <"$tmp/orgs"
 
 if [ "${#orgs[@]}" -eq 0 ]; then
     echo "no .github hub repos found for topic $TOPIC"
