@@ -191,6 +191,7 @@ python3 scripts/docker/get_resource_limits.py alice
 - `config/groups/` → `config/runtime/groups/`
 - `config/etc-mirrors/profile.d/` → Consolidated into `config/deploy/profile.d/`
 - `config/etc-mirrors/sudoers.d/` → Consolidated into `config/deploy/sudoers.d/`
+- `config/etc-mirrors/cron.d/` → Consolidated into `config/deploy/cron.d/ds01-maintenance`
 
 **Deprecated:**
 - `config/etc-mirrors/` - Marked deprecated, absorbed into deploy/
