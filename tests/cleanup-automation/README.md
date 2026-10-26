@@ -192,7 +192,7 @@ After verifying scripts work manually, test as cron jobs:
 
 ```bash
 # 1. Temporarily modify cron timings to run every minute
-#    Edit /etc/cron.d/ds01-infra:
+#    Edit /etc/cron.d/ds01-maintenance:
 #      */1 * * * * root /opt/ds01-infra/scripts/monitoring/check-idle-containers.sh
 
 # 2. Monitor logs in real-time

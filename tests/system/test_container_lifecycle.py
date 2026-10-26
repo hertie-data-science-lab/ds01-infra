@@ -381,6 +381,20 @@ def test_cron_schedule_no_collisions():
     )
 
 
+RETIRED_CRON_FILES = [
+    "ds01-infra",
+    "ds01-infra-crontab.conf",
+    "ds01-container-cleanup",
+    "ds01-gpu-cleanup",
+]
+
+
+def test_retired_cron_files_removed():
+    """Superseded cron files must not survive a deploy, or jobs run 2-3x hourly."""
+    present = [f for f in RETIRED_CRON_FILES if Path(f"/etc/cron.d/{f}").exists()]
+    assert not present, f"Retired cron files still deployed: {present}. Run a release."
+
+
 def test_cron_deployed_matches_repo():
     """Deployed /etc/cron.d/ds01-maintenance should match the repo version."""
     repo_cron = INFRA_ROOT / "config" / "deploy" / "cron.d" / "ds01-maintenance"

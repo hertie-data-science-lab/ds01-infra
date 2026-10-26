@@ -366,6 +366,7 @@ envsubst < config/deploy/profile.d/example.sh.template
 - `config/group-overrides.txt` → `config/runtime/group-overrides.txt`
 - `config/etc-mirrors/profile.d/` → Consolidated into `config/deploy/profile.d/`
 - `config/etc-mirrors/sudoers.d/` → Consolidated into `config/deploy/sudoers.d/`
+- `config/etc-mirrors/cron.d/` → Consolidated into `config/deploy/cron.d/ds01-maintenance`
 
 **Removed:**
 - `config/etc-mirrors/` - Marked deprecated, absorbed into deploy/

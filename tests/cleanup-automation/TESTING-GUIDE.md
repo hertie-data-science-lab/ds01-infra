@@ -30,7 +30,7 @@ DS01 has 4 automated cleanup cron jobs:
 
 ```bash
 # View current cron jobs
-cat /etc/cron.d/ds01-infra
+cat /etc/cron.d/ds01-maintenance
 
 # Check when logs were last updated
 ls -lh /var/log/ds01/*.log
@@ -190,7 +190,7 @@ sudo ls -la /var/log/ds01/
 ls -la /etc/cron.d/ds01-*
 
 # Verify no syntax errors (no output = good)
-sudo cron -T /etc/cron.d/ds01-infra
+sudo cron -T /etc/cron.d/ds01-maintenance
 ```
 
 ### Manual Script Execution
@@ -228,11 +228,11 @@ sudo chmod 600 /var/log/ds01/*.log
 **Fix**:
 ```bash
 # Redeploy cron files
-sudo cp /opt/ds01-infra/config/etc-mirrors/cron.d/ds01-infra /etc/cron.d/
+sudo cp /opt/ds01-infra/config/deploy/cron.d/ds01-maintenance /etc/cron.d/
 sudo systemctl restart cron
 
 # Check for errors
-sudo cron -T /etc/cron.d/ds01-infra
+sudo cron -T /etc/cron.d/ds01-maintenance
 ```
 
 ### Issue 3: Python Heredoc Failures

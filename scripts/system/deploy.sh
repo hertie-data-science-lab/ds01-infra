@@ -508,6 +508,12 @@ for cron_file in "$INFRA_ROOT"/config/deploy/cron.d/ds01-*; do
     chmod 644 /etc/cron.d/"$name"
 done
 
+# Retired cron files: every job they ran lives in ds01-maintenance now, and
+# leaving them in place runs the lifecycle scripts two or three times an hour.
+for retired in ds01-infra ds01-infra-crontab.conf ds01-container-cleanup ds01-gpu-cleanup; do
+    rm -f /etc/cron.d/"$retired"
+done
+
 echo -e "  ${GREEN}✓${NC} Cron.d files deployed (644)"
 
 # --- Ensure state directories exist ---

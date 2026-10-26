@@ -131,7 +131,7 @@ ds01-dashboard
 To automatically clean up stale allocations, add to cron:
 
 ```bash
-# Add to /etc/cron.d/ds01-infra
+# Add to /etc/cron.d/ds01-maintenance
 # Run reconciliation every hour at :05
 5 * * * * root /opt/ds01-infra/scripts/maintenance/reconcile-gpu-state.sh >> /var/log/ds01/reconciliation.log 2>&1
 ```

@@ -108,6 +108,38 @@ INFRA_ROOT=/opt/ds01-infra
 0 3 1 * * root $INFRA_ROOT/scripts/maintenance/backup-logs.sh --clean >> /var/log/ds01/log-archive.log 2>&1
 
 # ============================================================================
+# Legacy Metrics, Reports & Audits
+# Moved verbatim from the retired /etc/cron.d/ds01-infra crontab so that one
+# file owns every job. Timings unchanged. The collectors feed
+# compile-daily-report; nothing else in the repo reads their output, so this
+# whole section is a candidate for retirement.
+# ============================================================================
+
+# Resource metric collectors (every 5 minutes) -> /var/log/ds01-infra/metrics/
+*/5 * * * * root $INFRA_ROOT/scripts/monitoring/collect-gpu-metrics.sh >> /var/log/ds01/cron.log 2>&1
+*/5 * * * * root $INFRA_ROOT/scripts/monitoring/collect-cpu-metrics.sh >> /var/log/ds01/cron.log 2>&1
+*/5 * * * * root $INFRA_ROOT/scripts/monitoring/collect-memory-metrics.sh >> /var/log/ds01/cron.log 2>&1
+*/5 * * * * root $INFRA_ROOT/scripts/monitoring/collect-disk-metrics.sh >> /var/log/ds01/cron.log 2>&1
+*/5 * * * * root $INFRA_ROOT/scripts/monitoring/collect-container-metrics.sh >> /var/log/ds01/cron.log 2>&1
+
+# DCGM exporter health (every 5 minutes) and MIG topology sync (:20)
+*/5 * * * * root $INFRA_ROOT/scripts/maintenance/check-dcgm-health.sh 2>&1
+20 * * * * root $INFRA_ROOT/scripts/maintenance/check-mig-topology.sh >> /var/log/ds01/mig-topology-sync.log 2>&1
+
+# Daily report from the collected metrics (23:55) -> /var/log/ds01-infra/reports/daily/
+55 23 * * * root $INFRA_ROOT/scripts/monitoring/compile-daily-report.sh >> /var/log/ds01/daily-report.log 2>&1
+
+# Weekly system and Docker audits (Sunday 02:00 / 03:00) -> /var/log/ds01-infra/audits/
+0 2 * * 0 root $INFRA_ROOT/scripts/monitoring/audit-system.sh >> /var/log/ds01/audit-system.log 2>&1
+0 3 * * 0 root $INFRA_ROOT/scripts/monitoring/audit-docker.sh >> /var/log/ds01/audit-docker.log 2>&1
+
+# Scratch space: create per-user dirs weekly (Sunday 03:00), purge files older
+# than 45 days and empty dirs monthly (1st, 04:00 / 04:05)
+0 3 * * 0 root $INFRA_ROOT/scripts/maintenance/setup-scratch-dirs.sh >> /var/log/ds01/maintenance.log 2>&1
+0 4 1 * * root find /scratch -type f -mtime +45 -delete >> /var/log/ds01/scratch-cleanup.log 2>&1
+5 4 1 * * root find /scratch -type d -empty -delete >> /var/log/ds01/scratch-cleanup.log 2>&1
+
+# ============================================================================
 # Monthly Reporting
 # ============================================================================
 
