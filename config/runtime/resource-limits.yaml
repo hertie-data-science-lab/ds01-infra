@@ -73,6 +73,10 @@ defaults:
 
 default_group: student
 
+# A user listed in several groups (members files or group-overrides.txt) gets the
+# first group below that lists them. Highest privilege first.
+group_precedence: [admin, faculty, researcher, student]
+
 # === Enforcement settings ===
 enforcement:
   aggregate_limits: true           # Enable per-user aggregate enforcement via systemd slices

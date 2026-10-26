@@ -162,8 +162,31 @@ class ResourceLimitParser:
             # User overrides file may be restricted to admins only
             return {}
 
+    def _load_group_overrides(self):
+        """Load config/runtime/group-overrides.txt: one `username:group  # comment` per line.
+
+        Returns dict of username -> group, or empty dict if the file is missing or unreadable.
+        """
+        override_file = self.config_dir / "group-overrides.txt"
+        overrides = {}
+        try:
+            if not override_file.exists():
+                return overrides
+            for line in override_file.read_text().splitlines():
+                line = line.split("#")[0].strip()
+                if ":" not in line:
+                    continue
+                username, group = (part.strip() for part in line.split(":", 1))
+                if username and group:
+                    overrides[username] = group
+        except PermissionError:
+            pass
+        return overrides
+
     def _load_external_files(self):
         """Load external member files and user overrides, merging into config."""
+        self.group_overrides = self._load_group_overrides()
+
         # Load group members from files (supplements/overrides inline members)
         groups = self.config.get("groups") or {}
         for group_name in groups:
@@ -182,81 +205,66 @@ class ResourceLimitParser:
             merged_overrides = {**inline_overrides, **file_overrides}
             self.config["user_overrides"] = merged_overrides
 
-    def get_user_group(self, username):
-        """Get the group name for a user.
+    def _group_precedence(self):
+        """Group names, highest privilege first.
 
-        Supports both original and sanitized usernames in config lookups.
-        Tries original username first, then sanitized form.
+        Taken from `group_precedence` in the config. Without it, groups are assumed to be
+        defined in ascending privilege, so the last-defined group wins.
         """
-        user_overrides = self.config.get("user_overrides") or {}
-        sanitized = sanitize_username_for_slice(username)
-
-        # Check user_overrides with original username first
-        if username in user_overrides:
-            return "override"
-        # Fallback to sanitized form
-        if sanitized != username and sanitized in user_overrides:
-            return "override"
-
         groups = self.config.get("groups") or {}
-        for group_name, group_config in groups.items():
-            members = group_config.get("members", [])
-            # Check original username first
-            if username in members:
-                return group_name
-            # Fallback to sanitized form
-            if sanitized != username and sanitized in members:
+        explicit = self.config.get("group_precedence")
+        if explicit:
+            return [g for g in explicit if g in groups] + [g for g in groups if g not in explicit]
+        return list(reversed(list(groups)))
+
+    def _user_override(self, username):
+        """Return the user's entry in user_overrides, matched by original or sanitized name."""
+        user_overrides = self.config.get("user_overrides") or {}
+        for key in (username, sanitize_username_for_slice(username)):
+            if key in user_overrides:
+                return user_overrides[key] or {}
+        return None
+
+    def get_user_group(self, username):
+        """Resolve the user's group.
+
+        1. group-overrides.txt, if it names a configured group
+        2. the highest-precedence group whose .members file (or inline list) lists the user
+        3. default_group
+
+        user-overrides.yaml does not change the group; it layers limits on top of it.
+        Both the original and sanitized username are tried at each step.
+        """
+        groups = self.config.get("groups") or {}
+        candidates = (username, sanitize_username_for_slice(username))
+
+        for key in candidates:
+            group = self.group_overrides.get(key)
+            if group in groups:
+                return group
+
+        for group_name in self._group_precedence():
+            members = (groups.get(group_name) or {}).get("members", [])
+            if any(key in members for key in candidates):
                 return group_name
 
         return self.config.get("default_group", "student")
 
     def get_user_limits(self, username):
-        """Get resource limits for a specific user.
-
-        Supports both original and sanitized usernames in config lookups.
-        Tries original username first, then sanitized form.
-        """
+        """Get resource limits for a user: defaults, then group limits, then user overrides."""
         if not self.config:
             raise ValueError("Configuration is empty or invalid")
 
-        defaults = self.config.get("defaults", {})
-        sanitized = sanitize_username_for_slice(username)
+        group = self.get_user_group(username)
+        group_config = (self.config.get("groups") or {}).get(group) or {}
 
-        # Check for user-specific override first (try original, then sanitized)
-        user_overrides = self.config.get("user_overrides") or {}
-        override_key = None
-        if username in user_overrides:
-            override_key = username
-        elif sanitized != username and sanitized in user_overrides:
-            override_key = sanitized
-
-        if override_key:
-            base_limits = defaults.copy()
-            base_limits.update(user_overrides[override_key])
-            base_limits["_group"] = "override"
-            return base_limits
-
-        # Check which group the user belongs to (try original, then sanitized)
-        groups = self.config.get("groups") or {}
-        for group_name, group_config in groups.items():
-            members = group_config.get("members", [])
-            if username in members or (sanitized != username and sanitized in members):
-                base_limits = defaults.copy()
-                group_limits = {k: v for k, v in group_config.items() if k != "members"}
-                base_limits.update(group_limits)
-                base_limits["_group"] = group_name
-                return base_limits
-
-        # Default limits if user not in any group
-        default_group = self.config.get("default_group", "student")
-        group_config = groups.get(default_group, {})
-
-        base_limits = defaults.copy()
-        group_limits = {k: v for k, v in group_config.items() if k != "members"}
-        base_limits.update(group_limits)
-        base_limits["_group"] = default_group
-
-        return base_limits
+        limits = (self.config.get("defaults") or {}).copy()
+        limits.update({k: v for k, v in group_config.items() if k != "members"})
+        override = self._user_override(username)
+        if override:
+            limits.update(override)
+        limits["_group"] = group
+        return limits
 
     def get_docker_args(self, username):
         """Generate Docker run arguments for resource limits"""
@@ -380,36 +388,13 @@ class ResourceLimitParser:
         if not self.config:
             raise ValueError("Configuration is empty or invalid")
 
-        sanitized = sanitize_username_for_slice(username)
+        override = self._user_override(username)
+        if override and "aggregate" in override:
+            return override["aggregate"]
 
-        # Check user_overrides first (try original, then sanitized)
-        user_overrides = self.config.get("user_overrides") or {}
-        override_key = None
-        if username in user_overrides:
-            override_key = username
-        elif sanitized != username and sanitized in user_overrides:
-            override_key = sanitized
-
-        if override_key and "aggregate" in user_overrides[override_key]:
-            return user_overrides[override_key]["aggregate"]
-
-        # Check group aggregate
-        groups = self.config.get("groups") or {}
-        for group_name, group_config in groups.items():
-            members = group_config.get("members", [])
-            if username in members or (sanitized != username and sanitized in members):
-                if "aggregate" in group_config:
-                    return group_config["aggregate"]
-                # Group exists but no aggregate section (admin or unconfigured)
-                return None
-
-        # User in default group - check that group's aggregate
-        default_group = self.config.get("default_group", "student")
-        group_config = groups.get(default_group, {})
-        if "aggregate" in group_config:
-            return group_config["aggregate"]
-
-        return None
+        # Group aggregate; None when the group has no aggregate section (admin or unconfigured)
+        group_config = (self.config.get("groups") or {}).get(self.get_user_group(username)) or {}
+        return group_config.get("aggregate")
 
     def get_lifecycle_limits_json(self, username):
         """Get all lifecycle limits for a user as JSON.
@@ -461,44 +446,20 @@ class ResourceLimitParser:
             "sigterm_grace_s": policies.get("sigterm_grace_s", 60),
         }
 
-        sanitized = sanitize_username_for_slice(username)
-
-        # Check for user-specific override
-        user_overrides = self.config.get("user_overrides") or {}
-        override_key = None
-        if username in user_overrides:
-            override_key = username
-        elif sanitized != username and sanitized in user_overrides:
-            override_key = sanitized
-
-        if override_key and "policies" in user_overrides[override_key]:
+        override = self._user_override(username)
+        if override and "policies" in override:
             # User override takes highest priority
-            user_policies = user_overrides[override_key]["policies"]
+            user_policies = override["policies"]
             for key in result:
                 if key in user_policies:
                     result[key] = user_policies[key]
             return result
 
-        # Check group policies
-        groups = self.config.get("groups") or {}
-        for group_name, group_config in groups.items():
-            members = group_config.get("members", [])
-            if username in members or (sanitized != username and sanitized in members):
-                if "policies" in group_config:
-                    group_policies = group_config["policies"]
-                    for key in result:
-                        if key in group_policies:
-                            result[key] = group_policies[key]
-                return result
-
-        # User in default group - check that group's policies
-        default_group = self.config.get("default_group", "student")
-        group_config = groups.get(default_group, {})
-        if "policies" in group_config:
-            group_policies = group_config["policies"]
-            for key in result:
-                if key in group_policies:
-                    result[key] = group_policies[key]
+        group_config = (self.config.get("groups") or {}).get(self.get_user_group(username)) or {}
+        group_policies = group_config.get("policies") or {}
+        for key in result:
+            if key in group_policies:
+                result[key] = group_policies[key]
 
         return result
 
