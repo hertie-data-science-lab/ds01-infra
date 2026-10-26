@@ -28,6 +28,10 @@ if [ -f "$EVENTS_LIB" ]; then
     source "$EVENTS_LIB"
 fi
 
+# DRY_RUN=1: evaluate every container but send no warnings and stop nothing.
+# Used by the nightly system tests, which otherwise run the real enforcement.
+DRY_RUN="${DRY_RUN:-0}"
+
 # Create state and log directories
 mkdir -p "$STATE_DIR"
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -312,7 +316,9 @@ To restart: container-run $container_name"
 
 # Main monitoring function
 monitor_containers() {
-    log_color "Starting max runtime enforcement (universal)" "$BLUE"
+    local mode=""
+    [ "$DRY_RUN" = "1" ] && mode=" [DRY RUN]"
+    log_color "Starting max runtime enforcement (universal)$mode" "$BLUE"
 
     # Get ALL running containers (universal container management)
     local containers=$(docker ps --format "{{.Names}}")
@@ -439,6 +445,10 @@ process_container_runtime_universal() {
     source "$state_file"
 
     log "Container $container (user: $username, type: $container_type): runtime ${runtime_hours}h / limit ${runtime_str}h"
+
+    if [ "$DRY_RUN" = "1" ]; then
+        return 0 # No warnings, no stop, no state changes
+    fi
 
     # Calculate warning thresholds: first at 75%, final at 90%
     local warning_seconds=$((runtime_seconds * 75 / 100))
