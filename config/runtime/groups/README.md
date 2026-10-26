@@ -54,7 +54,7 @@ w.lowe@hertie-school.lan:faculty
 ```
 
 **When to use**:
-- PhD students with numeric IDs (would auto-classify as student)
+- PhD students with numeric IDs who are not in the `phd@hertie-school.lan` directory group
 - Faculty members who need elevated access
 - IT staff who need admin access
 
@@ -76,13 +76,24 @@ w.lowe@hertie-school.lan:faculty
 
 ## Auto-Classification Rules
 
-When a user is **not** in `group-overrides.txt`, the sync script classifies by username pattern:
+When a user is **not** in `group-overrides.txt`, the sync script first asks the
+directory: a member of the AD group `phd@hertie-school.lan` (as reported by `id -Gn`)
+is assigned `researcher`. PhD students carry numeric logins like Master's students, so
+the pattern below would otherwise file them as `student`.
+
+Everyone else is classified by username pattern:
 
 | Pattern | Example | Assigned Group |
 |---------|---------|----------------|
 | `[0-9]+@hertie-school.lan` | `228755@hertie-school.lan` | student |
 | `[a-z].[a-z]+@hertie-school.lan` | `h.baker@hertie-school.lan` | researcher |
 | Other | `localuser` | student |
+
+Classification happens once, when the sync first sees a user. It never moves an
+existing entry, so a user who becomes a PhD later must be moved by hand: add a
+`group-overrides.txt` line, remove them from `student.members` and add them to
+`researcher.members`. The limits parser takes the first `.members` file that lists a
+user, and `student` is checked first.
 
 ## Manual Editing Rules
 
