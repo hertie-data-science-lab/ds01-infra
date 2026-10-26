@@ -15,6 +15,7 @@ Run with: sudo pytest tests/system/test_lifecycle_enforcement.py -m system -v
 """
 
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -200,22 +201,29 @@ class TestLiveScriptExecution:
     """Test that lifecycle scripts execute without errors on live system."""
 
     def test_check_idle_exits_cleanly(self):
-        """check-idle-containers.sh exits 0 on live system."""
+        """check-idle-containers.sh exits 0 on live system (dry run)."""
         result = subprocess.run(
             [str(CHECK_IDLE)],
             capture_output=True,
             text=True,
             timeout=120,
+            env={**os.environ, "DRY_RUN": "1"},
         )
         # Should exit 0 even if no containers to check
         assert result.returncode == 0, f"stderr: {result.stderr}"
 
     def test_enforce_runtime_exits_cleanly(self):
-        """enforce-max-runtime.sh exits 0 on live system."""
+        """enforce-max-runtime.sh exits 0 on live system (dry run).
+
+        A real run stops every over-limit container serially, each with a
+        SIGTERM grace period of up to 60s, so two expiring containers alone
+        would overrun this timeout.
+        """
         result = subprocess.run(
             [str(ENFORCE_RUNTIME)],
             capture_output=True,
             text=True,
             timeout=120,
+            env={**os.environ, "DRY_RUN": "1"},
         )
         assert result.returncode == 0, f"stderr: {result.stderr}"

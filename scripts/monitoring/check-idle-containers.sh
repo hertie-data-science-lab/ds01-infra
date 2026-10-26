@@ -33,6 +33,10 @@ if [ -f "$EVENTS_LIB" ]; then
     source "$EVENTS_LIB"
 fi
 
+# DRY_RUN=1: track activity but send no warnings and stop nothing.
+# Used by the nightly system tests, which otherwise run the real enforcement.
+DRY_RUN="${DRY_RUN:-0}"
+
 # Create state directory
 mkdir -p "$STATE_DIR"
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -844,6 +848,10 @@ process_container_universal() {
         local final_warning_seconds=$((timeout_seconds * 95 / 100))
 
         log "Container $container (user: $username, type: $container_type): idle for ${idle_minutes}m (timeout: ${timeout_str}h, streak: $current_streak)"
+
+        if [ "$DRY_RUN" = "1" ]; then
+            return 0 # No warnings, no stop
+        fi
 
         # If user is exempt, send informational warning only
         if [ "$is_exempt" = true ]; then
