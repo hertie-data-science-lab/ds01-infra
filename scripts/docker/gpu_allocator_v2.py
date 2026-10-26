@@ -154,7 +154,7 @@ class GPUAllocatorSmart:
             self._lock_fd = None
 
     def _load_config(self) -> dict:
-        """Load YAML configuration and merge external group membership files."""
+        """Load the YAML configuration (group membership is resolved by ResourceLimitParser)."""
         try:
             if not self.config_path.exists():
                 return {}
@@ -165,76 +165,18 @@ class GPUAllocatorSmart:
             print(f"Error: Config loading failed: {e}", file=sys.stderr)
             return {}
 
-        # Load group members from config/runtime/groups/{group}.members files
-        groups_dir = self.config_path.parent / "groups"
-        for group_name in config.get("groups") or {}:
-            member_file = groups_dir / f"{group_name}.members"
-            try:
-                if member_file.exists():
-                    members = []
-                    with open(member_file) as f:
-                        for line in f:
-                            line = line.split("#")[0].strip()
-                            if line:
-                                members.append(line)
-                    if members:
-                        inline = config["groups"][group_name].get("members", [])
-                        config["groups"][group_name]["members"] = list(set(members + inline))
-            except (OSError, PermissionError):
-                pass  # Fall back to inline members if file unreadable
-
         return config
 
     def _get_user_limits(self, username: str) -> dict:
-        """Get user's resource limits from config (merges defaults + group/override).
-
-        Supports both original and sanitized usernames in config lookups.
-        Tries original username first, then sanitized form.
-        """
-        defaults = self.config.get("defaults", {}) or {}
-        groups = self.config.get("groups", {}) or {}
-        sanitized = sanitize_username_for_slice(username)
-
-        # Check user_overrides first (highest priority) - try original, then sanitized
-        user_overrides = self.config.get("user_overrides", {}) or {}
-        override_key = None
-        if username in user_overrides:
-            override_key = username
-        elif sanitized != username and sanitized in user_overrides:
-            override_key = sanitized
-
-        if override_key:
-            base_limits = defaults.copy()
-            base_limits.update(user_overrides[override_key])
-            base_limits["_group"] = "override"
-            return base_limits
-
-        # Check groups - try original, then sanitized
-        for group_name, group_config in groups.items():
-            if group_config:
-                members = group_config.get("members", [])
-                if username in members or (sanitized != username and sanitized in members):
-                    base_limits = defaults.copy()
-                    group_limits = {k: v for k, v in group_config.items() if k != "members"}
-                    base_limits.update(group_limits)
-                    base_limits["_group"] = group_name
-                    return base_limits
-
-        # Default group
-        default_group = self.config.get("default_group", "student")
-        if default_group in groups:
-            base_limits = defaults.copy()
-            group_config = groups[default_group]
-            group_limits = {k: v for k, v in group_config.items() if k != "members"}
-            base_limits.update(group_limits)
-            base_limits["_group"] = default_group
-            return base_limits
-
-        # Fallback to defaults only
-        base_limits = defaults.copy()
-        base_limits["_group"] = "default"
-        # Fail-open: if config failed to load or is empty, return safe defaults
-        return base_limits if base_limits else self.SAFE_DEFAULTS.copy()
+        """Get the user's resource limits via ResourceLimitParser (fail-open to SAFE_DEFAULTS)."""
+        if self.resource_parser is not None:
+            try:
+                return self.resource_parser.get_user_limits(username)
+            except Exception as e:
+                print(f"Warning: resource limits unavailable for {username}: {e}", file=sys.stderr)
+        limits = self.SAFE_DEFAULTS.copy()
+        limits["_group"] = "default"
+        return limits
 
     def _can_use_full_gpu(self, username: str) -> bool:
         """Check if user is allowed to use full (non-MIG) GPUs"""
