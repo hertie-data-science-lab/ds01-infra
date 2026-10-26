@@ -54,7 +54,7 @@ w.lowe@hertie-school.lan:faculty
 ```
 
 **When to use**:
-- PhD students with numeric IDs (would auto-classify as student)
+- PhD students with numeric IDs who are not in the `phd@hertie-school.lan` directory group
 - Faculty members who need elevated access
 - IT staff who need admin access
 
@@ -76,13 +76,18 @@ w.lowe@hertie-school.lan:faculty
 
 ## Auto-Classification Rules
 
-When a user is **not** in `group-overrides.txt`, the sync script classifies by username pattern:
+When a user is **not** in `group-overrides.txt`, the sync script first asks the
+directory: a member of the AD group `phd@hertie-school.lan` (as reported by `id -Gn`)
+is assigned `researcher`. Everyone else is classified by username pattern:
 
 | Pattern | Example | Assigned Group |
 |---------|---------|----------------|
 | `[0-9]+@hertie-school.lan` | `228755@hertie-school.lan` | student |
 | `[a-z].[a-z]+@hertie-school.lan` | `h.baker@hertie-school.lan` | researcher |
 | Other | `localuser` | student |
+
+Classification only applies to users not yet in any `.members` file. To move an
+existing user, see [User appearing in wrong group](#user-appearing-in-wrong-group).
 
 ## Manual Editing Rules
 
@@ -158,15 +163,30 @@ See `../resource-limits.yaml` for complete resource definitions.
 
 ### User appearing in wrong group
 
-1. Add them to `../group-overrides.txt` with correct group:
+The sync never moves an existing entry, so the move is by hand:
+
+1. Add them to `../group-overrides.txt` so the sync never refiles them:
    ```
    username@hertie-school.lan:researcher
    ```
 
-2. Run sync to update:
+2. Remove them from the old `.members` file and add them to the new one. Both
+   steps matter: the limits parser takes the first `.members` file that lists a
+   user, and `student` is checked first.
+
+3. Take them out of the old Linux group. The sync adds `ds01-<group>` membership
+   but never removes it:
    ```bash
-   sudo /opt/ds01-infra/scripts/system/sync-group-membership.sh
+   sudo gpasswd -d username@hertie-school.lan ds01-student
    ```
+
+4. Verify:
+   ```bash
+   python3 /opt/ds01-infra/scripts/docker/get_resource_limits.py username@hertie-school.lan --group
+   ```
+
+The nightly sync logs `Misfiled: ...` for any user whose computed group differs from
+the file they are listed in, so an override added after first sync is not silent.
 
 ### User keeps getting re-added after removal
 

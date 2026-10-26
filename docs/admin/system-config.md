@@ -45,8 +45,7 @@ lists) and kept in sync with `/home/` by `scripts/system/sync-group-membership.s
 it in `config/runtime/`:
 
 - `group-overrides.txt` - force a specific user into a group regardless of the
-  username-pattern auto-classification (e.g. a PhD student with a numeric ID that
-  would otherwise auto-classify as `student`).
+  auto-classification (rules in the groups README linked below).
 - `user-overrides.yaml` - per-user resource-limit exceptions, independent of group.
 
 Full mechanics (data flow, archiving users, troubleshooting a misclassified user):
