@@ -8,7 +8,8 @@ Requires=dsl-sync-membership.service
 # delivered it hours late, so a membership change its event-driven run missed
 # waited that long. Hourly bounds the wait; :05 stays clear of the
 # scheduled-release tick at :00.
-OnCalendar=*-*-* *:05:00
+# UTC for the same reason as dsl-scheduled-release.timer (DST-proof cadence).
+OnCalendar=*-*-* *:05:00 UTC
 AccuracySec=10s
 
 [Install]

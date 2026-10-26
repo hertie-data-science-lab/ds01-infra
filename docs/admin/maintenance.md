@@ -103,7 +103,8 @@ with `ds01-deploy`.
 
 ## DSL scheduled-release driver
 
-`dsl-scheduled-release.timer` fires at `:00/:15/:30/:45` and runs
+`dsl-scheduled-release.timer` fires at `:00/:15/:30/:45` (UTC, so the cadence
+survives both DST changes) and runs
 `scripts/maintenance/dsl-scheduled-release.sh`, which sends a `scheduled-release`
 `repository_dispatch` to every DSL course org's `.github` repo (found by the
 `dsl-course-hub` topic) and then reads that org's recent runs back.

@@ -211,8 +211,10 @@ for org in "${orgs[@]}"; do
     dispatched=$((dispatched + 1))
     code=$(dispatch "$org" || true)
 
-    # A 5xx is GitHub, not us: one retry before it counts against the tick.
-    if [[ $code =~ ^5 ]]; then
+    # A 5xx is GitHub, not us, and 000 is curl giving up before any status
+    # arrived (a TLS EOF or a timeout, seen 2026-10-25): one retry before either
+    # counts against the tick.
+    if [[ $code =~ ^5 ]] || [ "$code" = 000 ]; then
         echo "retry $org (dispatch $code)"
         sleep 5
         code=$(dispatch "$org" || true)

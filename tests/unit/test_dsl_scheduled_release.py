@@ -250,6 +250,14 @@ def test_a_5xx_dispatch_is_retried_once(tmp_path):
     assert "dispatched=1 ok=1" in result.stdout
 
 
+def test_a_dispatch_curl_never_completed_is_retried_once(tmp_path):
+    # 000 is curl's status when the request died before any answer (TLS EOF, timeout).
+    result = _tick(tmp_path, {"orga": (["000", 204], _runs("success"))})
+    assert result.returncode == 0
+    assert "retry orga (dispatch 000)" in result.stdout
+    assert "dispatched=1 ok=1" in result.stdout
+
+
 def test_three_consecutive_failures_fail_the_tick(tmp_path):
     result = _tick(tmp_path, {"orga": (204, _runs("failure", "failure", "failure"))})
     assert result.returncode == 1

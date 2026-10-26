@@ -9,7 +9,10 @@ Requires=dsl-scheduled-release.service
 # deliberately interleaves GitHub's :07/:22/:37/:52, so whichever driver loses a
 # fire the gap stays <= 8 min. (GitHub's "avoid contended minutes" guidance is
 # about its own cron scheduler; it does not apply to a REST call we make.)
-OnCalendar=*-*-* *:00,15,30,45:00
+# UTC: a local-time calendar skips the repeated hour at the autumn DST change
+# (2026-10-25: no tick from 02:45 CEST to 03:00 CET, 75 real minutes, which
+# tripped the 60-minute silent alarm) and double-fires in spring.
+OnCalendar=*-*-* *:00,15,30,45:00 UTC
 AccuracySec=10s
 # A reboot spanning a tick must not silently skip a release moment.
 Persistent=true
