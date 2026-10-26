@@ -20,8 +20,7 @@
 #   - NEVER removes existing entries (preserves admin changes)
 #   - Respects archived.members (skips archived users)
 #   - Respects group-overrides.txt (deterministic assignments)
-#   - Classifies members of the PhD directory group as researcher before
-#     falling back to the username pattern
+#   - PhD directory group -> researcher (checked before the username pattern)
 #
 # USAGE:
 #   sync-group-membership.sh              # Normal sync (merge)
@@ -40,8 +39,6 @@ INFRA_ROOT="${SCRIPT_DIR}/../.."
 GROUPS_DIR="${INFRA_ROOT}/config/runtime/groups"
 OVERRIDES_FILE="${INFRA_ROOT}/config/runtime/group-overrides.txt"
 ARCHIVED_FILE="${GROUPS_DIR}/archived.members"
-# Directory (AD) group that marks PhD students. Their logins are numeric like
-# Master's students, so the username pattern alone files them as student.
 PHD_DIRECTORY_GROUP="phd@hertie-school.lan"
 LOG_TAG="DS01-sync-groups"
 
@@ -129,7 +126,7 @@ get_override_group() {
 # Is the user in the PhD directory group? (id -Gn resolves AD groups via SSSD)
 is_phd_in_directory() {
     local username="$1"
-    id -Gn "$username" 2>/dev/null | tr ' ' '\n' | grep -qx "$PHD_DIRECTORY_GROUP"
+    id -Gn "$username" 2>/dev/null | tr ' ' '\n' | grep -qix "$PHD_DIRECTORY_GROUP"
 }
 
 # Classify user based on username pattern
@@ -274,7 +271,7 @@ sync_groups() {
             if [[ $other_group != "$group" ]]; then
                 local other_file="${GROUPS_DIR}/${other_group}.members"
                 if is_in_members "$username" "$other_file"; then
-                    log "Note: $username found in ${other_group}.members (not moving)"
+                    log "Misfiled: $username classifies as $group but is listed in ${other_group}.members (not moving; see groups/README.md)" "always"
                     found_elsewhere=true
                     break
                 fi
