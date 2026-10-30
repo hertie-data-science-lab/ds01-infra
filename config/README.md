@@ -153,6 +153,7 @@ h.baker@hertie-school.lan:admin         # Admin account
 - `ds01-docker-group.sh` - Auto-add users to docker group
 - `ds01-path.sh` - PATH configuration
 - `ds01-motd.sh` - Login messages
+- `ds01-maintenance-notice.sh` - Monthly maintenance window notice (last Friday, 10:00-10:30)
 - `ds01-warnings.sh` - Security warnings
 - `ds01-home-enforce.sh` - Home directory enforcement
 
