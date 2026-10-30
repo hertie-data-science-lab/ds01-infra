@@ -1,6 +1,6 @@
 #!/bin/bash
 # DS01 Maintenance Window Notice
-# Warns users at login during the 7 days before the monthly update window
+# Warns users at login during the 3 days before the monthly update window
 # (last Friday of each month, 10:00-10:30 server local time).
 # Deployed to /etc/profile.d/ via deploy.sh.
 
@@ -15,11 +15,11 @@ _last_day=$(date -d "$(date -d "$_today" +%Y-%m-01) +1 month -1 day" +%Y-%m-%d)
 _offset=$(( ($(date -d "$_last_day" +%u) - 5 + 7) % 7 ))
 _window_day=$(date -d "$_last_day -$_offset days" +%Y-%m-%d)
 
-_notice_from=$(date -d "$_window_day -7 days" +%s)
+_notice_from=$(date -d "$_window_day -3 days" +%s)
 _window_start=$(date -d "$_window_day 10:00" +%s)
 _window_end=$(date -d "$_window_day 10:30" +%s)
 
-# Once this month's window has passed, the next one is 3+ weeks away
+# Once this month's window has passed, the next one is weeks away
 if (( _now >= _notice_from && _now < _window_end )); then
     _Y='\033[0;33m'
     _NC='\033[0m'
