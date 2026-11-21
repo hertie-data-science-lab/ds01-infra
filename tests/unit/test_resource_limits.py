@@ -44,10 +44,44 @@ class TestResourceLimitParser:
         assert group == "researchers"
 
     @pytest.mark.unit
-    def test_user_with_override(self, parser_with_config):
-        """User with override returns 'override'."""
+    def test_user_override_does_not_change_group(self, parser_with_config):
+        """user_overrides layer limits on a user; they do not make up a group."""
         group = parser_with_config.get_user_group("special_user")
-        assert group == "override"
+        assert group in ["student", "students"]
+
+    @pytest.mark.unit
+    def test_user_in_several_groups_gets_highest(self, temp_dir, sample_config):
+        """A user listed in several groups resolves to the highest-precedence one."""
+        from get_resource_limits import ResourceLimitParser
+
+        sample_config["groups"]["students"]["members"].append("admin1")
+        config_file = temp_dir / "resource-limits.yaml"
+        config_file.write_text(yaml.safe_dump(sample_config, sort_keys=False))
+
+        # No group_precedence given: groups are defined in ascending privilege
+        assert ResourceLimitParser(str(config_file)).get_user_group("admin1") == "admins"
+
+        # Explicit precedence wins regardless of definition order (sorted here)
+        sample_config["group_precedence"] = ["admins", "researchers", "students"]
+        config_file.write_text(yaml.safe_dump(sample_config, sort_keys=True))
+        assert ResourceLimitParser(str(config_file)).get_user_group("admin1") == "admins"
+
+    @pytest.mark.unit
+    def test_group_overrides_file_beats_members(self, temp_dir, sample_config):
+        """group-overrides.txt decides the group even when members files disagree."""
+        from get_resource_limits import ResourceLimitParser
+
+        config_file = temp_dir / "resource-limits.yaml"
+        config_file.write_text(yaml.safe_dump(sample_config))
+        (temp_dir / "group-overrides.txt").write_text(
+            "# comment line\nstudent1:researchers   # promoted\nghost:nonexistent\n"
+        )
+
+        parser = ResourceLimitParser(str(config_file))
+        assert parser.get_user_group("student1") == "researchers"
+        assert parser.get_user_limits("student1")["max_cpus"] == 16
+        # An override naming an unknown group is ignored
+        assert parser.get_user_group("ghost") in ["student", "students"]
 
     @pytest.mark.unit
     def test_unknown_user_gets_default_group(self, parser_with_config):
@@ -91,6 +125,20 @@ class TestResourceLimitParser:
         limits = parser_with_config.get_user_limits("special_user")
         assert limits.get("max_mig_instances") == 4
         assert limits.get("priority") == 90
+
+    @pytest.mark.unit
+    def test_override_layers_on_group_limits(self, temp_dir, sample_config):
+        """A user override changes only the keys it names; the group supplies the rest."""
+        from get_resource_limits import ResourceLimitParser
+
+        sample_config["user_overrides"]["researcher1"] = {"max_runtime_h": 336}
+        config_file = temp_dir / "resource-limits.yaml"
+        config_file.write_text(yaml.safe_dump(sample_config))
+
+        limits = ResourceLimitParser(str(config_file)).get_user_limits("researcher1")
+        assert limits["max_runtime_h"] == 336  # from the override
+        assert limits["max_cpus"] == 16  # still the researchers group, not defaults
+        assert limits["_group"] == "researchers"
 
     @pytest.mark.unit
     def test_defaults_inherited(self, parser_with_config):

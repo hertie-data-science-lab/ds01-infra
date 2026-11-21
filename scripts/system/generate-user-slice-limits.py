@@ -47,10 +47,12 @@ from pathlib import Path
 
 import yaml
 
-# Import username sanitization utility
+# Import username sanitization utility and the resource limits parser
 script_dir = Path(__file__).resolve().parent
 lib_dir = script_dir.parent / "lib"
 sys.path.insert(0, str(lib_dir))
+sys.path.insert(0, str(script_dir.parent / "docker"))
+from get_resource_limits import ResourceLimitParser  # noqa: E402
 
 try:
     from username_utils import sanitize_username_for_slice
@@ -69,79 +71,12 @@ except ImportError:
         return sanitized
 
 
-def load_config(config_path: Path) -> dict:
-    """Load and parse resource-limits.yaml."""
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    with open(config_path) as f:
-        return yaml.safe_load(f)
-
-
-def load_group_members(config_dir: Path, group_name: str) -> list:
-    """Load group members from config/runtime/groups/{group}.members file."""
-    member_file = config_dir / "groups" / f"{group_name}.members"
-
-    if not member_file.exists():
-        return []
-
-    members = []
-    try:
-        with open(member_file) as f:
-            for line in f:
-                line = line.split("#")[0].strip()
-                if line:
-                    members.append(line)
-    except PermissionError:
-        return []
-
-    return members
-
-
-def get_all_users_with_groups(config: dict, config_dir: Path) -> dict:
-    """Get all users mapped to their groups.
-
-    Returns:
-        dict: {username: group_name}
-    """
-    users = {}
-    groups = config.get("groups", {})
-
-    for group_name in groups:
-        members = load_group_members(config_dir, group_name)
-        for username in members:
-            users[username] = group_name
-
-    return users
-
-
-def get_aggregate_limits(config: dict, username: str, group: str) -> dict | None:
-    """Get aggregate limits for a user.
-
-    Resolution order:
-    1. User overrides aggregate section
-    2. Group aggregate section
-    3. None (admin group or no aggregate section)
-
-    Returns:
-        dict with cpu_quota, memory_max, memory_high, tasks_max or None
-    """
-    # Check user overrides first
-    user_overrides = config.get("user_overrides", {})
-    if username in user_overrides:
-        override = user_overrides[username]
-        if "aggregate" in override:
-            return override["aggregate"]
-
-    # Check group aggregate
-    groups = config.get("groups", {})
-    if group in groups:
-        group_config = groups[group]
-        if "aggregate" in group_config:
-            return group_config["aggregate"]
-
-    # No aggregate limits (admin or missing config)
-    return None
+def get_all_users_with_groups(parser) -> dict:
+    """Map every user named in a .members file or group-overrides.txt to their resolved group."""
+    users = set(parser.group_overrides)
+    for group_config in (parser.config.get("groups") or {}).values():
+        users.update((group_config or {}).get("members", []))
+    return {username: parser.get_user_group(username) for username in users}
 
 
 def generate_drop_in_content(limits: dict) -> str:
@@ -258,18 +193,18 @@ def main():
         print("Hint: Use --dry-run to preview without writing", file=sys.stderr)
         sys.exit(1)
 
-    # Load configuration
+    # Load configuration (members files, group-overrides.txt and user-overrides.yaml included)
     config_path = Path("/opt/ds01-infra/config/runtime/resource-limits.yaml")
     config_dir = config_path.parent
-
     try:
-        config = load_config(config_path)
+        parser = ResourceLimitParser(config_path)
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
     except yaml.YAMLError as e:
         print(f"Error: Invalid YAML in {config_path}: {e}", file=sys.stderr)
         sys.exit(1)
+    config = parser.config
 
     # Check if aggregate limits are enabled
     enforcement = config.get("enforcement", {})
@@ -279,7 +214,7 @@ def main():
             sys.exit(0)
 
     # Get all users
-    all_users = get_all_users_with_groups(config, config_dir)
+    all_users = get_all_users_with_groups(parser)
 
     if not all_users:
         print("Warning: No users found in group membership files", file=sys.stderr)
@@ -300,7 +235,7 @@ def main():
     skipped_count = 0
 
     for username, group in sorted(all_users.items()):
-        limits = get_aggregate_limits(config, username, group)
+        limits = parser.get_aggregate_limits(username)
 
         if limits is None:
             if args.verbose:

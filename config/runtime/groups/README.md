@@ -25,7 +25,9 @@ DOWNSTREAM (reads):
 1. **MERGE, not replace**: Auto-sync adds new users but **never removes** existing entries
 2. **Admin changes preserved**: Manual edits to `.members` files are always kept
 3. **Archived users skipped**: Users in `archived.members` are not added to any active group
-4. **Override precedence**: `group-overrides.txt` takes priority over pattern matching
+4. **Override precedence**: `group-overrides.txt` wins, both when the sync classifies a
+   new user and when limits are resolved. A user in several `.members` files gets the
+   highest-privilege one (`group_precedence` in `resource-limits.yaml`)
 
 ## Files in This Directory
 
@@ -60,7 +62,8 @@ w.lowe@hertie-school.lan:faculty
 
 ### 2. Resource Limit Override (`../user-overrides.yaml`)
 
-**Purpose**: Give a specific USER custom RESOURCE limits, regardless of their group.
+**Purpose**: Give a specific USER custom RESOURCE limits on top of their group's. Only
+the keys named here change; everything else still comes from the group.
 
 ```yaml
 # Example: Researcher with no idle timeout
@@ -165,14 +168,14 @@ See `../resource-limits.yaml` for complete resource definitions.
 
 The sync never moves an existing entry, so the move is by hand:
 
-1. Add them to `../group-overrides.txt` so the sync never refiles them:
+1. Add them to `../group-overrides.txt`. This alone changes their resolved group,
+   and stops the sync refiling them:
    ```
    username@hertie-school.lan:researcher
    ```
 
-2. Remove them from the old `.members` file and add them to the new one. Both
-   steps matter: the limits parser takes the first `.members` file that lists a
-   user, and `student` is checked first.
+2. Remove them from the old `.members` file and add them to the new one, so the
+   files match reality and the nightly `Misfiled:` log line stops.
 
 3. Take them out of the old Linux group. The sync adds `ds01-<group>` membership
    but never removes it:
