@@ -208,27 +208,68 @@ else:
 
 ---
 
-## Resource Alerts
+## Notifications
 
-**Email on completion (if configured):**
+**DS01 can't send email.** There's no mail server on the host or in containers, and Hertie's mail system doesn't accept mail sent from scripts. Installing `mail` or `sendmail` won't help.
+
+Use a push notification instead. [ntfy](https://ntfy.sh) needs no account, and it only needs `curl`, which every DS01 image includes.
+
+**1. Pick a topic and subscribe to it.** A topic is just a name. Generate one that's hard to guess:
 
 ```bash
-#!/bin/bash
-
-docker exec -d <project-name>._.$(id -u) \
-  bash -c "python /workspace/train.py; echo 'Training complete' | mail -s 'Job Done' user@example.com"
+echo ds01-$(openssl rand -hex 6)    # e.g. ds01-a812c99de5ce
 ```
 
-**Slack notification (if webhook configured):**
+Subscribe to it in the ntfy app (iOS / Android) or at `https://ntfy.sh/<your-topic>` in a browser.
+
+> **Topics are public.** Anyone who knows the name can read the messages. Keep the name unguessable, and don't put anything sensitive in a message.
+
+**2. Send a message when the job finishes or fails.** Set `NTFY_TOPIC` in the shell that starts the job, then use one of these:
+
+```bash
+# Bash: one message either way
+export NTFY_TOPIC=ds01-a812c99de5ce
+python train.py \
+  && curl -sS -o /dev/null -d "run finished" ntfy.sh/$NTFY_TOPIC \
+  || curl -sS -o /dev/null -d "run failed" ntfy.sh/$NTFY_TOPIC
+```
 
 ```python
-# At end of train.py
-import requests
+# Python: standard library only
+import os
+import urllib.request
 
-webhook_url = "https://hooks.slack.com/..."
-message = {"text": "Training completed!"}
-requests.post(webhook_url, json=message)
+def notify(msg: str) -> None:
+    url = f"https://ntfy.sh/{os.environ['NTFY_TOPIC']}"
+    urllib.request.urlopen(url, data=msg.encode(), timeout=15)
+
+try:
+    main()
+    notify("run finished")
+except Exception as e:
+    notify(f"run failed: {e}")
+    raise
 ```
+
+```r
+# R: no packages needed
+notify <- function(msg, topic = Sys.getenv("NTFY_TOPIC")) {
+  system2("curl", c("-sS", "-m", "15", "-o", "/dev/null", "-d", shQuote(msg),
+                    paste0("https://ntfy.sh/", topic)))
+}
+
+tryCatch({
+  main()
+  notify("run finished")
+}, error = function(e) {
+  notify(paste("run failed:", conditionMessage(e)))
+  stop(e)
+})
+```
+
+The Python and R versions re-raise the error, so the job still exits with a failure and your log shows the traceback.
+
+None of these fire if the container itself is stopped (for example during [monthly maintenance](../core-guides/long-running-jobs.md#monthly-maintenance)), because the script is killed with it. For long runs, have the script also send a message every few hours: if the messages stop, the job has stopped.
 
 ---
 
