@@ -10,7 +10,7 @@ Running overnight training, preventing timeouts, and managing extended workloads
 # Deploy in background
 container-deploy my-project --background
 
-# Inside container, use nohup or tmux
+# Inside container, use nohup (or run container-attach inside tmux on the host)
 nohup python train.py > training.log 2>&1 &
 
 # Prevent idle timeout
@@ -36,26 +36,32 @@ exit
 
 ### Method 2: tmux (Recommended)
 
+tmux is installed on the DS01 host, not inside containers. Start tmux first, then enter your container from inside it:
+
 ```bash
-# Create named session
+# On the host: create named session
 tmux new -s training
 
-# Run training
+# Enter the container and run training
+container-attach my-project
 python train.py
 
-# Detach: Ctrl+B, then D
+# Detach: Ctrl+B, then D (training keeps running)
 
-# Later, reattach
+# Later, from the host, reattach
 tmux attach -t training
 ```
 
 ### Method 3: Screen
 
+Like tmux, `screen` runs on the host:
+
 ```bash
-# Create session
+# On the host: create session
 screen -S training
 
-# Run training
+# Enter the container and run training
+container-attach my-project
 python train.py
 
 # Detach: Ctrl+A, then D
@@ -203,6 +209,20 @@ model = tf.keras.models.load_model('/workspace/checkpoints/model_10.keras')
 
 ---
 
+## Monthly Maintenance
+
+System updates run on the **last Friday of each month, 10:00-10:30**. A notice appears when you log in during the three days before.
+
+During the window, running containers may be stopped and the server may reboot. Afterwards:
+
+- **Containers don't restart by themselves.** Run `container-deploy` again.
+- **Your processes are gone.** That includes tmux and screen sessions on the host. Start them again and relaunch your script.
+- **Your workspace is untouched.** Anything saved under `/workspace` is still there.
+
+For a job that runs across a maintenance window, make it resumable: save progress to `/workspace` as you go, and when the script starts, have it pick up from the last save instead of starting over (see [Checkpointing](#checkpointing)).
+
+---
+
 ## Resource Limits
 
 Check your limits before long runs:
@@ -248,13 +268,9 @@ if epoch % 10 == 0:
     print(f"GPU Memory: {torch.cuda.memory_allocated() / 1e9:.2f} GB")
 ```
 
-### 4. Set Up Alerts (Optional)
+### 4. Get Notified When a Job Ends (Optional)
 
-```python
-# At end of training
-import os
-os.system('echo "Training complete" | mail -s "DS01 Alert" you@email.com')
-```
+DS01 can't send email, but your script can send a push notification to your phone when it finishes or fails. See [Notifications](../advanced/batch-jobs.md#notifications).
 
 ---
 
