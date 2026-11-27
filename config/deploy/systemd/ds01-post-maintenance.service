@@ -1,0 +1,24 @@
+[Unit]
+Description=DS01 Post-Maintenance Checks (kernel, GPUs, docker, health)
+Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
+# Runs on every boot but does nothing unless monthly-update.sh scheduled the
+# reboot (it writes this file just before calling shutdown).
+ConditionPathExists=/var/lib/ds01/monthly-update/verify-pending
+After=docker.service nvidia-persistenced.service network-online.target
+Wants=network-online.target
+OnFailure=dsl-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+# Let the GPUs, docker and the ds01 daemons settle before judging them.
+ExecStartPre=/bin/sleep 120
+ExecStart=/opt/ds01-infra/scripts/maintenance/monthly-update.sh --verify
+TimeoutStartSec=600
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ds01-post-maintenance
+
+[Install]
+WantedBy=multi-user.target

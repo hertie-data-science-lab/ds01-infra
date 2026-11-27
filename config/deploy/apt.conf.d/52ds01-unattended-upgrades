@@ -1,0 +1,17 @@
+// DS01: keep kernel and NVIDIA driver packages out of the nightly security run.
+// /etc/apt/apt.conf.d/52ds01-unattended-upgrades, installed by deploy.sh.
+//
+// Both only take effect after a reboot. Installed nightly, a new kernel just sits
+// waiting for one, and a new NVIDIA userspace against the old loaded module breaks
+// nvidia-smi and every GPU container ("Driver/library version mismatch") until
+// someone reboots. They upgrade in the monthly window instead
+// (scripts/maintenance/monthly-update.sh), which reboots straight after.
+//
+// Entries are Python regexes matched with re.match, i.e. anchored at the start of
+// the package name. Lists merge with 50unattended-upgrades' own (empty) blacklist.
+Unattended-Upgrade::Package-Blacklist {
+    "linux-";
+    "nvidia-";
+    "libnvidia-";
+    "xserver-xorg-video-nvidia-";
+};

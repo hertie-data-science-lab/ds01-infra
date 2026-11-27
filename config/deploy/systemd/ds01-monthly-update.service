@@ -1,0 +1,19 @@
+[Unit]
+Description=DS01 Monthly Maintenance (upgrade + reboot)
+Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
+After=network-online.target
+Wants=network-online.target
+# A refused reboot (no NVIDIA module for the new kernel) or a failed upgrade must
+# reach a human - see dsl-alert@.service.
+OnFailure=dsl-alert@%n.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/ds01-infra/scripts/maintenance/monthly-update.sh
+# apt waits up to 10 min for the dpkg lock, then a full-upgrade with DKMS rebuilds.
+TimeoutStartSec=3600
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ds01-monthly-update

@@ -25,6 +25,7 @@ ALL containers with GPU access are subject to lifecycle enforcement regardless o
 | `dsl-alert.sh` | `OnFailure=` target (`dsl-alert@.service`); posts a failed unit's last 20 journal lines to the same Teams webhook `config-watchdog.sh` resolves, and to mail via `dsl-alert-mail.py`. Each channel optional; neither can fail the alerter |
 | `dsl-alert-mail.py` | The mail channel: one message through Microsoft Graph with the lab's Entra certificate credential, configured by `/etc/dsl-alert-mail.env` (which it reads itself, for callers systemd did not start). Provisioning: `docs/admin/maintenance.md` |
 | `dsl-alert-bridge.py` | Turns an Alertmanager webhook into a mail through `dsl-alert-mail.py`; run by `dsl-alert-bridge.service`. Bearer-token authenticated and refuses to start without the token - it sends mail as the lab on a port every account here can reach |
+| `monthly-update.sh` | `ds01-monthly-update`: the last-Friday window - full-upgrade, prune orphaned `/lib/modules`, refuse to reboot without an nvidia module for GRUB's default kernel, reboot; `--verify` (run by `ds01-post-maintenance.service` after the reboot) alerts on kernel/GPU/docker/health regressions against the pre-reboot baseline. Timer `ds01-monthly-update.timer` ships disabled. Runbook: `docs/admin/maintenance.md` |
 
 Note: `check-idle-containers.sh` is in `scripts/monitoring/` (see that CLAUDE.md)
 
