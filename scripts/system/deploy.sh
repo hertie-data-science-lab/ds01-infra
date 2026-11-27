@@ -383,6 +383,7 @@ deploy_cmd "$INFRA_ROOT/scripts/monitoring/who-owns-containers.sh" "ds01-who" "A
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/ds01-health-check" "ds01-health" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/audit-system.sh" "ds01-audit" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/audit-docker.sh" "ds01-audit-docker" "Admin"
+deploy_cmd "$INFRA_ROOT/scripts/maintenance/monthly-update.sh" "ds01-monthly-update" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/audit-container.sh" "ds01-audit-container" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/docker/gpu-queue-manager.py" "ds01-gpu-queue" "Admin"
 deploy_cmd "$INFRA_ROOT/scripts/monitoring/resource-alert-checker.sh" "ds01-alerts" "Admin"
@@ -497,6 +498,24 @@ done
 rm -f /etc/sudoers.d/ds01-sync-runner
 
 echo -e "  ${GREEN}✓${NC} Sudoers.d files deployed (440, visudo-validated)"
+
+# --- Deploy apt.conf.d files (644 — read by apt and unattended-upgrades) ---
+echo -e "${DIM}Deploying apt.conf.d files...${NC}"
+
+for apt_conf in "$INFRA_ROOT"/config/deploy/apt.conf.d/*; do
+    [ -f "$apt_conf" ] || continue
+    name="$(basename "$apt_conf")"
+    # A file apt cannot parse breaks apt (and the nightly security run) for
+    # everyone, so only install one that parses cleanly.
+    if ! apt-config -c "$apt_conf" dump >/dev/null 2>&1; then
+        echo -e "  ${RED}✗${NC} $name failed 'apt-config dump' — NOT installed"
+        continue
+    fi
+    cp "$apt_conf" /etc/apt/apt.conf.d/"$name"
+    chmod 644 /etc/apt/apt.conf.d/"$name"
+done
+
+echo -e "  ${GREEN}✓${NC} apt.conf.d files deployed (644, apt-config-validated)"
 
 # --- Deploy cron.d files (644 — read by cron daemon) ---
 echo -e "${DIM}Deploying cron.d files...${NC}"
@@ -637,6 +656,29 @@ if [ -f "$INFRA_ROOT/config/deploy/systemd/dsl-scheduled-release.timer" ]; then
                 echo -e "  ${YELLOW}!${NC} $timer not running (check: systemctl status $timer)"
             fi
         done
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Monthly maintenance window
+# ---------------------------------------------------------------------------
+# ds01-post-maintenance.service is enabled (it is a no-op on any boot that
+# monthly-update.sh did not schedule). The timer is installed but deliberately
+# NOT enabled: whether the window runs unattended is an admin decision, made on
+# the box with `systemctl enable --now ds01-monthly-update.timer`, and a release
+# must not override it either way. Both alert through dsl-alert@ (installed above).
+
+if [ -f "$INFRA_ROOT/config/deploy/systemd/ds01-monthly-update.timer" ]; then
+    echo -e "${DIM}Deploying monthly maintenance units...${NC}"
+    for unit in ds01-monthly-update.service ds01-monthly-update.timer ds01-post-maintenance.service; do
+        cp "$INFRA_ROOT/config/deploy/systemd/$unit" /etc/systemd/system/
+    done
+    systemctl daemon-reload
+    systemctl enable ds01-post-maintenance.service >/dev/null 2>&1
+    if systemctl is-enabled --quiet ds01-monthly-update.timer 2>/dev/null; then
+        echo -e "  ${GREEN}✓${NC} Monthly maintenance: automatic (timer enabled)"
+    else
+        echo -e "  ${GREEN}✓${NC} Monthly maintenance: manual (sudo ds01-monthly-update; timer installed, not enabled)"
     fi
 fi
 

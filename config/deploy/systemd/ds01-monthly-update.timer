@@ -1,0 +1,18 @@
+[Unit]
+Description=DS01 Monthly Maintenance Timer (last Friday, 10:00)
+Documentation=file:///opt/ds01-infra/docs/admin/maintenance.md
+
+[Timer]
+# Last Friday of every month, 10:00 local - the window users are warned about at
+# login (config/deploy/profile.d/ds01-maintenance-notice.sh). `~07/1` counts back
+# from the month's last day: "the Friday within its last 7 days".
+OnCalendar=Fri *-*~07/1 10:00
+AccuracySec=1min
+# Never catch up after downtime: an upgrade-and-reboot at some other hour is
+# exactly the surprise the announced window exists to prevent.
+Persistent=false
+
+# deploy.sh installs this but never enables it. Opt in once the manual runs have
+# been boring: systemctl enable --now ds01-monthly-update.timer
+[Install]
+WantedBy=timers.target

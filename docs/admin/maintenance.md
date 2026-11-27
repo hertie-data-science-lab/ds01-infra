@@ -38,12 +38,77 @@ sudo ds01-apply --verbose      # show each command being (re)deployed
 
 `ds01-apply` (`deploy.sh`) reapplies side-effects - command symlinks into
 `/usr/local/bin/`, the permissions manifest, `config/deploy/{profile.d,sudoers.d,
-cron.d}/*`, systemd units, and a restart of the code-caching daemons
+cron.d,apt.conf.d}/*`, systemd units, and a restart of the code-caching daemons
 (`ds01-exporter`, `ds01-container-owner-tracker`, `ds01-container-sync`) - against
 whatever code is **already on disk** in prod. It does **not** fetch or change code;
 `ds01-deploy` calls it automatically as part of every release, but it's also safe to
 run standalone, e.g. after a manual permissions fix or to pick up a config change
 without cutting a release.
+
+## Monthly maintenance window (`ds01-monthly-update`)
+
+The last Friday of each month, 10:00-10:30, is the window for package upgrades and
+the reboot they need. Users are warned at login for the three days before
+(`config/deploy/profile.d/ds01-maintenance-notice.sh`).
+
+**What runs when:**
+
+| Updates | When | How |
+|---|---|---|
+| Ubuntu security updates (except kernel and NVIDIA) | Nightly, ~06:30 | `unattended-upgrades` |
+| Everything else: kernel, NVIDIA driver, `-updates`, third-party repos (container toolkit, Veeam, ...) | Monthly window | `ds01-monthly-update` |
+
+Kernel and NVIDIA packages are kept out of the nightly run by
+`config/deploy/apt.conf.d/52ds01-unattended-upgrades`. Both only take effect after a
+reboot, and a new NVIDIA userspace against the still-loaded old module breaks
+`nvidia-smi` and every GPU container ("Driver/library version mismatch") until one
+happens - so they only change in the window, right before the reboot.
+
+**Running the window:**
+
+```bash
+sudo ds01-monthly-update --check      # what would upgrade; changes nothing
+sudo ds01-monthly-update              # upgrade, prune, check the driver, reboot in 2 min
+sudo ds01-monthly-update --no-reboot  # same, but the reboot is left to you
+```
+
+A full run:
+
+1. records running containers (`/var/lib/ds01/monthly-update/containers-before.txt`),
+   the GPU count and the currently failing `ds01-health-check` checks;
+2. `apt-get update`, `full-upgrade` (keeping existing config files), `autoremove --purge`;
+3. deletes `/lib/modules/<ver>` directories no package owns (DKMS leftovers of purged
+   kernels, never the running one);
+4. **refuses to reboot** unless an `nvidia` module exists for the kernel GRUB boots by
+   default (read from `/boot/grub/grub.cfg`, not `/boot/vmlinuz`, which tracks the
+   last-installed kernel) - exits 1 and alerts instead;
+5. reboots with a 2-minute `wall` warning, if `/var/run/reboot-required` exists or the
+   boot kernel differs from the running one; otherwise runs step 6 straight away.
+
+6. After the reboot, `ds01-post-maintenance.service` (enabled, but a no-op unless step
+   5 scheduled the reboot) waits 2 minutes, then checks: the expected kernel is
+   running, at least as many GPUs are visible as before, and no `ds01-health-check`
+   check (docker among them) fails that was passing before. Checks that already failed beforehand
+   are logged, not alerted on. Any regression exits non-zero, which alerts through
+   `dsl-alert@` (Teams + mail).
+
+Containers have no restart policy, so after a reboot users redeploy their own
+(see the user docs on long-running jobs). `containers-before.txt` is the list of who
+was running what.
+
+**Going unattended:** `ds01-monthly-update.timer` (`OnCalendar=Fri *-*~07/1 10:00`,
+the last Friday) is installed by every deploy but never enabled by one. Once the
+manual runs have been uneventful, enable it on the box:
+
+```bash
+sudo systemctl enable --now ds01-monthly-update.timer
+systemctl list-timers ds01-monthly-update.timer     # confirm the next run
+```
+
+It has `Persistent=false` on purpose: if the box is down at 10:00, the window is
+skipped rather than run at some unannounced hour. Failures alert through
+`dsl-alert@`; success is journal-only (`journalctl -u ds01-monthly-update -u
+ds01-post-maintenance`).
 
 ## Scheduled maintenance (cron)
 
@@ -313,6 +378,7 @@ Every channel below is optional and independent: Teams needs a webhook, mail nee
 | Source | Teams | Mail | Notes |
 |---|---|---|---|
 | A failed systemd unit (`OnFailure=dsl-alert@`) | yes | yes | `dsl-alert.sh`, last 20 journal lines |
+| A refused or failed monthly update, or a post-reboot regression | yes | yes | via `dsl-alert@` - see Monthly maintenance window |
 | Config drift | yes | yes | `config-watchdog.sh --full`, with the diff |
 | Prometheus alerts | yes | yes | Alertmanager, mail via the bridge below |
 | The monthly report | yes | yes | summary card + full report; mail is the full report |
@@ -432,6 +498,7 @@ Logs to `/tmp/ds01-sync-downstream.log`.
 | `journalctl -u dsl-scheduled-release` | DSL scheduled-release driver ticks (journal only, by design) |
 | `journalctl -u dsl-alert`, `-u dsl-alert-bridge` | Outgoing alerts: the OnFailure alerter, and the Alertmanager mail bridge |
 | `/var/log/ds01/monthly-report.log` | Monthly report generation and delivery |
+| `/var/log/ds01/monthly-update.log`, `/var/lib/ds01/monthly-update/` | Monthly maintenance runs; pre-reboot container list, GPU count and health baseline |
 | `/var/lib/ds01/deploy/current-sha`, `history.log` | Deployed SHA + full release history (`sudo ds01-deploy --list`) |
 
 Log rotation is configured in `config/deploy/logrotate.d/ds01` (daily, 30-day
