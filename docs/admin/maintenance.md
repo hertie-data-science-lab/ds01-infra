@@ -87,8 +87,8 @@ A full run:
 
 6. After the reboot, `ds01-post-maintenance.service` (enabled, but a no-op unless step
    5 scheduled the reboot) waits 2 minutes, then checks: the expected kernel is
-   running, at least as many GPUs are visible as before, docker responds, and no
-   health check fails that was passing before. Checks that already failed beforehand
+   running, at least as many GPUs are visible as before, and no `ds01-health-check`
+   check (docker among them) fails that was passing before. Checks that already failed beforehand
    are logged, not alerted on. Any regression exits non-zero, which alerts through
    `dsl-alert@` (Teams + mail).
 

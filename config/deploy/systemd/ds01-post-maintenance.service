@@ -9,7 +9,8 @@ Wants=network-online.target
 OnFailure=dsl-alert@%n.service
 
 [Service]
-Type=oneshot
+# exec, not oneshot: multi-user.target must not wait out the settle delay.
+Type=exec
 User=root
 # Let the GPUs, docker and the ds01 daemons settle before judging them.
 ExecStartPre=/bin/sleep 120

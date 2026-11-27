@@ -10,6 +10,7 @@ code is what OnFailure= alerts on.
 import json
 import shutil
 import subprocess
+import types
 from pathlib import Path
 
 import pytest
@@ -24,11 +25,11 @@ RUNNING = "6.8.0-138-generic"
 NEW = "6.8.0-149-generic"
 
 STUBS = {
-    "id": 'echo "$(cat "$STUB_DIR/uid")"',
+    "id": 'cat "$STUB_DIR/uid"',
     "uname": 'cat "$STUB_DIR/uname"',
     "apt-get": 'echo "$*" >>"$STUB_DIR/apt-get.log"',
     "apt": "true",
-    "docker": 'case "$1" in ps) printf "web\\timg\\tUp\\n" ;; info) [ -e "$STUB_DIR/docker-ok" ] ;; esac',
+    "docker": 'printf "web\\timg\\tUp\\n"',
     "nvidia-smi": 'for i in $(seq 1 "$(cat "$STUB_DIR/gpus")"); do echo "GPU $((i - 1)): A100"; done',
     "modinfo": '[ -e "$STUB_DIR/modinfo-ok" ]',
     "dpkg": 'grep -qxF "$2" "$STUB_DIR/owned"',
@@ -60,7 +61,6 @@ def box(tmp_path):
     (stub / "uname").write_text(f"{RUNNING}\n")
     (stub / "gpus").write_text("4\n")
     (stub / "modinfo-ok").touch()
-    (stub / "docker-ok").touch()
     (stub / "health.json").write_text(health_json({"default_cgroup_parent"}))
     (stub / "owned").write_text("")
     grub = tmp_path / "grub.cfg"
@@ -84,12 +84,6 @@ def box(tmp_path):
         "DS01_HEALTH_CHECK": str(bin_ / "health"),
     }
 
-    class Box:
-        pass
-
-    b = Box()
-    b.stub, b.state, b.modules, b.reboot_flag = stub, state, modules, reboot_flag
-
     def run(*args):
         return subprocess.run(
             ["bash", str(SCRIPT), *args],
@@ -103,8 +97,14 @@ def box(tmp_path):
         f = stub / f"{name}.log"
         return f.read_text().splitlines() if f.exists() else []
 
-    b.run, b.calls = run, calls
-    return b
+    return types.SimpleNamespace(
+        stub=stub,
+        state=state,
+        modules=modules,
+        reboot_flag=reboot_flag,
+        run=run,
+        calls=calls,
+    )
 
 
 def test_refuses_without_root(box):
@@ -119,8 +119,12 @@ def test_full_run_upgrades_then_schedules_reboot(box):
     r = box.run()
     assert r.returncode == 0, r.stdout
     apt = box.calls("apt-get")
-    # argv: -y, three "-o key=value" pairs, then the subcommand
-    assert [a.split()[7] for a in apt] == ["update", "full-upgrade", "autoremove"]
+    subcommands = {"update", "full-upgrade", "autoremove"}
+    assert [next(w for w in a.split() if w in subcommands) for a in apt] == [
+        "update",
+        "full-upgrade",
+        "autoremove",
+    ]
     assert all("--force-confold" in a for a in apt)
     assert box.calls("shutdown") and box.calls("shutdown")[0].startswith("-r +2")
     assert (box.state / "verify-pending").read_text().strip() == NEW
@@ -173,7 +177,7 @@ def test_verify_passes_with_preexisting_health_failure(box):
     pending(box)
     r = box.run("--verify")
     assert r.returncode == 0, r.stdout
-    assert "already failing before: default_cgroup_parent" in r.stdout
+    assert "still failing, as before: default_cgroup_parent" in r.stdout
     assert not (box.state / "verify-pending").exists()
 
 
@@ -182,7 +186,6 @@ def test_verify_passes_with_preexisting_health_failure(box):
     [
         (lambda b: (b.stub / "gpus").write_text("3\n"), "3 GPUs visible, 4 before"),
         (lambda b: (b.stub / "uname").write_text(f"{RUNNING}\n"), "FAIL kernel"),
-        (lambda b: (b.stub / "docker-ok").unlink(), "docker not responding"),
         (
             lambda b: (b.stub / "health.json").write_text(
                 health_json({"default_cgroup_parent", "nvidia_smi"})

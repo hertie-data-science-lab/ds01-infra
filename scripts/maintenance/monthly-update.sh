@@ -13,7 +13,7 @@
 #
 # The reboot is refused unless the NVIDIA module exists for the kernel GRUB will
 # boot: a box that comes back without GPUs is the failure that matters here.
-# --verify then compares GPU count, running kernel and ds01-health-check against
+# --verify then compares running kernel, GPU count and ds01-health-check against
 # what was recorded before the reboot, and exits non-zero (-> OnFailure alert) on
 # anything that got worse. Health checks that already failed before are reported
 # but do not fail the run.
@@ -62,11 +62,11 @@ for c in json.loads(sys.argv[1])["checks"]:
 # /lib/modules/<ver> directories no package owns: left behind by DKMS builds of
 # kernels that have long been purged. Never the running kernel.
 prune_module_dirs() {
-    local d k
+    local d running
+    running=$(uname -r)
     for d in "$MODULES_DIR"/*/; do
         d=${d%/}
-        k=$(basename "$d")
-        [ "$k" = "$(uname -r)" ] && continue
+        [ "$(basename "$d")" = "$running" ] && continue
         dpkg -S "$d" >/dev/null 2>&1 && continue
         log "removing orphaned $d"
         rm -rf -- "$d"
@@ -107,8 +107,7 @@ cmd_update() {
 
     if [ ! -e "$REBOOT_FLAG" ] && [ "$kernel" = "$(uname -r)" ]; then
         log "no reboot needed"
-        echo "$kernel" >"$PENDING"
-        cmd_verify
+        cmd_verify "$kernel"
         return
     fi
 
@@ -123,11 +122,10 @@ cmd_update() {
     shutdown -r "+$REBOOT_DELAY_MIN" "DS01 monthly maintenance: rebooting in $REBOOT_DELAY_MIN minutes. Running containers will stop."
 }
 
+# Compares against the pre-maintenance baseline. Docker health is covered by
+# ds01-health-check's own docker_daemon check, so a dead docker is a new failure.
 cmd_verify() {
-    local expected want have failed=0 new
-    [ -f "$PENDING" ] || die "nothing to verify ($PENDING missing)"
-    expected=$(cat "$PENDING")
-    rm -f "$PENDING" # one attempt: a failure alerts once, not on every boot
+    local expected=$1 want have failed=0 new old
 
     if [ "$(uname -r)" = "$expected" ]; then
         log "OK   kernel $expected"
@@ -145,13 +143,6 @@ cmd_verify() {
         failed=1
     fi
 
-    if docker info >/dev/null 2>&1; then
-        log "OK   docker responding"
-    else
-        log "FAIL docker not responding"
-        failed=1
-    fi
-
     health_failures >"$STATE_DIR/health-after"
     new=$(grep -vxFf "$STATE_DIR/health-before" "$STATE_DIR/health-after" 2>/dev/null || true)
     if [ -n "$new" ]; then
@@ -160,9 +151,8 @@ cmd_verify() {
     else
         log "OK   no new health-check failures"
     fi
-    if [ -s "$STATE_DIR/health-after" ]; then
-        log "     (already failing before: $(paste -sd, - <"$STATE_DIR/health-after"))"
-    fi
+    old=$(grep -xFf "$STATE_DIR/health-before" "$STATE_DIR/health-after" 2>/dev/null || true)
+    [ -z "$old" ] || log "     (still failing, as before: $(echo "$old" | paste -sd, -))"
 
     [ "$failed" -eq 0 ] || die "post-maintenance checks failed"
     log "maintenance complete"
@@ -195,7 +185,14 @@ main() {
     log "monthly-update $mode starting"
     case "$mode" in
         check) cmd_check ;;
-        verify) cmd_verify ;;
+        verify)
+            [ -f "$PENDING" ] || die "nothing to verify ($PENDING missing)"
+            # One attempt: a failure alerts once, not on every later boot.
+            local kernel
+            kernel=$(cat "$PENDING")
+            rm -f "$PENDING"
+            cmd_verify "$kernel"
+            ;;
         update) cmd_update "$reboot" ;;
     esac
 }
